@@ -1,0 +1,11 @@
+{
+  "name": "smart-store",
+  "version": "1.0.0",
+  "description": "Smart Store Management System",
+  "scripts": {
+    "start": "node run.js",
+    "dev": "node run.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
