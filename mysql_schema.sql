@@ -114,3 +114,45 @@ CREATE TABLE IF NOT EXISTS employees (
     department VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 9. PROJECTS TABLE
+CREATE TABLE IF NOT EXISTS projects (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(100) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    po_number VARCHAR(255),
+    client_name VARCHAR(255),
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'PLANNING',
+    start_date DATE,
+    end_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. BILL OF MATERIALS (BOMs) TABLE
+CREATE TABLE IF NOT EXISTS boms (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_id INT,
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(50) DEFAULT 'DRAFT',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- 11. BOM ITEMS TABLE
+CREATE TABLE IF NOT EXISTS bom_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    bom_id INT,
+    product_id INT,
+    quantity_required DECIMAL(10, 2) NOT NULL DEFAULT 1.00,
+    quantity_issued DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    remarks TEXT,
+    FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+
+-- INDEXES FOR PROJECTS & BOMS
+CREATE INDEX idx_boms_project ON boms(project_id);
+CREATE INDEX idx_bom_items_bom ON bom_items(bom_id);
+

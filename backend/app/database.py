@@ -802,3 +802,255 @@ class DBStore:
         cursor.close()
         conn.close()
         return True
+
+    # PROJECTS METHODS
+    @staticmethod
+    def get_projects() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM projects ORDER BY id DESC")
+        projects = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for p in projects:
+            if p.get('created_at'):
+                p['created_at'] = p['created_at'].isoformat()
+            if p.get('start_date') and hasattr(p['start_date'], 'isoformat'):
+                p['start_date'] = p['start_date'].isoformat()
+            if p.get('end_date') and hasattr(p['end_date'], 'isoformat'):
+                p['end_date'] = p['end_date'].isoformat()
+        return projects
+
+    @staticmethod
+    def add_project(project: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            project.get("code"), project.get("name"), project.get("po_number"),
+            project.get("client_name"), project.get("description"), project.get("status", "PLANNING"),
+            project.get("start_date") or None, project.get("end_date") or None
+        )
+        cursor.execute(query, values)
+        conn.commit()
+        project["id"] = cursor.lastrowid
+        project["created_at"] = datetime.now().isoformat()
+        cursor.close()
+        conn.close()
+        return project
+
+    @staticmethod
+    def update_project(proj_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date"]:
+            if key in data:
+                updates.append(f"{key} = %s")
+                if key in ["start_date", "end_date"] and not data[key]:
+                    values.append(None)
+                else:
+                    values.append(data[key])
+                    
+        if not updates:
+            return data
+            
+        values.append(proj_id)
+        query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM projects WHERE id = %s", (proj_id,))
+        p = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if p:
+            if p.get('created_at'):
+                p['created_at'] = p['created_at'].isoformat()
+            if p.get('start_date') and hasattr(p['start_date'], 'isoformat'):
+                p['start_date'] = p['start_date'].isoformat()
+            if p.get('end_date') and hasattr(p['end_date'], 'isoformat'):
+                p['end_date'] = p['end_date'].isoformat()
+        return p
+
+    @staticmethod
+    def delete_project(proj_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM projects WHERE id = %s", (proj_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    # BOM METHODS
+    @staticmethod
+    def get_boms(project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        if project_id:
+            cursor.execute("""
+                SELECT b.*, p.name as project_name, p.code as project_code 
+                FROM boms b
+                JOIN projects p ON b.project_id = p.id
+                WHERE b.project_id = %s
+                ORDER BY b.id DESC
+            """, (project_id,))
+        else:
+            cursor.execute("""
+                SELECT b.*, p.name as project_name, p.code as project_code 
+                FROM boms b
+                JOIN projects p ON b.project_id = p.id
+                ORDER BY b.id DESC
+            """)
+        boms = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for b in boms:
+            if b.get('created_at'):
+                b['created_at'] = b['created_at'].isoformat()
+            if b.get('updated_at'):
+                b['updated_at'] = b['updated_at'].isoformat()
+        return boms
+
+    @staticmethod
+    def create_bom(project_id: int, name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            INSERT INTO boms (project_id, name, status)
+            VALUES (%s, %s, 'DRAFT')
+        """, (project_id, name))
+        bom_id = cursor.lastrowid
+        
+        for item in items:
+            cursor.execute("""
+                INSERT INTO bom_items (bom_id, product_id, quantity_required, quantity_issued, remarks)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (bom_id, item["product_id"], item["quantity_required"], 0.00, item.get("remarks", "")))
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"id": bom_id, "project_id": project_id, "name": name, "status": "DRAFT"}
+
+    @staticmethod
+    def get_bom_details(bom_id: int) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT b.*, p.name as project_name, p.code as project_code 
+            FROM boms b
+            JOIN projects p ON b.project_id = p.id
+            WHERE b.id = %s
+        """, (bom_id,))
+        bom = cursor.fetchone()
+        if not bom:
+            cursor.close()
+            conn.close()
+            return None
+            
+        if bom.get('created_at'):
+            bom['created_at'] = bom['created_at'].isoformat()
+        if bom.get('updated_at'):
+            bom['updated_at'] = bom['updated_at'].isoformat()
+            
+        cursor.execute("""
+            SELECT bi.id, bi.bom_id, bi.product_id, bi.quantity_required, bi.quantity_issued, bi.remarks,
+                   p.name as product_name, p.code as product_code, p.unit as product_unit,
+                   COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock
+            FROM bom_items bi
+            JOIN products p ON bi.product_id = p.id
+            WHERE bi.bom_id = %s
+        """, (bom_id,))
+        items = cursor.fetchall()
+        for item in items:
+            item["quantity_required"] = float(item["quantity_required"])
+            item["quantity_issued"] = float(item["quantity_issued"])
+            item["current_stock"] = float(item["current_stock"])
+            
+        bom["items"] = items
+        cursor.close()
+        conn.close()
+        return bom
+
+    @staticmethod
+    def update_bom_status(bom_id: int, status: str) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("UPDATE boms SET status = %s WHERE id = %s", (status, bom_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def delete_bom(bom_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM boms WHERE id = %s", (bom_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def issue_bom_stock(bom_id: int, issuings: List[Dict[str, Any]], user_name: str, user_role: str) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        for issue in issuings:
+            cursor.execute("SELECT quantity FROM product_locations WHERE product_id = %s AND location_id = %s", 
+                           (issue["product_id"], issue["location_id"]))
+            row = cursor.fetchone()
+            current_qty = float(row["quantity"]) if row else 0.0
+            if current_qty < issue["quantity"]:
+                cursor.execute("SELECT name FROM products WHERE id = %s", (issue["product_id"],))
+                p = cursor.fetchone()
+                p_name = p["name"] if p else f"ID {issue['product_id']}"
+                cursor.close()
+                conn.close()
+                raise ValueError(f"Insufficient stock for '{p_name}'. Available: {current_qty}, Requested: {issue['quantity']}.")
+        
+        detailed_items = []
+        for issue in issuings:
+            DBStore.update_product_location(issue["product_id"], issue["location_id"], -issue["quantity"])
+            
+            cursor.execute("UPDATE bom_items SET quantity_issued = quantity_issued + %s WHERE id = %s", 
+                           (issue["quantity"], issue["bom_item_id"]))
+            
+            cursor.execute("SELECT name, code FROM products WHERE id = %s", (issue["product_id"],))
+            p = cursor.fetchone()
+            
+            cursor.execute("SELECT zone, rack, shelf, bin FROM locations WHERE id = %s", (issue["location_id"],))
+            l = cursor.fetchone()
+            
+            detailed_items.append({
+                "product_id": issue["product_id"],
+                "product_name": p["name"] if p else "Unknown",
+                "product_code": p["code"] if p else "N/A",
+                "location_id": issue["location_id"],
+                "location_label": f"{l['zone']}-Rack {l['rack']}-Shelf {l['shelf']}-Bin {l['bin']}" if l else "Unknown",
+                "quantity": issue["quantity"],
+                "remarks": f"Issued for BOM ID: {bom_id}"
+            })
+            
+        total_qty = sum(issue["quantity"] for issue in issuings)
+        cursor.execute("""
+            INSERT INTO inventory_transactions (user_name, user_role, quantity, action, remarks)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (user_name, user_role, total_qty, 'STOCK_OUT', json.dumps(detailed_items)))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"success": True, "total_issued": total_qty}
+

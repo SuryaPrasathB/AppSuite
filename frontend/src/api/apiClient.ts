@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const API_BASE_URL = 'http://localhost:8000/api';
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -8,11 +9,16 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const storedUser = localStorage.getItem('smart_store_user');
   if (storedUser) {
     try {
-      const { token } = JSON.parse(storedUser);
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      const parsed = JSON.parse(storedUser);
+      if (parsed && typeof parsed === 'object' && 'token' in parsed) {
+        const token = (parsed as { token?: string }).token;
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
       }
-    } catch (_) {}
+    } catch {
+      // Ignore JSON parsing errors
+    }
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -23,15 +29,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   if (!response.ok) {
     let errorMessage = `HTTP error! status: ${response.status}`;
     try {
-      const errBody = await response.json();
+      const errBody = await response.json() as { detail?: string | Array<{ loc: string[]; msg: string }> };
       if (errBody && errBody.detail) {
         if (Array.isArray(errBody.detail)) {
-          errorMessage = errBody.detail.map((e: any) => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+          errorMessage = errBody.detail.map((e) => `${e.loc.join('.')}: ${e.msg}`).join(', ');
         } else {
           errorMessage = typeof errBody.detail === 'string' ? errBody.detail : JSON.stringify(errBody.detail);
         }
       }
-    } catch (_) {}
+    } catch {
+      // Ignore response parsing errors
+    }
     throw new Error(errorMessage);
   }
 
@@ -91,5 +99,19 @@ export const apiClient = {
     lowStock: () => request<any[]>('/reports/low-stock'),
     vendors: () => request<any[]>('/reports/vendors'),
     valuation: () => request<any>('/reports/valuation'),
+  },
+  projects: {
+    list: () => request<any[]>('/projects'),
+    create: (body: any) => request<any>('/projects', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number | string, body: any) => request<any>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number | string) => request<any>(`/projects/${id}`, { method: 'DELETE' }),
+  },
+  boms: {
+    list: (projectId?: number) => request<any[]>(`/boms${projectId ? `?project_id=${projectId}` : ''}`),
+    get: (id: number | string) => request<any>(`/boms/${id}`),
+    create: (body: any) => request<any>('/boms', { method: 'POST', body: JSON.stringify(body) }),
+    updateStatus: (id: number | string, status: string) => request<any>(`/boms/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    delete: (id: number | string) => request<any>(`/boms/${id}`, { method: 'DELETE' }),
+    issue: (id: number | string, body: any) => request<any>(`/boms/${id}/issue`, { method: 'POST', body: JSON.stringify(body) }),
   }
 };

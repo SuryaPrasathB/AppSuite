@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Package, 
@@ -8,34 +8,26 @@ import {
   Undo2, 
   ShoppingCart, 
   Folder, 
-  Wrench, 
-  History, 
-  TrendingUp, 
-  Settings, 
-  Plus, 
-  Minus, 
-  Bookmark, 
   ChevronLeft, 
   ChevronRight, 
   Warehouse, 
-  LogOut,
   ChevronDown,
   Truck,
-  Users
+  Users,
+  TrendingUp,
+  History,
+  Grid,
+  ClipboardList,
+  Plus,
+  Minus,
+  Bookmark
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 
 export const Sidebar: React.FC = () => {
-  const { logout } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState(false);
-
-  // Load state on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('smart_store_sidebar_collapsed');
-    if (saved === 'true') {
-      setIsCollapsed(true);
-    }
-  }, []);
+  const location = useLocation();
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('smart_store_sidebar_collapsed') === 'true';
+  });
 
   const toggleCollapse = () => {
     const newVal = !isCollapsed;
@@ -43,19 +35,50 @@ export const Sidebar: React.FC = () => {
     localStorage.setItem('smart_store_sidebar_collapsed', String(newVal));
   };
 
-  const menuItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Inventory', path: '/products', icon: Package },
-    { name: 'Stock In', path: '/stock-in', icon: ArrowDownToLine },
-    { name: 'Stock Out', path: '/issue-material', icon: ArrowUpToLine },
-    { name: 'Return Material', path: '/return-material', icon: Undo2 },
-    { name: 'Requests', path: '/requests', icon: ShoppingCart },
-    { name: 'Projects', path: '/projects', icon: Folder },
-    { name: 'Store Layout', path: '/layout', icon: Warehouse },
-    { name: 'Transactions', path: '/inventory', icon: History },
-    { name: 'Suppliers / Vendors', path: '/vendors', icon: Truck },
-    { name: 'Employees', path: '/employees', icon: Users },
-    { name: 'Reports', path: '/reports', icon: TrendingUp },
+  // Determine active module
+  const path = location.pathname;
+  let activeModule: 'projects' | 'bom' | 'store' = 'store';
+  if (path.startsWith('/projects')) {
+    activeModule = 'projects';
+  } else if (path.startsWith('/bom')) {
+    activeModule = 'bom';
+  }
+
+  // Configure menu items based on module
+  let menuItems: Array<{ name: string; path: string; icon: React.ComponentType<{ className?: string }> }> = [];
+  let moduleHeader = { title: 'SMART STORE', subtitle: 'MANAGEMENT', icon: Warehouse, color: 'bg-primary-600' };
+
+  if (activeModule === 'projects') {
+    moduleHeader = { title: 'PROJECTS HUB', subtitle: 'PO TRACKING', icon: Folder, color: 'bg-blue-600' };
+    menuItems = [
+      { name: 'All Projects', path: '/projects', icon: Folder }
+    ];
+  } else if (activeModule === 'bom') {
+    moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };
+    menuItems = [
+      { name: 'BOM Workspace', path: '/bom', icon: ClipboardList }
+    ];
+  } else {
+    // Store Module (Default)
+    menuItems = [
+      { name: 'Dashboard', path: '/store', icon: LayoutDashboard },
+      { name: 'Inventory', path: '/products', icon: Package },
+      { name: 'Stock In', path: '/stock-in', icon: ArrowDownToLine },
+      { name: 'Stock Out', path: '/issue-material', icon: ArrowUpToLine },
+      { name: 'Return Material', path: '/return-material', icon: Undo2 },
+      { name: 'Requests', path: '/requests', icon: ShoppingCart },
+      { name: 'Store Layout', path: '/layout', icon: Warehouse },
+      { name: 'Transactions', path: '/inventory', icon: History },
+      { name: 'Suppliers / Vendors', path: '/vendors', icon: Truck },
+      { name: 'Employees', path: '/employees', icon: Users },
+      { name: 'Reports', path: '/reports', icon: TrendingUp },
+    ];
+  }
+
+  // Prepend Portal Lobby link to all modules so users can easily switch
+  const allMenuItems = [
+    { name: 'Lobby Portal', path: '/', icon: Grid },
+    ...menuItems
   ];
 
   return (
@@ -66,13 +89,13 @@ export const Sidebar: React.FC = () => {
       <div className={`h-16 flex items-center border-b border-slate-800 gap-2 shrink-0 ${
         isCollapsed ? 'justify-center px-2' : 'px-4'
       }`}>
-        <div className="bg-primary-600 p-2 rounded-lg text-white shrink-0 flex items-center justify-center">
-          <Warehouse className="h-5 w-5" />
+        <div className={`${moduleHeader.color} p-2 rounded-lg text-white shrink-0 flex items-center justify-center`}>
+          <moduleHeader.icon className="h-5 w-5" />
         </div>
         {!isCollapsed && (
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-sm leading-tight truncate">SMART STORE</h1>
-            <span className="text-[10px] text-slate-400 font-medium block">MANAGEMENT</span>
+            <h1 className="font-bold text-sm leading-tight truncate">{moduleHeader.title}</h1>
+            <span className="text-[10px] text-slate-400 font-medium block">{moduleHeader.subtitle}</span>
           </div>
         )}
       </div>
@@ -81,19 +104,26 @@ export const Sidebar: React.FC = () => {
       <nav className={`flex-1 py-4 space-y-1 overflow-y-auto ${
         isCollapsed ? 'px-2' : 'px-4'
       }`}>
-        {menuItems.map((item) => (
+        {allMenuItems.map((item) => (
           <div key={item.name}>
             <NavLink
               to={item.path}
+              end={item.path === '/' || item.path === '/store'}
               title={isCollapsed ? item.name : undefined}
               className={({ isActive }) => {
                 let activeStyle = 'bg-primary-600 text-white shadow-md shadow-primary-900/30';
-                if (item.path === '/stock-in') {
+                if (item.path === '/') {
+                  activeStyle = 'bg-slate-800 text-white border-l-2 border-primary-500';
+                } else if (item.path === '/stock-in') {
                   activeStyle = 'bg-green-700 text-white shadow-md shadow-green-900/30';
                 } else if (item.path === '/issue-material') {
                   activeStyle = 'bg-blue-700 text-white shadow-md shadow-blue-900/30';
                 } else if (item.path === '/return-material') {
-                  activeStyle = 'bg-amber-700 text-white shadow-md shadow-amber-905/30';
+                  activeStyle = 'bg-amber-700 text-white shadow-md shadow-amber-900/30';
+                } else if (activeModule === 'projects') {
+                  activeStyle = 'bg-blue-600 text-white shadow-md shadow-blue-900/30';
+                } else if (activeModule === 'bom') {
+                  activeStyle = 'bg-purple-600 text-white shadow-md shadow-purple-900/30';
                 }
                 return `flex items-center rounded-lg text-xs font-semibold transition-all duration-200 ${
                   isCollapsed ? 'justify-center p-2.5' : 'gap-3 px-4 py-2.5'
@@ -114,8 +144,8 @@ export const Sidebar: React.FC = () => {
           </div>
         ))}
 
-        {/* Quick Actions (Sidebar Middle/Bottom) */}
-        {!isCollapsed && (
+        {/* Quick Actions (Sidebar Middle/Bottom) - Only show for Store Module */}
+        {activeModule === 'store' && !isCollapsed && (
           <div className="pt-4 border-t border-slate-800/80 mt-4 space-y-2">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block px-1">Quick Actions</span>
             <div className="space-y-1.5">
@@ -154,7 +184,6 @@ export const Sidebar: React.FC = () => {
 
       {/* Sidebar Footer Area */}
       <div className="border-t border-slate-800 shrink-0">
-        {/* Collapse Button */}
         <button
           onClick={toggleCollapse}
           className={`flex items-center w-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all duration-200 cursor-pointer ${
@@ -169,7 +198,6 @@ export const Sidebar: React.FC = () => {
           )}
         </button>
 
-        {/* Store Selector Info */}
         {!isCollapsed && (
           <div className="bg-slate-950/40 border-t border-slate-800/80 px-4 py-3 flex items-center justify-between text-[11px] text-slate-400">
             <div className="flex items-center gap-1.5">

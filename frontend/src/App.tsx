@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
-import { StoreLayout } from './pages/StoreLayout';
-import { Products } from './pages/Products';
-import { Projects } from './pages/Projects';
-import { Inventory } from './pages/Inventory';
-import { Vendors } from './pages/Vendors';
-import { PurchasePlanning } from './pages/PurchasePlanning';
-import { Reports } from './pages/Reports';
-import { Requests } from './pages/Requests';
-import { StockIn } from './pages/StockIn';
-import { IssueMaterial } from './pages/IssueMaterial';
-import { ReturnMaterial } from './pages/ReturnMaterial';
-import { Employees } from './pages/Employees';
+import { Login } from './modules/store/pages/Login';
+import { Dashboard } from './modules/store/pages/Dashboard';
+import { StoreLayout } from './modules/store/pages/StoreLayout';
+import { Products } from './modules/store/pages/Products';
+import { Projects } from './modules/projects/Projects';
+import { Inventory } from './modules/store/pages/Inventory';
+import { Vendors } from './modules/store/pages/Vendors';
+import { PurchasePlanning } from './modules/store/pages/PurchasePlanning';
+import { Reports } from './modules/store/pages/Reports';
+import { Requests } from './modules/store/pages/Requests';
+import { StockIn } from './modules/store/pages/StockIn';
+import { IssueMaterial } from './modules/store/pages/IssueMaterial';
+import { ReturnMaterial } from './modules/store/pages/ReturnMaterial';
+import { Employees } from './modules/store/pages/Employees';
+import { Portal } from './modules/portal/Portal';
+import { BOM } from './modules/bom/BOM';
+
 
 const Footer: React.FC = () => {
   const [time, setTime] = useState(new Date());
@@ -63,6 +66,7 @@ const Footer: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -77,6 +81,11 @@ const AppContent: React.FC = () => {
     return <Login />;
   }
 
+  // If visiting root lobby, render Portal without sidebar/header layout
+  if (location.pathname === '/') {
+    return <Portal />;
+  }
+
   // If logged in, render the main layout with sidebar and header
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
@@ -85,7 +94,7 @@ const AppContent: React.FC = () => {
         <Header />
         <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/store" element={<Dashboard />} />
             <Route path="/layout" element={<StoreLayout />} />
             <Route path="/products" element={<Products />} />
             <Route path="/stock-in" element={<StockIn />} />
@@ -97,6 +106,7 @@ const AppContent: React.FC = () => {
             <Route path="/purchase" element={<PurchasePlanning />} />
             <Route path="/requests" element={<Requests />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/bom" element={<BOM />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
