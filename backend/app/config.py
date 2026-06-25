@@ -5,13 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings(BaseSettings):
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
-    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+    MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "lscontrols")
+    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "smart_store")
     PORT: int = int(os.getenv("PORT", "8000"))
-    
-    @property
-    def use_mock_db(self) -> bool:
-        # If credentials are not set, fallback to mock in-memory DB
-        return not self.SUPABASE_URL or not self.SUPABASE_KEY
 
 settings = Settings()

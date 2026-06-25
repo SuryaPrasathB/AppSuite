@@ -50,10 +50,8 @@ export const Sidebar: React.FC = () => {
     { name: 'Requests', path: '/requests', icon: ShoppingCart },
     { name: 'Projects', path: '/projects', icon: Folder },
     { name: 'Store Layout', path: '/layout', icon: Warehouse },
-    { name: 'Tools', path: '/tools', icon: Wrench },
     { name: 'Transactions', path: '/inventory', icon: History },
     { name: 'Reports', path: '/reports', icon: TrendingUp },
-    { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
   return (
@@ -106,7 +104,6 @@ export const Sidebar: React.FC = () => {
               {!isCollapsed && (
                 <div className="flex-1 flex items-center justify-between">
                   <span>{item.name}</span>
-                  {item.hasSubmenu && <ChevronRight className="h-3 w-3 text-slate-500" />}
                 </div>
               )}
             </NavLink>

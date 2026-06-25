@@ -41,8 +41,8 @@ export const StockIn: React.FC = () => {
   const [locationsList, setLocationsList] = useState<any[]>([]);
 
   // Page statistics (calculated or mock backup)
-  const [totalStockInMonth, setTotalStockInMonth] = useState(42);
-  const [totalItemsAdded, setTotalItemsAdded] = useState(1256);
+  const [totalStockInMonth, setTotalStockInMonth] = useState(0);
+  const [totalItemsAdded, setTotalItemsAdded] = useState(0);
   const [lastStockInDate, setLastStockInDate] = useState("19 May 2025");
 
   // Form details
@@ -53,10 +53,7 @@ export const StockIn: React.FC = () => {
   const [notes, setNotes] = useState("");
 
   // Attached files state
-  const [attachedFile, setAttachedFile] = useState<{ name: string; size: string } | null>({
-    name: "Invoice_ABC_2025-05-118.pdf",
-    size: "245 KB"
-  });
+  const [attachedFile, setAttachedFile] = useState<{ name: string; size: string } | null>(null);
 
   // Table items list
   const [items, setItems] = useState<StockInItem[]>([]);

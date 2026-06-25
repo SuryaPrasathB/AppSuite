@@ -27,6 +27,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exportToExcel, printTable } from '../utils/exportUtils';
 import { Printer, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { ProductBuilderModal } from '../product-builder/ProductBuilderModal';
+import { ProductDetailsModal } from '../product-builder/ProductDetailsModal';
 
 export const Products: React.FC = () => {
   const { hasRole, user } = useAuth();
@@ -64,6 +66,7 @@ export const Products: React.FC = () => {
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Edit product form state
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -236,44 +239,39 @@ export const Products: React.FC = () => {
     }
   };
 
+  const handleProductBuilderSave = async (payload: any) => {
+    setFormError(null);
+    setSaving(true);
+    try {
+      await apiClient.products.create(payload);
+      setFormSuccess(true);
+      fetchData();
+      setTimeout(() => {
+        setFormSuccess(false);
+        setAddModalOpen(false);
+      }, 1500);
+    } catch (err: any) {
+      setFormError(err.message || "Failed to create product.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Open Edit Product Modal
   const openEditModal = (product: any) => {
     setEditingProductId(product.id);
-    setEditProduct({
-      code: product.code,
-      name: product.name,
-      description: product.description || '',
-      category: product.category,
-      unit: product.unit,
-      min_quantity: String(product.min_quantity),
-      max_quantity: String(product.max_quantity),
-      barcode: product.barcode || '',
-      qr_code: product.qr_code || '',
-      image_url: product.image_url || '',
-      vendor_ids: product.vendor_ids || [],
-      preferred_vendor_id: product.preferred_vendor_id || ''
-    });
+    setEditProduct(product);
     setEditError(null);
     setEditSuccess(false);
     setEditModalOpen(true);
   };
 
-  // Edit Product Submit
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Edit Product Submit via Builder
+  const handleEditProductBuilderSave = async (payload: any) => {
     setEditError(null);
     if (!editingProductId) return;
-    if (!editProduct.code || !editProduct.name) {
-      setEditError("Product Code and Name are required.");
-      return;
-    }
+    setSaving(true);
     try {
-      const payload = {
-        ...editProduct,
-        min_quantity: parseFloat(editProduct.min_quantity) || 0,
-        max_quantity: parseFloat(editProduct.max_quantity) || 0,
-        preferred_vendor_id: editProduct.preferred_vendor_id ? Number(editProduct.preferred_vendor_id) : null
-      };
       await apiClient.products.update(editingProductId, payload);
       setEditSuccess(true);
       fetchData();
@@ -283,6 +281,8 @@ export const Products: React.FC = () => {
       }, 1500);
     } catch (err: any) {
       setEditError(err.message || "Failed to update product details.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -458,7 +458,7 @@ export const Products: React.FC = () => {
   const totalItems = products.length;
   const totalStockAll = products.reduce((sum, p) => sum + (p.current_quantity || 0), 0);
   const lowStockCount = products.filter(p => p.status === 'LOW_STOCK' || p.status === 'CRITICAL').length;
-  const reservedStock = 43; // static based on screenshot
+  const reservedStock = 0;
   const outOfStockCount = products.filter(p => p.current_quantity === 0 || p.status === 'OUT_OF_STOCK').length;
 
   return (
@@ -688,8 +688,8 @@ export const Products: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-500 font-semibold whitespace-nowrap">{prod.unit || 'pcs'}</td>
-                        <td className={`px-6 py-4 font-black whitespace-nowrap ${prod.current_quantity > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {prod.current_quantity}
+                        <td className={`px-6 py-4 font-black whitespace-nowrap ${(prod.current_quantity ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {prod.current_quantity ?? 0}
                         </td>
                         <td className="px-6 py-4 font-black text-amber-500 whitespace-nowrap">{reserved}</td>
                         <td className="px-6 py-4 font-black text-green-600 whitespace-nowrap">{available}</td>
@@ -767,394 +767,30 @@ export const Products: React.FC = () => {
       </div>
 
       {/* Add Product Modal */}
-      {addModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-100 overflow-hidden">
-            <div className="bg-primary-600 p-6 text-white flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-bold">Add Material to Catalog</h3>
-                <p className="text-xs text-primary-100">Configure safety margins and general parameters</p>
-              </div>
-              <button onClick={() => setAddModalOpen(false)} className="text-primary-100 hover:text-white transition-colors cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <ProductBuilderModal
+        open={addModalOpen}
+        vendors={vendors}
+        products={products}
+        saving={saving}
+        serverError={formError}
+        success={formSuccess}
+        onClose={() => setAddModalOpen(false)}
+        onSave={handleProductBuilderSave}
+      />
 
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-              {formSuccess ? (
-                <div className="bg-green-50 border border-green-200 text-green-800 text-sm p-4 rounded-lg flex items-center gap-3">
-                  <Check className="h-5 w-5 text-green-500" />
-                  <span>Product successfully registered in master catalog!</span>
-                </div>
-              ) : (
-                <>
-                  {formError && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 text-xs p-3.5 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      <span>{formError}</span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Product Code *</label>
-                      <input
-                        type="text"
-                        name="code"
-                        required
-                        placeholder="e.g. MECH-005"
-                        value={newProduct.code}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Product Name *</label>
-                      <input
-                        type="text"
-                        name="name"
-                        required
-                        placeholder="e.g. Spiral Jaw Spider"
-                        value={newProduct.name}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description</label>
-                    <textarea
-                      name="description"
-                      placeholder="Specification details..."
-                      value={newProduct.description}
-                      onChange={(e) => handleInputChange(e)}
-                      rows={2}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Category</label>
-                      <select
-                        name="category"
-                        value={newProduct.category}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
-                        <option value="Electrical">Electrical</option>
-                        <option value="Mechanical">Mechanical</option>
-                        <option value="Packaging">Packaging</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unit of Measure</label>
-                      <input
-                        type="text"
-                        name="unit"
-                        placeholder="pcs, kg..."
-                        value={newProduct.unit}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Minimum Stock Level</label>
-                      <input
-                        type="number"
-                        name="min_quantity"
-                        min="0"
-                        value={newProduct.min_quantity}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Maximum Stock Level</label>
-                      <input
-                        type="number"
-                        name="max_quantity"
-                        min="0"
-                        value={newProduct.max_quantity}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Vendor Selection checks */}
-                  <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-3">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Users className="h-4 w-4 text-slate-400" />
-                      Map Vendor Suppliers *
-                    </span>
-                    
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                      {vendors.map(v => (
-                        <div key={v.id} className="flex items-center justify-between text-xs bg-white border border-slate-100 p-2 rounded">
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={newProduct.vendor_ids.includes(v.id)}
-                              onChange={() => handleVendorCheckboxChange(v.id)}
-                              className="rounded border-slate-300 focus:ring-primary-500 h-4 w-4"
-                            />
-                            <span className="font-semibold">{v.name}</span>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-
-                    {newProduct.vendor_ids.length > 0 && (
-                      <div>
-                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Select Preferred Supplier</label>
-                        <select
-                          name="preferred_vendor_id"
-                          value={newProduct.preferred_vendor_id}
-                          onChange={(e) => handleInputChange(e)}
-                          className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        >
-                          <option value="">-- Select --</option>
-                          {newProduct.vendor_ids.map(vId => {
-                            const vendObj = vendors.find(v => v.id === vId);
-                            return vendObj ? (
-                              <option key={vId} value={vId}>{vendObj.name}</option>
-                            ) : null;
-                          })}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Barcode</label>
-                      <input
-                        type="text"
-                        name="barcode"
-                        value={newProduct.barcode}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">QR Code</label>
-                      <input
-                        type="text"
-                        name="qr_code"
-                        value={newProduct.qr_code}
-                        onChange={(e) => handleInputChange(e)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
-                    <button
-                      type="button"
-                      onClick={() => setAddModalOpen(false)}
-                      className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-colors cursor-pointer"
-                    >
-                      Save to Catalog
-                    </button>
-                  </div>
-                </>
-              )}
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Product Modal */}
-      {editModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-100 overflow-hidden">
-            <div className="bg-primary-600 p-6 text-white flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-bold">Edit Product Specifications</h3>
-                <p className="text-xs text-primary-100">Update general details and supplier associations</p>
-              </div>
-              <button onClick={() => setEditModalOpen(false)} className="text-primary-100 hover:text-white transition-colors cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-              {editSuccess ? (
-                <div className="bg-green-50 border border-green-200 text-green-800 text-sm p-4 rounded-lg flex items-center gap-3">
-                  <Check className="h-5 w-5 text-green-500" />
-                  <span>Product records updated successfully!</span>
-                </div>
-              ) : (
-                <>
-                  {editError && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 text-xs p-3.5 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      <span>{editError}</span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Product Code *</label>
-                      <input
-                        type="text"
-                        name="code"
-                        required
-                        value={editProduct.code}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Product Name *</label>
-                      <input
-                        type="text"
-                        name="name"
-                        required
-                        value={editProduct.name}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description</label>
-                    <textarea
-                      name="description"
-                      value={editProduct.description}
-                      onChange={(e) => handleInputChange(e, true)}
-                      rows={2}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Category</label>
-                      <select
-                        name="category"
-                        value={editProduct.category}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
-                        <option value="Electrical">Electrical</option>
-                        <option value="Mechanical">Mechanical</option>
-                        <option value="Packaging">Packaging</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unit of Measure</label>
-                      <input
-                        type="text"
-                        name="unit"
-                        value={editProduct.unit}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Minimum Stock Level</label>
-                      <input
-                        type="number"
-                        name="min_quantity"
-                        min="0"
-                        value={editProduct.min_quantity}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Maximum Stock Level</label>
-                      <input
-                        type="number"
-                        name="max_quantity"
-                        min="0"
-                        value={editProduct.max_quantity}
-                        onChange={(e) => handleInputChange(e, true)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Multiple Vendors select for Edit */}
-                  <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-3">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Users className="h-4 w-4 text-slate-400" />
-                      Map Vendor Suppliers
-                    </span>
-                    
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                      {vendors.map(v => (
-                        <div key={v.id} className="flex items-center justify-between text-xs bg-white border border-slate-100 p-2 rounded">
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={editProduct.vendor_ids.includes(v.id)}
-                              onChange={() => handleVendorCheckboxChange(v.id, true)}
-                              className="rounded border-slate-300 focus:ring-primary-500 h-4 w-4"
-                            />
-                            <span className="font-semibold">{v.name}</span>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-
-                    {editProduct.vendor_ids.length > 0 && (
-                      <div>
-                        <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Select Preferred Supplier</label>
-                        <select
-                          name="preferred_vendor_id"
-                          value={editProduct.preferred_vendor_id}
-                          onChange={(e) => handleInputChange(e, true)}
-                          className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        >
-                          <option value="">-- Select --</option>
-                          {editProduct.vendor_ids.map(vId => {
-                            const vendObj = vendors.find(v => v.id === vId);
-                            return vendObj ? (
-                              <option key={vId} value={vId}>{vendObj.name}</option>
-                            ) : null;
-                          })}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
-                    <button
-                      type="button"
-                      onClick={() => setEditModalOpen(false)}
-                      className="px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-colors cursor-pointer"
-                    >
-                      Update Record
-                    </button>
-                  </div>
-                </>
-              )}
-            </form>
-          </div>
-        </div>
+      {/* Edit Product Modal (using Builder UI) */}
+      {editModalOpen && editProduct && (
+        <ProductBuilderModal
+          open={editModalOpen}
+          vendors={vendors}
+          products={products}
+          initialProduct={editProduct}
+          saving={saving}
+          serverError={editError}
+          success={editSuccess}
+          onClose={() => setEditModalOpen(false)}
+          onSave={handleEditProductBuilderSave}
+        />
       )}
 
       {/* Barcode & QR Code Modal */}
@@ -1242,235 +878,20 @@ export const Products: React.FC = () => {
 
       {/* Product Details Modal */}
       {detailsModalOpen && activeDetailsProduct && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Header */}
-            <div className="bg-slate-900 p-5 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="bg-slate-800 p-2 rounded-lg">
-                  <Package className="h-5 w-5 text-primary-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold">{activeDetailsProduct.name}</h3>
-                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">{activeDetailsProduct.code}</span>
-                </div>
-              </div>
-              <button 
-                onClick={() => {
-                  setDetailsModalOpen(false);
-                  setActiveDetailsProduct(null);
-                }} 
-                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
-              {/* Core Attributes */}
-              <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/60">
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Category</span>
-                  <span className="text-xs font-bold text-slate-800 block">{activeDetailsProduct.category}</span>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Available Stock</span>
-                  <span className="text-sm font-black text-slate-900 block">
-                    {activeDetailsProduct.current_quantity} {activeDetailsProduct.unit}
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Status</span>
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold ${
-                    activeDetailsProduct.status === 'HEALTHY' ? 'bg-green-100 text-green-800' :
-                    activeDetailsProduct.status === 'LOW_STOCK' ? 'bg-orange-100 text-orange-850' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {activeDetailsProduct.status.replace('_', ' ')}
-                  </span>
-                </div>
-              </div>
-
-              {/* Description */}
-              {activeDetailsProduct.description && (
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Description / Specifications</span>
-                  <p className="text-slate-700 bg-slate-50/50 p-3 rounded-lg border border-slate-100 leading-relaxed">
-                    {activeDetailsProduct.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Safety Margins */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Min Safety Level</span>
-                  <span className="text-xs font-mono font-bold text-slate-800">
-                    {activeDetailsProduct.min_quantity} {activeDetailsProduct.unit}
-                  </span>
-                </div>
-                <div className="border border-slate-200 rounded-lg p-3 bg-white space-y-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Max Safety Level</span>
-                  <span className="text-xs font-mono font-bold text-slate-800">
-                    {activeDetailsProduct.max_quantity} {activeDetailsProduct.unit}
-                  </span>
-                </div>
-              </div>
-
-              {/* Storage Bins & Allocations */}
-              <div className="space-y-2">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Bin Allocations & Stock Location</span>
-                {activeDetailsProduct.locations && activeDetailsProduct.locations.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activeDetailsProduct.locations.map((loc: any, i: number) => (
-                      <div key={i} className="flex justify-between items-center p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
-                        <span className="font-semibold text-slate-700">
-                          📍 {loc.zone} - Rack {loc.rack} - {loc.shelf} - {loc.bin}
-                        </span>
-                        <span className="bg-primary-100 text-primary-800 font-extrabold px-2 py-0.5 rounded text-[10px]">
-                          {loc.quantity} {activeDetailsProduct.unit}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bg-red-50/30 border border-red-100 p-3 rounded-lg text-red-700 italic font-semibold text-center">
-                    No physical storage bins allocated.
-                  </div>
-                )}
-              </div>
-
-              {/* Linked Suppliers */}
-              <div className="space-y-2">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Associated Suppliers / Vendors</span>
-                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-                  <div className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
-                    {vendors.filter(v => activeDetailsProduct.vendor_ids?.includes(v.id)).map(v => {
-                      const isPref = v.id === activeDetailsProduct.preferred_vendor_id;
-                      return (
-                        <div key={v.id} className="p-3 flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-slate-800 text-xs">{v.name}</span>
-                            <span className="text-[10px] text-slate-400 block mt-0.5">GST: {v.gst_number || 'N/A'} | Email: {v.email || 'N/A'}</span>
-                          </div>
-                          {isPref && (
-                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full">
-                              Preferred Supplier
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {vendors.filter(v => activeDetailsProduct.vendor_ids?.includes(v.id)).length === 0 && (
-                      <div className="p-4 text-center text-slate-400 italic">No suppliers mapped for this material.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Barcodes & QR Codes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2 flex flex-col items-center">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block self-start">
-                    EAN / UPC Barcode
-                  </span>
-                  {activeDetailsProduct.barcode ? (
-                    <div className="w-52 h-14 bg-white flex justify-center items-center font-mono tracking-widest text-[9px] text-slate-700 border border-slate-200 select-none border-x-4 border-y-2 p-1 gap-0.5 relative" title="Simulated Barcode">
-                      <div className="absolute inset-0 flex flex-col justify-between p-1 bg-white">
-                        <div className="flex-1 flex gap-0.5">
-                          {activeDetailsProduct.barcode.split('').map((char: string, i: number) => {
-                            const width = (parseInt(char) % 3) + 1;
-                            return (
-                              <div 
-                                key={i} 
-                                className="bg-slate-900 h-full" 
-                                style={{ flexGrow: width, opacity: (i % 2 === 0) ? 1 : 0 }} 
-                              />
-                            );
-                          })}
-                        </div>
-                        <div className="text-[8px] text-center font-mono leading-none tracking-widest mt-1">
-                          {activeDetailsProduct.barcode}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-red-500 italic font-semibold">No barcode registered.</span>
-                  )}
-                </div>
-
-                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2 flex flex-col items-center">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block self-start">
-                    Digital Twin QR Code
-                  </span>
-                  {activeDetailsProduct.qr_code ? (
-                    <div className="flex flex-col items-center gap-1.5">
-                      <div className="w-24 h-24 bg-white border border-slate-200 flex items-center justify-center p-2 relative">
-                        <div className="grid grid-cols-8 gap-0.5 w-full h-full bg-slate-100 p-1">
-                          {Array.from({ length: 64 }).map((_, i) => {
-                            const isBlack = (i * 7 + 3) % 2 === 0 || 
-                                            (i < 8 && i % 3 === 0) || 
-                                            (i % 8 === 0 && i < 24) ||
-                                            (i > 40 && i % 2 === 1);
-                            return (
-                              <div key={i} className={`rounded-xs ${isBlack ? 'bg-slate-800' : 'bg-transparent'}`} />
-                            );
-                          })}
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="bg-white border border-slate-200 px-1 py-0.5 text-[6px] font-mono text-slate-800 rounded font-bold shadow-xs">
-                            TWIN
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-[9px] font-mono text-slate-500">{activeDetailsProduct.qr_code}</span>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-red-500 italic font-semibold">No QR code registered.</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-between items-center shrink-0">
-              <div className="flex gap-2">
-                {hasRole(['Administrator', 'Store Manager']) && (
-                  <button
-                    onClick={() => {
-                      openEditModal(activeDetailsProduct);
-                      setDetailsModalOpen(false);
-                    }}
-                    className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-semibold text-primary-600 transition-colors cursor-pointer flex items-center gap-1"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                    Edit Details
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    handleLocate(activeDetailsProduct);
-                    setDetailsModalOpen(false);
-                  }}
-                  className="px-4 py-2 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-lg text-xs font-semibold text-primary-700 transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <MapPin className="h-4 w-4" />
-                  Locate on Map
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  setDetailsModalOpen(false);
-                  setActiveDetailsProduct(null);
-                }}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Close Details
-              </button>
-            </div>
-          </div>
-        </div>
+        <ProductDetailsModal
+          product={activeDetailsProduct}
+          vendors={vendors}
+          onClose={() => {
+            setDetailsModalOpen(false);
+            setActiveDetailsProduct(null);
+          }}
+          onEdit={(product) => {
+            openEditModal(product);
+          }}
+          onLocate={(product) => {
+            handleLocate(product);
+          }}
+        />
       )}
     </div>
   );

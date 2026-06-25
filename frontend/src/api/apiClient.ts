@@ -45,6 +45,8 @@ export const apiClient = {
     list: () => request<any[]>('/products'),
     create: (body: any) => request<any>('/products', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number | string) => request<any>(`/products/${id}`, { method: 'DELETE' }),
+    fetchMpnDetails: (mpn: string) => request<any>(`/products/fetch-mpn-details?mpn=${encodeURIComponent(mpn)}`),
   },
   vendors: {
     list: () => request<any[]>('/vendors'),

@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { apiClient } from '../api/apiClient';
 import { 
   MapPin, 
   Box, 
@@ -48,42 +49,10 @@ interface RackData {
 const C3_RACK: RackData = {
   rack: 'C3', status: 'Normal', aisle: 'Aisle 2', zoneName: 'Zone C',
   shelves: [
-    {
-      shelf: 'Shelf 4', category: 'Accessories', occupancy: 68,
-      bins: [
-        { bin: 'C3-4-1', productName: 'Heat Shrink Tube', productCode: 'HST-001', category: 'Accessories', unit: 'meter', availableStock: 25, reservedStock: 5, totalStock: 30, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '25 m' },
-        { bin: 'C3-4-2', productName: 'Heat Shrink Tube', productCode: 'HST-002', category: 'Accessories', unit: 'meter', availableStock: 25, reservedStock: 0, totalStock: 25, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '25 m' },
-        { bin: 'C3-4-3', productName: 'Cable Tie', productCode: 'TIE-008', category: 'Accessories', unit: 'pcs', availableStock: 120, reservedStock: 30, totalStock: 150, image: 'https://images.unsplash.com/photo-1595079676339-1534801ad6cf?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Black, 8 Inch' },
-        { bin: 'C3-4-4', productName: 'Cable Tie', productCode: 'TIE-012', category: 'Accessories', unit: 'pcs', availableStock: 80, reservedStock: 10, totalStock: 90, image: 'https://images.unsplash.com/photo-1595079676339-1534801ad6cf?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Black, 12 Inch' }
-      ]
-    },
-    {
-      shelf: 'Shelf 3', category: 'Switchgear', occupancy: 50,
-      bins: [
-        { bin: 'C3-3-1', productName: 'MCB 16A 1P', productCode: 'ELEC-011', category: 'Electrical', unit: 'pcs', availableStock: 6, reservedStock: 2, totalStock: 8, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Schneider' },
-        { bin: 'C3-3-2', productName: 'MCB 20A 1P', productCode: 'ELEC-012', category: 'Electrical', unit: 'pcs', availableStock: 4, reservedStock: 0, totalStock: 4, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Schneider' },
-        { bin: 'C3-3-3', productName: 'MCB 32A 1P', productCode: 'ELEC-013', category: 'Electrical', unit: 'pcs', availableStock: 3, reservedStock: 1, totalStock: 4, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Schneider' },
-        { bin: 'C3-3-4', productName: 'MCB 40A 1P', productCode: 'ELEC-014', category: 'Electrical', unit: 'pcs', availableStock: 2, reservedStock: 0, totalStock: 2, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Schneider' }
-      ]
-    },
-    {
-      shelf: 'Shelf 2', category: 'Network Cables', occupancy: 40,
-      bins: [
-        { bin: 'C3-2-1', productName: 'CAT6 Cable', productCode: 'CAB-002', category: 'Cables', unit: 'Meter', availableStock: 50, reservedStock: 0, totalStock: 50, image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Blue' },
-        { bin: 'C3-2-2', productName: 'CAT6 Cable', productCode: 'CAB-001', category: 'Cables', unit: 'Meter', availableStock: 120, reservedStock: 20, totalStock: 140, image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Blue' },
-        { bin: 'C3-2-3', productName: 'CAT6 Cable', productCode: 'CAB-003', category: 'Cables', unit: 'Meter', availableStock: 75, reservedStock: 10, totalStock: 85, image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Gray' },
-        { bin: 'C3-2-4', productName: 'CAT6 Cable', productCode: 'CAB-004', category: 'Cables', unit: 'Meter', availableStock: 30, reservedStock: 5, totalStock: 35, image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: 'Black' }
-      ]
-    },
-    {
-      shelf: 'Shelf 1', category: 'Relays & Controls', occupancy: 35,
-      bins: [
-        { bin: 'C3-1-1', productName: 'Relay Module', productCode: 'REL-008', category: 'Electrical', unit: 'pcs', availableStock: 8, reservedStock: 2, totalStock: 10, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '24VDC' },
-        { bin: 'C3-1-2', productName: 'Relay Socket', productCode: 'REL-018', category: 'Electrical', unit: 'pcs', availableStock: 12, reservedStock: 0, totalStock: 12, image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '8 Pin' },
-        { bin: 'C3-1-3', productName: 'Terminal Block', productCode: 'TB-2.5', category: 'Electrical', unit: 'pcs', availableStock: 100, reservedStock: 20, totalStock: 120, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '2.5mm' },
-        { bin: 'C3-1-4', productName: 'Ferrule', productCode: 'FER-1.5', category: 'Electrical', unit: 'pcs', availableStock: 200, reservedStock: 50, totalStock: 250, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 12, nearestEntrance: 'Main Entrance', zone: 'Aisle 2', variant: '1.5mm' }
-      ]
-    }
+    { shelf: 'Shelf 4', category: 'Empty Shelf', occupancy: 0, bins: [] },
+    { shelf: 'Shelf 3', category: 'Empty Shelf', occupancy: 0, bins: [] },
+    { shelf: 'Shelf 2', category: 'Empty Shelf', occupancy: 0, bins: [] },
+    { shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }
   ]
 };
 
@@ -146,19 +115,8 @@ STATIC_MAP_RACKS.forEach((r) => {
     zoneName,
     hasFlame: 'hasFlame' in r ? r.hasFlame : undefined,
     shelves: [
-      {
-        shelf: 'Shelf 4', category: 'General Storage', occupancy: 40,
-        bins: [
-          { bin: `${rackCode}-4-1`, productName: `Spare Items ${rackCode} A`, productCode: `SP-${rackCode}-A`, category: 'Spares', unit: 'pcs', availableStock: 50, reservedStock: 10, totalStock: 60, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 10, nearestEntrance: 'Main Entrance', zone: aisle, variant: 'Standard' },
-          { bin: `${rackCode}-4-2`, productName: `Spare Items ${rackCode} B`, productCode: `SP-${rackCode}-B`, category: 'Spares', unit: 'pcs', availableStock: 25, reservedStock: 5, totalStock: 30, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 10, nearestEntrance: 'Main Entrance', zone: aisle, variant: 'Standard' }
-        ]
-      },
-      {
-        shelf: 'Shelf 3', category: 'General Storage', occupancy: 20,
-        bins: [
-          { bin: `${rackCode}-3-1`, productName: `Component ${rackCode}`, productCode: `COMP-${rackCode}`, category: 'Spares', unit: 'pcs', availableStock: 12, reservedStock: 0, totalStock: 12, image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop', walkingDistance: 10, nearestEntrance: 'Main Entrance', zone: aisle, variant: 'Type A' }
-        ]
-      },
+      { shelf: 'Shelf 4', category: 'Empty Shelf', occupancy: 0, bins: [] },
+      { shelf: 'Shelf 3', category: 'Empty Shelf', occupancy: 0, bins: [] },
       { shelf: 'Shelf 2', category: 'Empty Shelf', occupancy: 0, bins: [] },
       { shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }
     ]
@@ -170,6 +128,29 @@ export const StoreLayout: React.FC = () => {
   const [viewMode, setViewMode] = useState<'Map' | 'Rack'>('Map');
   const [zoomLevel, setZoomLevel] = useState(100);
 
+  const [products, setProducts] = useState<any[]>([]);
+  const [racks, setRacks] = useState<any[]>([]);
+  const [activeRackDetail, setActiveRackDetail] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [prodList, rackList] = await Promise.all([
+          apiClient.products.list(),
+          apiClient.layout.racks()
+        ]);
+        setProducts(prodList);
+        setRacks(rackList);
+      } catch (err) {
+        console.error("Failed to load layout/products", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
   const highlightRack = searchParams.get('rack');
   const highlightShelf = searchParams.get('shelf');
   const highlightBin = searchParams.get('bin');
@@ -179,9 +160,113 @@ export const StoreLayout: React.FC = () => {
     return searchParams.get('rack') || 'C3';
   }, [searchParams]);
 
-  const activeRack = useMemo(() => {
-    return WAREHOUSE_DATABASE[selectedRackCode] || WAREHOUSE_DATABASE['C3'];
+  useEffect(() => {
+    let active = true;
+    const loadRackDetail = async () => {
+      try {
+        const detail = await apiClient.layout.rackDetail(selectedRackCode);
+        if (active) {
+          setActiveRackDetail(detail);
+        }
+      } catch (err) {
+        console.error("Failed to load rack detail", err);
+      }
+    };
+    loadRackDetail();
+    return () => { active = false; };
   }, [selectedRackCode]);
+
+  const mappedActiveRack = useMemo(() => {
+    if (!activeRackDetail) return null;
+    
+    const rack = activeRackDetail.rack;
+    const isAisle1 = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'].includes(rack);
+    const isAisle2 = ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4'].includes(rack);
+    const isAisle3 = ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6'].includes(rack);
+    const aisle = isAisle1 ? 'Aisle 1' : isAisle2 ? 'Aisle 2' : isAisle3 ? 'Aisle 3' : 'Aisle 4';
+    
+    const sortedShelves = [...activeRackDetail.shelves].sort((a, b) => b.shelf.localeCompare(a.shelf));
+    
+    const shelves = sortedShelves.map((sh: any) => {
+      const bins = sh.bins.map((bn: any) => {
+        const content = bn.contents?.[0];
+        const prod = content ? products.find(p => p.id === content.product_id) : null;
+        
+        let status: 'Normal' | 'Low' | 'Out' = 'Normal';
+        if (prod) {
+          if (prod.status === 'OUT_OF_STOCK') status = 'Out';
+          else if (prod.status === 'LOW_STOCK' || prod.status === 'CRITICAL') status = 'Low';
+        }
+        
+        return {
+          bin: bn.bin,
+          productName: prod ? prod.name : 'Empty Bin',
+          productCode: prod ? prod.code : 'N/A',
+          category: prod ? prod.category : 'N/A',
+          unit: prod ? prod.unit : 'pcs',
+          availableStock: content ? content.quantity : 0,
+          reservedStock: 0,
+          totalStock: content ? content.quantity : 0,
+          image: prod ? (prod.image_url || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=150') : 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=150',
+          walkingDistance: isAisle1 ? 8 : isAisle2 ? 14 : isAisle3 ? 20 : 25,
+          nearestEntrance: isAisle1 ? 'Main Entrance' : 'Exit / Loading Dock',
+          zone: activeRackDetail.zone,
+          status
+        };
+      });
+      
+      const occupiedCount = bins.filter((b: any) => b.productCode !== 'N/A').length;
+      const occupancy = bins.length > 0 ? Math.round((occupiedCount / bins.length) * 100) : 0;
+      
+      return {
+        shelf: sh.shelf,
+        category: bins.length > 0 && occupiedCount > 0 ? bins.find((b: any) => b.productCode !== 'N/A')?.category || 'Empty' : 'Empty Shelf',
+        occupancy,
+        bins
+      };
+    });
+    
+    let status: 'Normal' | 'Low' | 'Out' = 'Normal';
+    const allBins = shelves.flatMap(s => s.bins);
+    if (allBins.some((b: any) => b.status === 'Out')) status = 'Out';
+    else if (allBins.some((b: any) => b.status === 'Low')) status = 'Low';
+    
+    return {
+      rack,
+      status,
+      aisle,
+      zoneName: activeRackDetail.zone,
+      shelves
+    };
+  }, [activeRackDetail, products]);
+
+  const activeRack = useMemo(() => {
+    if (mappedActiveRack) return mappedActiveRack;
+    return WAREHOUSE_DATABASE[selectedRackCode] || WAREHOUSE_DATABASE['C3'];
+  }, [mappedActiveRack, selectedRackCode]);
+
+  const dynamicMapRacks = useMemo(() => {
+    return STATIC_MAP_RACKS.map(staticRack => {
+      const dbRack = racks.find(rk => rk.rack === staticRack.rack);
+      let status: 'Normal' | 'Low' | 'Out' = 'Normal';
+      if (dbRack && dbRack.stored_items && dbRack.stored_items.length > 0) {
+        const rackProds = products.filter(p => dbRack.stored_items.includes(p.name));
+        if (rackProds.some(p => p.status === 'OUT_OF_STOCK')) {
+          status = 'Out';
+        } else if (rackProds.some(p => p.status === 'LOW_STOCK' || p.status === 'CRITICAL')) {
+          status = 'Low';
+        }
+      } else if (dbRack) {
+        status = 'Normal';
+      } else {
+        status = staticRack.status;
+      }
+      return {
+        ...staticRack,
+        status
+      };
+    });
+  }, [racks, products]);
 
   const selectedShelfIndex = useMemo(() => {
     const shelfParam = searchParams.get('shelf');
@@ -205,8 +290,8 @@ export const StoreLayout: React.FC = () => {
       return (selectedRackCode === 'C3' && selectedShelfIndex === 2) ? 1 : 0; // Default to Bin 2 for C3-Shelf2
     }
     const idx = activeShelf.bins.findIndex(
-      b => b.bin.toLowerCase().includes(binParam.toLowerCase()) || 
-           binParam.toLowerCase().includes(b.bin.toLowerCase())
+      (b: any) => b.bin.toLowerCase().includes(binParam.toLowerCase()) || 
+                  binParam.toLowerCase().includes(b.bin.toLowerCase())
     );
     return idx !== -1 ? idx : 0;
   }, [searchParams, activeShelf, selectedRackCode, selectedShelfIndex]);
@@ -322,7 +407,7 @@ export const StoreLayout: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-2.5">
-                          {STATIC_MAP_RACKS
+                          {dynamicMapRacks
                             .filter(r => r.aisle === aisleName)
                             .map((rackData) => {
                               const isSelected = selectedRackCode === rackData.rack;
@@ -442,7 +527,7 @@ export const StoreLayout: React.FC = () => {
 
                             {/* Bins Grid */}
                             <div className="flex-1 grid grid-cols-4 gap-3">
-                              {shelf.bins.map((bin, binIdx) => {
+                              {shelf.bins.map((bin: any, binIdx: number) => {
                                 const isBinSelected = selectedShelfIndex === shelfIdx && selectedBinIndex === binIdx;
                                 const isBinHighlighted = !!(highlightRack && highlightShelf && highlightBin &&
                                   selectedRackCode.toLowerCase() === highlightRack.toLowerCase() &&

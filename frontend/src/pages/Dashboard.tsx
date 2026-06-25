@@ -484,7 +484,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 text-left">
       {/* Clickable Quick-link KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {/* Store Health */}
         <button
           onClick={() => navigate('/products')}
@@ -572,29 +572,25 @@ export const Dashboard: React.FC = () => {
           </div>
         </button>
 
-        {/* Reserved Items */}
-        <button
-          onClick={() => navigate('/purchase')}
-          className="text-left bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
-        >
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Reserved Items</span>
-            <span className="text-2xl font-black text-slate-800 block">43</span>
-            <span className="text-[10px] text-slate-400 block font-medium">Quantity reserved</span>
-          </div>
-          <div className="bg-purple-50 text-purple-650 p-3.5 rounded-xl">
-            <Bookmark className="h-6 w-6" />
-          </div>
-        </button>
-
         {/* Active Projects */}
         <button
-          onClick={() => navigate('/layout')}
-          className="text-left bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+          onClick={() => navigate('/projects')}
+          className="text-left bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer md:col-span-2 lg:col-span-1"
         >
           <div className="space-y-1">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Active Projects</span>
-            <span className="text-2xl font-black text-slate-800 block">12</span>
+            <span className="text-2xl font-black text-slate-800 block">
+              {(() => {
+                try {
+                  const saved = localStorage.getItem('smart_store_projects_v2');
+                  if (saved) {
+                    const parsed = JSON.parse(saved);
+                    return parsed.filter((p: any) => p.status === 'Active').length;
+                  }
+                } catch (e) {}
+                return 0;
+              })()}
+            </span>
             <span className="text-[10px] text-slate-400 block font-medium">Currently active</span>
           </div>
           <div className="bg-cyan-50 text-cyan-600 p-3.5 rounded-xl">
@@ -736,41 +732,24 @@ export const Dashboard: React.FC = () => {
 
             {/* Category legends */}
             <div className="flex-1 pl-6 space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0"></span>
-                  <span className="font-medium text-slate-600">Electrical</span>
-                </div>
-                <span className="font-bold text-slate-700">4,125 (47.8%)</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0"></span>
-                  <span className="font-medium text-slate-600">Electronics</span>
-                </div>
-                <span className="font-bold text-slate-700">2,310 (26.8%)</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>
-                  <span className="font-medium text-slate-600">Mechanical</span>
-                </div>
-                <span className="font-bold text-slate-700">1,256 (14.6%)</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-purple-500 shrink-0"></span>
-                  <span className="font-medium text-slate-600">Tools</span>
-                </div>
-                <span className="font-bold text-slate-700">632 (7.3%)</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-slate-400 shrink-0"></span>
-                  <span className="font-medium text-slate-600">Others</span>
-                </div>
-                <span className="font-bold text-slate-700">300 (3.5%)</span>
-              </div>
+              {[
+                { name: 'Electrical', color: 'bg-blue-500', count: productsList.filter(p => p.category?.toLowerCase() === 'electrical').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
+                { name: 'Relay', color: 'bg-emerald-500', count: productsList.filter(p => p.category?.toLowerCase() === 'relay' || p.category?.toLowerCase() === 'relays').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
+                { name: 'Cable', color: 'bg-amber-500', count: productsList.filter(p => p.category?.toLowerCase() === 'cable' || p.category?.toLowerCase() === 'cables').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
+                { name: 'PLC', color: 'bg-purple-500', count: productsList.filter(p => p.category?.toLowerCase() === 'plc').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
+                { name: 'Others', color: 'bg-slate-400', count: productsList.filter(p => !['electrical', 'relay', 'relays', 'cable', 'cables', 'plc'].includes(p.category?.toLowerCase() || '')).reduce((sum, p) => sum + (p.current_quantity || 0), 0) }
+              ].map((cat) => {
+                const pct = totalStockAll > 0 ? ((cat.count / totalStockAll) * 100).toFixed(1) : '0.0';
+                return (
+                  <div key={cat.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${cat.color} shrink-0`}></span>
+                      <span className="font-medium text-slate-600">{cat.name}</span>
+                    </div>
+                    <span className="font-bold text-slate-700">{cat.count.toLocaleString()} ({pct}%)</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -788,13 +767,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           <div className="flex-1 space-y-3">
-            {[
-              { name: 'Delhi Test House (DTH)', count: 125 },
-              { name: 'Uma Polymers (UP)', count: 97 },
-              { name: 'EIC Project (EIC)', count: 76 },
-              { name: 'R&D Lab', count: 45 },
-              { name: 'Factory Automation (FA)', count: 32 }
-            ].map((proj, idx) => (
+            {([] as any[]).map((proj, idx) => (
               <div key={idx} className="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0 last:pb-0">
                 <div className="flex items-center gap-3">
                   <div className="bg-slate-50 p-2 border border-slate-100 rounded-lg text-slate-500">

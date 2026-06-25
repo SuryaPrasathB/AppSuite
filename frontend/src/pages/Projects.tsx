@@ -33,121 +33,16 @@ interface Project {
   endDate: string;
 }
 
-const initialProjects: Project[] = [
-  {
-    id: 1,
-    name: 'Delhi Test House (DTH)',
-    code: 'PRJ-001',
-    manager: 'Surya Kumar',
-    managerId: 'SK001',
-    status: 'Active',
-    progress: 75,
-    itemsIssued: 892,
-    itemsReturned: 512,
-    startDate: '2025-04-01',
-    endDate: '2025-06-30'
-  },
-  {
-    id: 2,
-    name: 'Uma Polymers (UP)',
-    code: 'PRJ-002',
-    manager: 'Karthik R',
-    managerId: 'KR002',
-    status: 'Active',
-    progress: 60,
-    itemsIssued: 612,
-    itemsReturned: 321,
-    startDate: '2025-03-15',
-    endDate: '2025-07-15'
-  },
-  {
-    id: 3,
-    name: 'EIC Project (EIC)',
-    code: 'PRJ-003',
-    manager: 'Vignesh S',
-    managerId: 'VS003',
-    status: 'Active',
-    progress: 80,
-    itemsIssued: 745,
-    itemsReturned: 436,
-    startDate: '2025-02-10',
-    endDate: '2025-08-10'
-  },
-  {
-    id: 4,
-    name: 'Factory Automation (FA)',
-    code: 'PRJ-004',
-    manager: 'Arun Prakash',
-    managerId: 'AP005',
-    status: 'On Hold',
-    progress: 35,
-    itemsIssued: 210,
-    itemsReturned: 75,
-    startDate: '2025-03-01',
-    endDate: ''
-  },
-  {
-    id: 5,
-    name: 'R&D Lab',
-    code: 'PRJ-005',
-    manager: 'Mohammed Ali',
-    managerId: 'MA004',
-    status: 'Active',
-    progress: 55,
-    itemsIssued: 278,
-    itemsReturned: 142,
-    startDate: '2025-04-05',
-    endDate: '2025-08-05'
-  },
-  {
-    id: 6,
-    name: 'Spare for Maintenance',
-    code: 'PRJ-006',
-    manager: 'Surya Kumar',
-    managerId: 'SK001',
-    status: 'Completed',
-    progress: 100,
-    itemsIssued: 265,
-    itemsReturned: 265,
-    startDate: '2025-01-01',
-    endDate: '2025-02-28'
-  },
-  {
-    id: 7,
-    name: 'Prototype Build',
-    code: 'PRJ-007',
-    manager: 'Karthik R',
-    managerId: 'KR002',
-    status: 'On Hold',
-    progress: 20,
-    itemsIssued: 98,
-    itemsReturned: 12,
-    startDate: '2025-05-10',
-    endDate: ''
-  },
-  {
-    id: 8,
-    name: 'Testing & Commissioning',
-    code: 'PRJ-008',
-    manager: 'Vignesh S',
-    managerId: 'VS003',
-    status: 'Cancelled',
-    progress: 10,
-    itemsIssued: 56,
-    itemsReturned: 5,
-    startDate: '2025-04-15',
-    endDate: ''
-  }
-];
+const initialProjects: Project[] = [];
 
 export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('smart_store_projects');
+    const saved = localStorage.getItem('smart_store_projects_v2');
     return saved ? JSON.parse(saved) : initialProjects;
   });
 
   useEffect(() => {
-    localStorage.setItem('smart_store_projects', JSON.stringify(projects));
+    localStorage.setItem('smart_store_projects_v2', JSON.stringify(projects));
   }, [projects]);
 
   // Filters & State

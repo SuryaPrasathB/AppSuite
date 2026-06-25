@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown } from 'lucide-react';
+import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/apiClient';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -73,20 +73,42 @@ export const Header: React.FC = () => {
     }
     const q = query.toLowerCase();
     const filtered = products.filter(
-      p => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
+      p => 
+        (p.name || '').toLowerCase().includes(q) || 
+        (p.code || '').toLowerCase().includes(q) ||
+        (p.category || '').toLowerCase().includes(q) ||
+        (p.barcode || '').toLowerCase().includes(q)
     );
     setFilteredProducts(filtered);
   }, [query, products]);
 
-  // Handle click outside to close dropdown
+  // Handle click outside to close dropdown and Ctrl+K shortcut
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
+    
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+        event.preventDefault();
+        const inputElement = dropdownRef.current?.querySelector('input');
+        if (inputElement) {
+          inputElement.focus();
+        }
+      }
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const handleProductSelect = (product: any) => {
@@ -121,12 +143,27 @@ export const Header: React.FC = () => {
               setIsOpen(true);
             }}
             onFocus={() => setIsOpen(true)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-16 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-all text-slate-800"
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-24 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all text-slate-800"
           />
           <Search className="absolute left-3 top-2.5 h-4.5 w-4.5 text-slate-400" />
-          <kbd className="absolute right-3 top-2 px-1.5 py-0.5 text-[10px] font-medium text-slate-450 bg-white border border-slate-200 rounded shadow-xs select-none">
-            Ctrl + K
-          </kbd>
+          
+          <div className="absolute right-2 top-2 flex items-center space-x-2">
+            {query && (
+              <button 
+                onClick={() => {
+                  setQuery('');
+                  setIsOpen(false);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer flex items-center justify-center bg-slate-200 hover:bg-slate-300 rounded-full"
+                title="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-slate-450 bg-white border border-slate-200 rounded shadow-xs select-none hidden sm:block">
+              Ctrl + K
+            </kbd>
+          </div>
         </div>
 
         {/* Autocomplete Dropdown */}

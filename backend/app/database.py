@@ -1,711 +1,674 @@
 import sys
 import json
+import mysql.connector
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from app.config import settings
 
-# Initialize Supabase client if credentials are provided
-supabase_client = None
-if not settings.use_mock_db:
-    try:
-        from supabase import create_client, Client
-        supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-        print("Connected to Supabase successfully!")
-    except Exception as e:
-        print(f"Error initializing Supabase client: {e}. Falling back to Mock DB.", file=sys.stderr)
+def get_db_connection():
+    return mysql.connector.connect(
+        host=settings.MYSQL_HOST,
+        user=settings.MYSQL_USER,
+        password=settings.MYSQL_PASSWORD,
+        database=settings.MYSQL_DATABASE
+    )
 
-# ==========================================
-# MOCK DATABASE STORE (FALLBACK & SEED DATA)
-# ==========================================
-
-mock_vendors: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "name": "Siemens Industrial Electrics Ltd",
-        "contact_person": "Aditya Sharma",
-        "phone": "+91 98765 43210",
-        "email": "sales@siemens-industrial.in",
-        "address": "Tech Park, Block B, Bengaluru, KA",
-        "gst_number": "29AAAAA1111A1Z1",
-        "is_preferred": True,
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 2,
-        "name": "SKF Bearings India Co",
-        "contact_person": "Neha Patel",
-        "phone": "+91 87654 32109",
-        "email": "support@skf-bearings.co.in",
-        "address": "GIDC Industrial Estate, Vadodara, GJ",
-        "gst_number": "24BBBBB2222B2Z2",
-        "is_preferred": False,
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 3,
-        "name": "PackWell Box & Cartons Co",
-        "contact_person": "Rajesh Kumar",
-        "phone": "+91 76543 21098",
-        "email": "order@packwell.co.in",
-        "address": "Okhla Industrial Area, Phase-III, New Delhi",
-        "gst_number": "07CCCCC3333C3Z3",
-        "is_preferred": True,
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 4,
-        "name": "Apex Hydraulics Ltd",
-        "contact_person": "Vikram Singh",
-        "phone": "+91 99988 77766",
-        "email": "contact@apex-hydraulics.com",
-        "address": "Ambattur Industrial Estate, Chennai, TN",
-        "gst_number": "33DDDDD4444D4Z4",
-        "is_preferred": False,
-        "created_at": datetime.now().isoformat()
-    }
-]
-
-mock_products: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "code": "ELEC-001",
-        "name": "MCB 16A Single Pole",
-        "description": "Siemens high-performance single pole MCB for industrial lighting circuits.",
-        "category": "Electrical",
-        "unit": "pcs",
-        "min_quantity": 10.00,
-        "max_quantity": 100.00,
-        "barcode": "8901072001147",
-        "qr_code": "ELEC001QR",
-        "image_url": "https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop",
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 2,
-        "code": "ELEC-002",
-        "name": "MCB 32A Double Pole",
-        "description": "Siemens double pole circuit breaker for power distribution boards.",
-        "category": "Electrical",
-        "unit": "pcs",
-        "min_quantity": 15.00,
-        "max_quantity": 120.00,
-        "barcode": "8901072001154",
-        "qr_code": "ELEC002QR",
-        "image_url": "https://images.unsplash.com/photo-1616401784845-180882ba9ba8?q=80&w=200&auto=format&fit=crop",
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 3,
-        "code": "MECH-001",
-        "name": "Ball Bearing 6204-2RSH",
-        "description": "SKF deep groove ball bearing with rubber seals on both sides.",
-        "category": "Mechanical",
-        "unit": "pcs",
-        "min_quantity": 20.00,
-        "max_quantity": 150.00,
-        "barcode": "7316576620478",
-        "qr_code": "MECH001QR",
-        "image_url": "https://images.unsplash.com/photo-1530124560072-aab8cf10d598?q=80&w=200&auto=format&fit=crop",
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 4,
-        "code": "MECH-002",
-        "name": "Shaft Coupling D25 L30",
-        "description": "Flexible spider jaw coupling, diameter 25mm, length 30mm.",
-        "category": "Mechanical",
-        "unit": "pcs",
-        "min_quantity": 10.00,
-        "max_quantity": 80.00,
-        "barcode": "8902341234567",
-        "qr_code": "MECH002QR",
-        "image_url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=200&auto=format&fit=crop",
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "id": 5,
-        "code": "PACK-001",
-        "name": "Carton Box Medium (5ply)",
-        "description": "Heavy-duty 5-ply corrugated carton box for heavy material packing.",
-        "category": "Packaging",
-        "unit": "pcs",
-        "min_quantity": 50.00,
-        "max_quantity": 500.00,
-        "barcode": "8904561239871",
-        "qr_code": "PACK001QR",
-        "image_url": "https://images.unsplash.com/photo-1595079676339-1534801ad6cf?q=80&w=200&auto=format&fit=crop",
-        "created_at": datetime.now().isoformat()
-    }
-]
-
-mock_product_vendors: List[Dict[str, Any]] = [
-    {"product_id": 1, "vendor_id": 1, "is_preferred": True},
-    {"product_id": 2, "vendor_id": 1, "is_preferred": True},
-    {"product_id": 3, "vendor_id": 2, "is_preferred": True},
-    {"product_id": 4, "vendor_id": 2, "is_preferred": False},
-    {"product_id": 4, "vendor_id": 4, "is_preferred": True},
-    {"product_id": 5, "vendor_id": 3, "is_preferred": True}
-]
-
-mock_locations: List[Dict[str, Any]] = [
-    {"id": 1, "zone": "Zone A", "rack": "A1", "shelf": "Shelf 1", "bin": "Bin 1", "row_index": 0, "col_index": 0},
-    {"id": 2, "zone": "Zone A", "rack": "A1", "shelf": "Shelf 1", "bin": "Bin 2", "row_index": 0, "col_index": 0},
-    {"id": 3, "zone": "Zone A", "rack": "A1", "shelf": "Shelf 2", "bin": "Bin 1", "row_index": 0, "col_index": 0},
-    {"id": 4, "zone": "Zone A", "rack": "A2", "shelf": "Shelf 2", "bin": "Bin 1", "row_index": 0, "col_index": 1},
-    {"id": 5, "zone": "Zone A", "rack": "A2", "shelf": "Shelf 2", "bin": "Bin 2", "row_index": 0, "col_index": 1},
-    {"id": 6, "zone": "Zone A", "rack": "A3", "shelf": "Shelf 1", "bin": "Bin 1", "row_index": 0, "col_index": 2},
-    {"id": 7, "zone": "Zone A", "rack": "A4", "shelf": "Shelf 3", "bin": "Bin 2", "row_index": 0, "col_index": 3},
-    
-    {"id": 8, "zone": "Zone B", "rack": "B1", "shelf": "Shelf 3", "bin": "Bin 2", "row_index": 1, "col_index": 0},
-    {"id": 9, "zone": "Zone B", "rack": "B1", "shelf": "Shelf 1", "bin": "Bin 1", "row_index": 1, "col_index": 0},
-    {"id": 10, "zone": "Zone B", "rack": "B2", "shelf": "Shelf 1", "bin": "Bin 1", "row_index": 1, "col_index": 1},
-    {"id": 11, "zone": "Zone B", "rack": "B3", "shelf": "Shelf 2", "bin": "Bin 1", "row_index": 1, "col_index": 2},
-    {"id": 12, "zone": "Zone B", "rack": "B4", "shelf": "Shelf 3", "bin": "Bin 1", "row_index": 1, "col_index": 3},
-    
-    {"id": 13, "zone": "Zone C", "rack": "C1", "shelf": "Shelf 1", "bin": "Bin 1", "row_index": 2, "col_index": 0},
-    {"id": 14, "zone": "Zone C", "rack": "C2", "shelf": "Shelf 2", "bin": "Bin 1", "row_index": 2, "col_index": 1},
-    {"id": 15, "zone": "Zone C", "rack": "C3", "shelf": "Shelf 3", "bin": "Bin 1", "row_index": 2, "col_index": 2},
-    {"id": 16, "zone": "Zone C", "rack": "C4", "shelf": "Shelf 1", "bin": "Bin 2", "row_index": 2, "col_index": 3}
-]
-
-mock_product_locations: List[Dict[str, Any]] = [
-    {"product_id": 1, "location_id": 1, "quantity": 45.00},
-    {"product_id": 1, "location_id": 3, "quantity": 20.00},
-    {"product_id": 2, "location_id": 4, "quantity": 8.00},
-    {"product_id": 3, "location_id": 8, "quantity": 5.00},
-    {"product_id": 4, "location_id": 10, "quantity": 12.00},
-    {"product_id": 5, "location_id": 13, "quantity": 0.00}
-]
-
-mock_inventory_transactions: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Surya (Admin)",
-        "user_role": "Administrator",
-        "product_id": 1,
-        "quantity": 50.00,
-        "action": "STOCK_IN",
-        "from_location_id": None,
-        "to_location_id": 1,
-        "remarks": "Initial batch intake for MCB 16A"
-    },
-    {
-        "id": 2,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Surya (Admin)",
-        "user_role": "Administrator",
-        "product_id": 1,
-        "quantity": 5.00,
-        "action": "STOCK_OUT",
-        "from_location_id": 1,
-        "to_location_id": None,
-        "remarks": "Issued 5 units to Maintenance Team"
-    },
-    {
-        "id": 3,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Adarsh (Store Manager)",
-        "user_role": "Store Manager",
-        "product_id": 1,
-        "quantity": 20.00,
-        "action": "TRANSFER",
-        "from_location_id": 1,
-        "to_location_id": 3,
-        "remarks": "Transfer for display shelf stock balancing"
-    },
-    {
-        "id": 4,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Adarsh (Store Manager)",
-        "user_role": "Store Manager",
-        "product_id": 2,
-        "quantity": 10.00,
-        "action": "STOCK_IN",
-        "from_location_id": None,
-        "to_location_id": 4,
-        "remarks": "Intake of MCB 32A"
-    },
-    {
-        "id": 5,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Adarsh (Store Manager)",
-        "user_role": "Store Manager",
-        "product_id": 2,
-        "quantity": 2.00,
-        "action": "STOCK_OUT",
-        "from_location_id": 4,
-        "to_location_id": None,
-        "remarks": "Replaced burnt out breaker in panel 4"
-    },
-    {
-        "id": 6,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Rahul (Operator)",
-        "user_role": "Store Operator",
-        "product_id": 3,
-        "quantity": 5.00,
-        "action": "STOCK_IN",
-        "from_location_id": None,
-        "to_location_id": 8,
-        "remarks": "Received from SKF"
-    },
-    {
-        "id": 7,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Rahul (Operator)",
-        "user_role": "Store Operator",
-        "product_id": 4,
-        "quantity": 15.00,
-        "action": "STOCK_IN",
-        "from_location_id": None,
-        "to_location_id": 10,
-        "remarks": "Received from Apex"
-    },
-    {
-        "id": 8,
-        "created_at": datetime.now().isoformat(),
-        "user_name": "Rahul (Operator)",
-        "user_role": "Store Operator",
-        "product_id": 4,
-        "quantity": 3.00,
-        "action": "STOCK_OUT",
-        "from_location_id": 10,
-        "to_location_id": None,
-        "remarks": "Used in conveyor assembly line"
-    }
-]
-
-mock_purchase_requests: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "created_at": datetime.now().isoformat(),
-        "requester": "Adarsh (Store Manager)",
-        "status": "PENDING",
-        "remarks": "Urgent request for prototype component assembly",
-        "approved_at": None,
-        "delivered_at": None,
-        "change_remarks": None,
-        "items": json.dumps([
-            {"name": "USB-C Interface Board", "code": "REQ-001", "category": "Electrical", "unit": "pcs", "quantity": 30.00},
-            {"name": "Aluminum Bracket M5", "code": "REQ-002", "category": "Mechanical", "unit": "pcs", "quantity": 15.00}
-        ]),
-        "history_logs": json.dumps([
-            {"timestamp": datetime.now().isoformat(), "user": "Adarsh (Store Manager)", "action": "Raised request for new products"}
-        ])
-    },
-    {
-        "id": 2,
-        "created_at": datetime.now().isoformat(),
-        "requester": "Vikram (Purchase Team)",
-        "status": "APPROVED",
-        "remarks": "Order placed for custom packaging trials",
-        "approved_at": datetime.now().isoformat(),
-        "delivered_at": None,
-        "change_remarks": "Approved after confirmation",
-        "items": json.dumps([
-            {"name": "Heavy Duty Box 10ply", "code": "REQ-003", "category": "Packaging", "unit": "pcs", "quantity": 50.00}
-        ]),
-        "history_logs": json.dumps([
-            {"timestamp": datetime.now().isoformat(), "user": "Vikram (Purchase Team)", "action": "Raised request for custom packaging"},
-            {"timestamp": datetime.now().isoformat(), "user": "Vikram (Purchase Team)", "action": "Approved request items"}
-        ])
-    }
-]
-
-# Database helper functions to access tables uniformly in routers
 class DBStore:
     @staticmethod
     def get_vendors() -> List[Dict[str, Any]]:
-        return mock_vendors
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM vendors")
+        vendors = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        # Convert datetime to string
+        for v in vendors:
+            if v.get('created_at'):
+                v['created_at'] = v['created_at'].isoformat()
+            # MySQL boolean comes back as 1 or 0
+            v['is_preferred'] = bool(v.get('is_preferred'))
+        return vendors
 
     @staticmethod
     def add_vendor(vendor: Dict[str, Any]) -> Dict[str, Any]:
-        vendor["id"] = max([v["id"] for v in mock_vendors] or [0]) + 1
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO vendors (name, contact_person, phone, email, address, gst_number, is_preferred)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            vendor.get("name"), vendor.get("contact_person"), vendor.get("phone"),
+            vendor.get("email"), vendor.get("address"), vendor.get("gst_number"),
+            1 if vendor.get("is_preferred") else 0
+        )
+        cursor.execute(query, values)
+        conn.commit()
+        vendor["id"] = cursor.lastrowid
         vendor["created_at"] = datetime.now().isoformat()
-        mock_vendors.append(vendor)
+        cursor.close()
+        conn.close()
         return vendor
 
     @staticmethod
     def update_vendor(vendor_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-        for v in mock_vendors:
-            if v["id"] == vendor_id:
-                v["name"] = data.get("name", v["name"])
-                v["contact_person"] = data.get("contact_person", v["contact_person"])
-                v["phone"] = data.get("phone", v["phone"])
-                v["email"] = data.get("email", v["email"])
-                v["address"] = data.get("address", v["address"])
-                v["gst_number"] = data.get("gst_number", v["gst_number"])
-                v["is_preferred"] = data.get("is_preferred", v["is_preferred"])
-                return v
-        raise ValueError(f"Vendor ID {vendor_id} not found.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        for key in ["name", "contact_person", "phone", "email", "address", "gst_number"]:
+            if key in data:
+                updates.append(f"{key} = %s")
+                values.append(data[key])
+        
+        if "is_preferred" in data:
+            updates.append("is_preferred = %s")
+            values.append(1 if data["is_preferred"] else 0)
+            
+        if not updates:
+            return data
+            
+        values.append(vendor_id)
+        query = f"UPDATE vendors SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM vendors WHERE id = %s", (vendor_id,))
+        v = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if v and v.get('created_at'):
+            v['created_at'] = v['created_at'].isoformat()
+        if v:
+            v['is_preferred'] = bool(v.get('is_preferred'))
+        return v
 
     @staticmethod
     def get_products() -> List[Dict[str, Any]]:
-        products_enriched = []
-        for p in mock_products:
-            total_qty = sum(pl["quantity"] for pl in mock_product_locations if pl["product_id"] == p["id"])
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT p.*, 
+                   COALESCE(SUM(pl.quantity), 0) as current_quantity
+            FROM products p
+            LEFT JOIN product_locations pl ON p.id = pl.product_id
+            GROUP BY p.id
+        """)
+        products = cursor.fetchall()
+        
+        cursor.execute("SELECT * FROM product_vendors")
+        all_pvs = cursor.fetchall()
+        
+        cursor.execute("SELECT * FROM vendors")
+        vendors_map = {v["id"]: v["name"] for v in cursor.fetchall()}
+        
+        cursor.execute("""
+            SELECT pl.*, l.zone, l.rack, l.shelf, l.bin, l.row_index, l.col_index 
+            FROM product_locations pl 
+            JOIN locations l ON pl.location_id = l.id
+        """)
+        all_pls = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        for p in products:
+            if p.get('created_at'):
+                p['created_at'] = p['created_at'].isoformat()
+            
+            p['min_quantity'] = float(p['min_quantity'] or 0)
+            p['max_quantity'] = float(p['max_quantity'] or 0)
+            total_qty = float(p['current_quantity'] or 0)
+            p['current_quantity'] = total_qty
             
             if total_qty == 0:
-                status = "OUT_OF_STOCK"
+                p['status'] = "OUT_OF_STOCK"
             elif total_qty < p["min_quantity"] * 0.5:
-                status = "CRITICAL"
+                p['status'] = "CRITICAL"
             elif total_qty < p["min_quantity"]:
-                status = "LOW_STOCK"
+                p['status'] = "LOW_STOCK"
             else:
-                status = "HEALTHY"
+                p['status'] = "HEALTHY"
                 
-            # Preferred Vendor
-            pref_vendor_id = next((pv["vendor_id"] for pv in mock_product_vendors if pv["product_id"] == p["id"] and pv["is_preferred"]), None)
-            pref_vendor = next((v["name"] for v in mock_vendors if v["id"] == pref_vendor_id), "N/A")
+            p_vendors = [pv for pv in all_pvs if pv["product_id"] == p["id"]]
+            pref_pv = next((pv for pv in p_vendors if pv["is_preferred"]), None)
             
-            # Map of associated vendor IDs
-            associated_vendor_ids = [pv["vendor_id"] for pv in mock_product_vendors if pv["product_id"] == p["id"]]
+            p['preferred_vendor_id'] = pref_pv["vendor_id"] if pref_pv else None
+            p['preferred_vendor'] = vendors_map.get(p['preferred_vendor_id'], "N/A") if pref_pv else "N/A"
+            p['vendor_ids'] = [pv["vendor_id"] for pv in p_vendors]
             
-            prod_locs = []
-            for pl in mock_product_locations:
-                if pl["product_id"] == p["id"]:
-                    loc = next((l for l in mock_locations if l["id"] == pl["location_id"]), None)
-                    if loc:
-                        prod_locs.append({
-                            "location_id": loc["id"],
-                            "zone": loc["zone"],
-                            "rack": loc["rack"],
-                            "shelf": loc["shelf"],
-                            "bin": loc["bin"],
-                            "row_index": loc["row_index"],
-                            "col_index": loc["col_index"],
-                            "quantity": pl["quantity"]
-                        })
-
-            products_enriched.append({
-                **p,
-                "current_quantity": total_qty,
-                "status": status,
-                "preferred_vendor": pref_vendor,
-                "preferred_vendor_id": pref_vendor_id,
-                "vendor_ids": associated_vendor_ids,
-                "locations": prod_locs
-            })
-        return products_enriched
+            p['locations'] = [
+                {
+                    "location_id": pl["location_id"],
+                    "zone": pl["zone"],
+                    "rack": pl["rack"],
+                    "shelf": pl["shelf"],
+                    "bin": pl["bin"],
+                    "row_index": pl["row_index"],
+                    "col_index": pl["col_index"],
+                    "quantity": float(pl["quantity"])
+                }
+                for pl in all_pls if pl["product_id"] == p["id"]
+            ]
+            
+        return products
 
     @staticmethod
     def add_product(product: Dict[str, Any]) -> Dict[str, Any]:
-        product["id"] = max([p["id"] for p in mock_products] or [0]) + 1
-        product["created_at"] = datetime.now().isoformat()
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
         
-        # Pull custom vendor keys if they were passed
-        vendor_ids = product.pop("vendor_ids", [])
-        preferred_vendor_id = product.pop("preferred_vendor_id", None)
+        query = """
+            INSERT INTO products (code, name, description, category, unit, min_quantity, max_quantity, barcode, qr_code, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            product.get("code"), product.get("name"), product.get("description"),
+            product.get("category"), product.get("unit", "pcs"), 
+            product.get("min_quantity", 0), product.get("max_quantity", 0),
+            product.get("barcode", ""), product.get("qr_code", ""), product.get("image_url", "")
+        )
+        cursor.execute(query, values)
+        p_id = cursor.lastrowid
+        product["id"] = p_id
         
-        mock_products.append(product)
+        vendor_ids = product.get("vendor_ids", [])
+        preferred_vendor_id = product.get("preferred_vendor_id")
         
-        # Save vendor mappings
-        for v_id in vendor_ids:
-            mock_product_vendors.append({
-                "product_id": product["id"],
-                "vendor_id": v_id,
-                "is_preferred": (v_id == preferred_vendor_id)
-            })
+        if vendor_ids:
+            pv_query = "INSERT INTO product_vendors (product_id, vendor_id, is_preferred) VALUES (%s, %s, %s)"
+            pv_values = [(p_id, v_id, 1 if v_id == preferred_vendor_id else 0) for v_id in vendor_ids]
+            cursor.executemany(pv_query, pv_values)
             
+        # Try to parse location from description and map it
+        description = product.get("description")
+        if description:
+            try:
+                desc_data = json.loads(description)
+                store_info = desc_data.get("store", {})
+                zone = store_info.get("zone")
+                rack = store_info.get("rack")
+                shelf = store_info.get("shelf")
+                bin_name = store_info.get("bin")
+                
+                if rack and shelf:
+                    if not bin_name:
+                        bin_name = "Bin 1"
+                    if not zone:
+                        isAisle1 = rack in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2']
+                        isAisle2 = rack in ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4']
+                        isAisle3 = rack in ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6']
+                        zone = 'Zone A' if isAisle1 else 'Zone B' if isAisle2 else 'Zone C' if isAisle3 else 'Zone D'
+                    
+                    row_idx = 0
+                    col_idx = 0
+                    if rack.startswith('B'):
+                        row_idx = 1
+                    elif rack.startswith('C'):
+                        row_idx = 2
+                    elif rack.startswith('D'):
+                        row_idx = 3
+                    
+                    try:
+                        col_idx = int(rack[1:]) - 1
+                    except Exception:
+                        pass
+                        
+                    if not shelf.startswith("Shelf "):
+                        shelf = f"Shelf {shelf}"
+                    if not bin_name.startswith("Bin "):
+                        bin_name = f"Bin {bin_name}"
+                        
+                    cursor.execute("SELECT id FROM locations WHERE zone = %s AND rack = %s AND shelf = %s AND bin = %s", (zone, rack, shelf, bin_name))
+                    loc_row = cursor.fetchone()
+                    if loc_row:
+                        loc_id = loc_row["id"]
+                    else:
+                        cursor.execute("""
+                            INSERT INTO locations (zone, rack, shelf, bin, row_index, col_index)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (zone, rack, shelf, bin_name, row_idx, col_idx))
+                        loc_id = cursor.lastrowid
+                        
+                    cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, 0.00)", (p_id, loc_id))
+            except Exception as e:
+                print("Error mapping product location during add:", e, file=sys.stderr)
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+        product["created_at"] = datetime.now().isoformat()
         return product
 
     @staticmethod
     def update_product(product_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-        target_p = None
-        for p in mock_products:
-            if p["id"] == product_id:
-                p["code"] = data.get("code", p["code"])
-                p["name"] = data.get("name", p["name"])
-                p["description"] = data.get("description", p["description"])
-                p["category"] = data.get("category", p["category"])
-                p["unit"] = data.get("unit", p["unit"])
-                p["min_quantity"] = float(data.get("min_quantity", p["min_quantity"]))
-                p["max_quantity"] = float(data.get("max_quantity", p["max_quantity"]))
-                p["barcode"] = data.get("barcode", p["barcode"])
-                p["qr_code"] = data.get("qr_code", p["qr_code"])
-                p["image_url"] = data.get("image_url", p["image_url"])
-                target_p = p
-                break
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        fields = ["code", "name", "description", "category", "unit", "min_quantity", "max_quantity", "barcode", "qr_code", "image_url"]
+        for key in fields:
+            if key in data:
+                updates.append(f"{key} = %s")
+                values.append(data[key])
                 
-        if not target_p:
-            raise ValueError(f"Product ID {product_id} not found.")
-
-        # Re-map vendors
-        vendor_ids = data.get("vendor_ids", [])
-        preferred_vendor_id = data.get("preferred_vendor_id", None)
-        
-        # Clear previous vendor mappings
-        global mock_product_vendors
-        mock_product_vendors = [pv for pv in mock_product_vendors if pv["product_id"] != product_id]
-        
-        # Insert updated vendor mappings
-        for v_id in vendor_ids:
-            mock_product_vendors.append({
-                "product_id": product_id,
-                "vendor_id": v_id,
-                "is_preferred": (v_id == preferred_vendor_id)
-            })
+        if updates:
+            values.append(product_id)
+            query = f"UPDATE products SET {', '.join(updates)} WHERE id = %s"
+            cursor.execute(query, values)
             
-        return target_p
+        if "vendor_ids" in data:
+            cursor.execute("DELETE FROM product_vendors WHERE product_id = %s", (product_id,))
+            vendor_ids = data["vendor_ids"]
+            preferred_vendor_id = data.get("preferred_vendor_id")
+            if vendor_ids:
+                pv_query = "INSERT INTO product_vendors (product_id, vendor_id, is_preferred) VALUES (%s, %s, %s)"
+                pv_values = [(product_id, v_id, 1 if v_id == preferred_vendor_id else 0) for v_id in vendor_ids]
+                cursor.executemany(pv_query, pv_values)
+                
+        # Try to parse location from description and map it
+        if "description" in data:
+            description = data["description"]
+            if description:
+                try:
+                    desc_data = json.loads(description)
+                    store_info = desc_data.get("store", {})
+                    zone = store_info.get("zone")
+                    rack = store_info.get("rack")
+                    shelf = store_info.get("shelf")
+                    bin_name = store_info.get("bin")
+                    
+                    if rack and shelf:
+                        if not bin_name:
+                            bin_name = "Bin 1"
+                        if not zone:
+                            isAisle1 = rack in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2']
+                            isAisle2 = rack in ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4']
+                            isAisle3 = rack in ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6']
+                            zone = 'Zone A' if isAisle1 else 'Zone B' if isAisle2 else 'Zone C' if isAisle3 else 'Zone D'
+                        
+                        row_idx = 0
+                        col_idx = 0
+                        if rack.startswith('B'):
+                            row_idx = 1
+                        elif rack.startswith('C'):
+                            row_idx = 2
+                        elif rack.startswith('D'):
+                            row_idx = 3
+                        
+                        try:
+                            col_idx = int(rack[1:]) - 1
+                        except Exception:
+                            pass
+                            
+                        if not shelf.startswith("Shelf "):
+                            shelf = f"Shelf {shelf}"
+                        if not bin_name.startswith("Bin "):
+                            bin_name = f"Bin {bin_name}"
+                            
+                        cursor.execute("SELECT id FROM locations WHERE zone = %s AND rack = %s AND shelf = %s AND bin = %s", (zone, rack, shelf, bin_name))
+                        loc_row = cursor.fetchone()
+                        if loc_row:
+                            loc_id = loc_row["id"]
+                        else:
+                            cursor.execute("""
+                                INSERT INTO locations (zone, rack, shelf, bin, row_index, col_index)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                            """, (zone, rack, shelf, bin_name, row_idx, col_idx))
+                            loc_id = cursor.lastrowid
+                            
+                        cursor.execute("SELECT location_id FROM product_locations WHERE product_id = %s", (product_id,))
+                        existing_pls = [r["location_id"] for r in cursor.fetchall()]
+                        if loc_id not in existing_pls:
+                            cursor.execute("DELETE FROM product_locations WHERE product_id = %s AND quantity = 0", (product_id,))
+                            cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, 0.00)", (product_id, loc_id))
+                except Exception as e:
+                    print("Error mapping product location during update:", e, file=sys.stderr)
+                    
+        conn.commit()
+        cursor.execute("SELECT * FROM products WHERE id = %s", (product_id,))
+        p = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if p and p.get('created_at'):
+            p['created_at'] = p['created_at'].isoformat()
+            p['min_quantity'] = float(p['min_quantity'] or 0)
+            p['max_quantity'] = float(p['max_quantity'] or 0)
+        return p
+
+    @staticmethod
+    def delete_product(product_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
 
     @staticmethod
     def get_locations() -> List[Dict[str, Any]]:
-        return mock_locations
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM locations")
+        locs = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for l in locs:
+            if l.get('created_at'):
+                l['created_at'] = l['created_at'].isoformat()
+        return locs
 
     @staticmethod
     def get_product_locations() -> List[Dict[str, Any]]:
-        return mock_product_locations
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM product_locations")
+        pls = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for pl in pls:
+            pl['quantity'] = float(pl['quantity'])
+        return pls
 
     @staticmethod
     def update_product_location(product_id: int, location_id: int, quantity_delta: float) -> float:
-        for pl in mock_product_locations:
-            if pl["product_id"] == product_id and pl["location_id"] == location_id:
-                pl["quantity"] = max(0.0, pl["quantity"] + quantity_delta)
-                return pl["quantity"]
-        new_pl = {"product_id": product_id, "location_id": location_id, "quantity": max(0.0, quantity_delta)}
-        mock_product_locations.append(new_pl)
-        return new_pl["quantity"]
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT quantity FROM product_locations WHERE product_id = %s AND location_id = %s", (product_id, location_id))
+        row = cursor.fetchone()
+        
+        if row:
+            new_qty = max(0.0, float(row["quantity"]) + quantity_delta)
+            cursor.execute("UPDATE product_locations SET quantity = %s WHERE product_id = %s AND location_id = %s", (new_qty, product_id, location_id))
+        else:
+            new_qty = max(0.0, quantity_delta)
+            cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, %s)", (product_id, location_id, new_qty))
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return new_qty
 
     @staticmethod
     def bulk_stock_out(stock_outs: List[Dict[str, Any]], user_name: str, user_role: str, recipient: str, remarks: Optional[str] = None) -> List[Dict[str, Any]]:
-        # Validate stock availability first
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
         for item in stock_outs:
-            p_id = item["product_id"]
-            loc_id = item["location_id"]
-            qty = item["quantity"]
-            
-            pl_record = next((pl for pl in mock_product_locations if pl["product_id"] == p_id and pl["location_id"] == loc_id), None)
-            current_qty = pl_record["quantity"] if pl_record else 0.0
-            
-            if current_qty < qty:
-                prod = next((p for p in mock_products if p["id"] == p_id), {"name": f"ID {p_id}"})
-                raise ValueError(f"Insufficient stock for '{prod['name']}'. Available: {current_qty}, Requested: {qty}.")
+            cursor.execute("SELECT quantity FROM product_locations WHERE product_id = %s AND location_id = %s", (item["product_id"], item["location_id"]))
+            row = cursor.fetchone()
+            current_qty = float(row["quantity"]) if row else 0.0
+            if current_qty < item["quantity"]:
+                cursor.execute("SELECT name FROM products WHERE id = %s", (item["product_id"],))
+                p = cursor.fetchone()
+                p_name = p["name"] if p else f"ID {item['product_id']}"
+                cursor.close()
+                conn.close()
+                raise ValueError(f"Insufficient stock for '{p_name}'. Available: {current_qty}, Requested: {item['quantity']}.")
 
-        # Execute stock deductions
         detailed_items = []
         for item in stock_outs:
-            p_id = item["product_id"]
-            loc_id = item["location_id"]
-            qty = item["quantity"]
+            DBStore.update_product_location(item["product_id"], item["location_id"], -item["quantity"])
             
-            DBStore.update_product_location(p_id, loc_id, -qty)
+            cursor.execute("SELECT name, code FROM products WHERE id = %s", (item["product_id"],))
+            p = cursor.fetchone()
             
-            prod = next((p for p in mock_products if p["id"] == p_id), None)
-            loc = next((l for l in mock_locations if l["id"] == loc_id), None)
-            loc_label = f"{loc['zone']}-Rack {loc['rack']}-Shelf {loc['shelf']}-Bin {loc['bin']}" if loc else "Unknown"
+            cursor.execute("SELECT zone, rack, shelf, bin FROM locations WHERE id = %s", (item["location_id"],))
+            l = cursor.fetchone()
             
             detailed_items.append({
-                "product_id": p_id,
-                "product_name": prod["name"] if prod else "Unknown",
-                "product_code": prod["code"] if prod else "N/A",
-                "location_id": loc_id,
-                "location_label": loc_label,
-                "quantity": qty,
+                "product_id": item["product_id"],
+                "product_name": p["name"] if p else "Unknown",
+                "product_code": p["code"] if p else "N/A",
+                "location_id": item["location_id"],
+                "location_label": f"{l['zone']}-Rack {l['rack']}-Shelf {l['shelf']}-Bin {l['bin']}" if l else "Unknown",
+                "quantity": item["quantity"],
                 "remarks": item.get("remarks")
             })
 
-        # Save single consolidated transaction
-        tx = {
-            "user_name": user_name,
-            "user_role": user_role,
-            "product_id": None,
-            "quantity": sum(item["quantity"] for item in stock_outs),
-            "action": "STOCK_OUT",
-            "from_location_id": None,
-            "to_location_id": None,
-            "recipient": recipient,
-            "remarks": remarks or "Bulk Dispatch",
-            "items": json.dumps(detailed_items)
-        }
-        created_tx = DBStore.add_transaction(tx)
-        return [created_tx]
+        total_qty = sum(item["quantity"] for item in stock_outs)
+        cursor.execute("""
+            INSERT INTO inventory_transactions (user_name, user_role, quantity, action, remarks)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (user_name, user_role, total_qty, 'STOCK_OUT', json.dumps(detailed_items)))
+        
+        tx_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return [{"id": tx_id, "action": "STOCK_OUT", "quantity": total_qty}]
 
     @staticmethod
     def bulk_stock_in(stock_ins: List[Dict[str, Any]], user_name: str, user_role: str, source: str, remarks: Optional[str] = None) -> List[Dict[str, Any]]:
-        # Execute stock additions
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
         detailed_items = []
         for item in stock_ins:
-            p_id = item["product_id"]
-            loc_id = item["location_id"]
-            qty = item["quantity"]
+            DBStore.update_product_location(item["product_id"], item["location_id"], item["quantity"])
             
-            DBStore.update_product_location(p_id, loc_id, qty)
+            cursor.execute("SELECT name, code FROM products WHERE id = %s", (item["product_id"],))
+            p = cursor.fetchone()
             
-            prod = next((p for p in mock_products if p["id"] == p_id), None)
-            loc = next((l for l in mock_locations if l["id"] == loc_id), None)
-            loc_label = f"{loc['zone']}-Rack {loc['rack']}-Shelf {loc['shelf']}-Bin {loc['bin']}" if loc else "Unknown"
+            cursor.execute("SELECT zone, rack, shelf, bin FROM locations WHERE id = %s", (item["location_id"],))
+            l = cursor.fetchone()
             
             detailed_items.append({
-                "product_id": p_id,
-                "product_name": prod["name"] if prod else "Unknown",
-                "product_code": prod["code"] if prod else "N/A",
-                "location_id": loc_id,
-                "location_label": loc_label,
-                "quantity": qty,
+                "product_id": item["product_id"],
+                "product_name": p["name"] if p else "Unknown",
+                "product_code": p["code"] if p else "N/A",
+                "location_id": item["location_id"],
+                "location_label": f"{l['zone']}-Rack {l['rack']}-Shelf {l['shelf']}-Bin {l['bin']}" if l else "Unknown",
+                "quantity": item["quantity"],
                 "remarks": item.get("remarks")
             })
 
-        # Save single consolidated transaction
-        tx = {
-            "user_name": user_name,
-            "user_role": user_role,
-            "product_id": None,
-            "quantity": sum(item["quantity"] for item in stock_ins),
-            "action": "STOCK_IN",
-            "from_location_id": None,
-            "to_location_id": None,
-            "recipient": source,  # supplier name maps to recipient in db schema
-            "remarks": remarks or "Bulk Intake",
-            "items": json.dumps(detailed_items)
-        }
-        created_tx = DBStore.add_transaction(tx)
-        return [created_tx]
+        total_qty = sum(item["quantity"] for item in stock_ins)
+        cursor.execute("""
+            INSERT INTO inventory_transactions (user_name, user_role, quantity, action, remarks)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (user_name, user_role, total_qty, 'STOCK_IN', json.dumps(detailed_items)))
+        
+        tx_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return [{"id": tx_id, "action": "STOCK_IN", "quantity": total_qty}]
 
     @staticmethod
     def get_transactions() -> List[Dict[str, Any]]:
-        txs = []
-        for t in mock_inventory_transactions:
-            if t.get("product_id") is None and t.get("items"):
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT it.*, p.name as p_name, p.code as p_code,
+                   fl.zone as f_zone, fl.rack as f_rack, fl.shelf as f_shelf, fl.bin as f_bin,
+                   tl.zone as t_zone, tl.rack as t_rack, tl.shelf as t_shelf, tl.bin as t_bin
+            FROM inventory_transactions it
+            LEFT JOIN products p ON it.product_id = p.id
+            LEFT JOIN locations fl ON it.from_location_id = fl.id
+            LEFT JOIN locations tl ON it.to_location_id = tl.id
+            ORDER BY it.created_at DESC
+        """)
+        txs = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        result = []
+        for t in txs:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+            t['quantity'] = float(t['quantity'])
+            
+            if t.get('product_id') is None and t.get('remarks') and t['remarks'].startswith('['):
                 try:
-                    items_parsed = json.loads(t["items"]) if isinstance(t["items"], str) else t["items"]
+                    items_parsed = json.loads(t["remarks"])
                 except:
                     items_parsed = []
                 is_stock_in = t.get("action") == "STOCK_IN"
-                txs.append({
-                    **t,
-                    "product_name": "Bulk Intake" if is_stock_in else "Bulk Dispatch",
-                    "product_code": "BULK",
-                    "from_location": None if is_stock_in else "Multiple Locations",
-                    "to_location": "Multiple Locations" if is_stock_in else None,
-                    "items": items_parsed
-                })
+                t['product_name'] = "Bulk Intake" if is_stock_in else "Bulk Dispatch"
+                t['product_code'] = "BULK"
+                t['from_location'] = None if is_stock_in else "Multiple Locations"
+                t['to_location'] = "Multiple Locations" if is_stock_in else None
+                t['items'] = items_parsed
             else:
-                prod = next((p for p in mock_products if p["id"] == t["product_id"]), None)
-                from_loc = next((l for l in mock_locations if l["id"] == t["from_location_id"]), None) if t["from_location_id"] else None
-                to_loc = next((l for l in mock_locations if l["id"] == t["to_location_id"]), None) if t["to_location_id"] else None
+                t['product_name'] = t.pop('p_name') or "Unknown"
+                t['product_code'] = t.pop('p_code') or "N/A"
+                if t.get('f_zone'):
+                    t['from_location'] = f"{t['f_zone']}-{t['f_rack']}-{t['f_shelf']}-{t['f_bin']}"
+                else:
+                    t['from_location'] = None
+                if t.get('t_zone'):
+                    t['to_location'] = f"{t['t_zone']}-{t['t_rack']}-{t['t_shelf']}-{t['t_bin']}"
+                else:
+                    t['to_location'] = None
+                t['items'] = []
                 
-                txs.append({
-                    **t,
-                    "product_name": prod["name"] if prod else "Unknown",
-                    "product_code": prod["code"] if prod else "N/A",
-                    "from_location": f"{from_loc['zone']}-{from_loc['rack']}-{from_loc['shelf']}-{from_loc['bin']}" if from_loc else None,
-                    "to_location": f"{to_loc['zone']}-{to_loc['rack']}-{to_loc['shelf']}-{to_loc['bin']}" if to_loc else None
-                })
-        return sorted(txs, key=lambda x: x["created_at"], reverse=True)
+            result.append(t)
+        return result
 
     @staticmethod
     def add_transaction(tx: Dict[str, Any]) -> Dict[str, Any]:
-        tx["id"] = max([t["id"] for t in mock_inventory_transactions] or [0]) + 1
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO inventory_transactions 
+            (user_name, user_role, product_id, quantity, action, from_location_id, to_location_id, remarks)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            tx.get("user_name"), tx.get("user_role"), tx.get("product_id"),
+            tx.get("quantity", 0), tx.get("action"), tx.get("from_location_id"),
+            tx.get("to_location_id"), tx.get("remarks")
+        )
+        cursor.execute(query, values)
+        tx["id"] = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
         tx["created_at"] = datetime.now().isoformat()
-        mock_inventory_transactions.append(tx)
         return tx
 
     @staticmethod
     def get_purchase_requests() -> List[Dict[str, Any]]:
-        reqs = []
-        for r in mock_purchase_requests:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM purchase_requests ORDER BY created_at DESC")
+        reqs = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for r in reqs:
+            if r.get('created_at'): r['created_at'] = r['created_at'].isoformat()
+            if r.get('approved_at'): r['approved_at'] = r['approved_at'].isoformat()
+            if r.get('delivered_at'): r['delivered_at'] = r['delivered_at'].isoformat()
+            r['quantity'] = float(r['quantity'])
+            
             try:
-                items = json.loads(r["items"]) if isinstance(r["items"], str) else r["items"]
+                r['items'] = json.loads(r.get("remarks") or "[]")
+                if not isinstance(r['items'], list):
+                    r['items'] = []
             except:
-                items = []
-            reqs.append({
-                **r,
-                "items": items
-            })
-        return sorted(reqs, key=lambda x: x["created_at"], reverse=True)
+                r['items'] = []
+                
+            try:
+                r['history_logs'] = json.loads(r.get("history_logs") or "[]")
+            except:
+                r['history_logs'] = []
+        return reqs
 
     @staticmethod
     def add_purchase_request(req: Dict[str, Any]) -> Dict[str, Any]:
-        req["id"] = max([r["id"] for r in mock_purchase_requests] or [0]) + 1
-        req["created_at"] = datetime.now().isoformat()
-        req["approved_at"] = None
-        req["delivered_at"] = None
-        req["change_remarks"] = None
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
         
-        history = [
-            {"timestamp": req["created_at"], "user": req["requester"], "action": "Raised request for new products"}
-        ]
-        req["history_logs"] = json.dumps(history)
+        items_json = json.dumps(req.get("items", []))
+        history = [{"timestamp": datetime.now().isoformat(), "user": req.get("requester"), "action": "Raised request for new products"}]
         
-        if isinstance(req.get("items"), list):
-            req["items"] = json.dumps(req["items"])
-            
-        mock_purchase_requests.append(req)
+        query = """
+            INSERT INTO purchase_requests (requester, product_id, quantity, status, remarks, history_logs)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(query, (req.get("requester"), None, 0, "PENDING", items_json, json.dumps(history)))
+        req["id"] = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
         return req
 
     @staticmethod
     def update_purchase_request(req_id: int, status: str, user_name: str, change_remarks: Optional[str] = None, items_updates: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        target_req = None
-        for r in mock_purchase_requests:
-            if r["id"] == req_id:
-                target_req = r
-                break
-                
-        if not target_req:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM purchase_requests WHERE id = %s", (req_id,))
+        req = cursor.fetchone()
+        
+        if not req:
+            cursor.close()
+            conn.close()
             raise ValueError(f"Request ID {req_id} not found.")
-
-        old_status = target_req["status"]
-        
-        history = []
-        try:
-            history = json.loads(target_req["history_logs"] or "[]")
-        except:
-            pass
             
+        old_status = req["status"]
         history_actions = []
+        updates = []
+        values = []
         
-        # Adjust items if provided
         if items_updates:
-            target_req["items"] = json.dumps(items_updates)
+            updates.append("remarks = %s")
+            values.append(json.dumps(items_updates))
             history_actions.append("Adjusted requested items/quantities")
-
-        # Check if status changed
+            
         if status != old_status:
-            target_req["status"] = status
+            updates.append("status = %s")
+            values.append(status)
             history_actions.append(f"Status changed from {old_status} to {status}")
             
             if status in ["APPROVED", "DECLINED"]:
-                target_req["approved_at"] = datetime.now().isoformat()
+                updates.append("approved_at = CURRENT_TIMESTAMP")
             elif status == "DELIVERED":
-                target_req["delivered_at"] = datetime.now().isoformat()
+                updates.append("delivered_at = CURRENT_TIMESTAMP")
                 
         if change_remarks:
-            target_req["change_remarks"] = change_remarks
+            updates.append("change_remarks = %s")
+            values.append(change_remarks)
             
-        # Update logs
+        try:
+            history = json.loads(req.get("history_logs") or "[]")
+        except:
+            history = []
+            
         for act in history_actions:
             history.append({
                 "timestamp": datetime.now().isoformat(),
                 "user": user_name,
                 "action": act + (f" (Remarks: {change_remarks})" if change_remarks else "")
             })
-        target_req["history_logs"] = json.dumps(history)
-        
-        # Automated product registration on DELIVERED
-        if status == "DELIVERED" and old_status != "DELIVERED":
-            try:
-                items = json.loads(target_req["items"]) if isinstance(target_req["items"], str) else target_req["items"]
-            except:
-                items = []
-                
-            for item in items:
-                existing = [p for p in mock_products if p["code"].lower() == item["code"].lower()]
-                if not existing:
-                    new_prod = {
-                        "id": max([p["id"] for p in mock_products] or [0]) + 1,
-                        "code": item["code"],
-                        "name": item["name"],
-                        "description": "Auto registered from product request delivery.",
-                        "category": item.get("category", "Electrical"),
-                        "unit": item.get("unit", "pcs"),
-                        "min_quantity": 0.0,
-                        "max_quantity": 0.0,
-                        "barcode": "",
-                        "qr_code": "",
-                        "image_url": "",
-                        "created_at": datetime.now().isoformat()
-                    }
-                    mock_products.append(new_prod)
             
-        return target_req
+        updates.append("history_logs = %s")
+        values.append(json.dumps(history))
+        
+        values.append(req_id)
+        cursor.execute(f"UPDATE purchase_requests SET {', '.join(updates)} WHERE id = %s", values)
+        conn.commit()
+        
+        if status == "DELIVERED" and old_status != "DELIVERED":
+            items = items_updates if items_updates else json.loads(req.get("remarks") or "[]")
+            for item in items:
+                cursor.execute("SELECT id FROM products WHERE code = %s", (item["code"],))
+                if not cursor.fetchone():
+                    cursor.execute("""
+                        INSERT INTO products (code, name, description, category, unit, min_quantity, max_quantity)
+                        VALUES (%s, %s, %s, %s, %s, 0, 0)
+                    """, (item["code"], item["name"], "Auto registered from product request delivery.", item.get("category", "Electrical"), item.get("unit", "pcs")))
+            conn.commit()
+            
+        cursor.execute("SELECT * FROM purchase_requests WHERE id = %s", (req_id,))
+        updated_req = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return updated_req
