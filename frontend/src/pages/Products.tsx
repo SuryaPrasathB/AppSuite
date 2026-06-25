@@ -22,7 +22,9 @@ import {
   Boxes,
   Eye,
   MoreVertical,
-  Settings
+  Settings,
+  Camera,
+  Trash2
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exportToExcel, printTable } from '../utils/exportUtils';
@@ -96,6 +98,10 @@ export const Products: React.FC = () => {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [activeDetailsProduct, setActiveDetailsProduct] = useState<any | null>(null);
 
+  // Delete verification state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<any | null>(null);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -153,6 +159,9 @@ export const Products: React.FC = () => {
       setVendors(vendData);
       
       setError(null);
+      
+      // Dispatch an event so the Header search bar can refresh its cached product list
+      window.dispatchEvent(new CustomEvent('productsUpdated'));
     } catch (err) {
       setError("Failed to fetch product catalog.");
     } finally {
@@ -461,6 +470,18 @@ export const Products: React.FC = () => {
   const reservedStock = 0;
   const outOfStockCount = products.filter(p => p.current_quantity === 0 || p.status === 'OUT_OF_STOCK').length;
 
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return;
+    try {
+      await apiClient.products.delete(productToDelete.id);
+      setDeleteModalOpen(false);
+      setProductToDelete(null);
+      fetchData();
+    } catch (err) {
+      alert("Failed to delete product. It might be referenced in active transactions.");
+    }
+  };
+
   return (
     <div className="space-y-6 text-left">
       {/* KPI Cards Grid */}
@@ -721,12 +742,24 @@ export const Products: React.FC = () => {
                               <Eye className="h-4 w-4" />
                             </button>
                             {hasRole(['Administrator', 'Store Manager']) && (
-                              <button
-                                onClick={() => openEditModal(prod)}
-                                className="p-1.5 bg-slate-55 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => openEditModal(prod)}
+                                  className="p-1.5 bg-slate-55 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setProductToDelete(prod);
+                                    setDeleteModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-red-50 border border-red-100 hover:bg-red-100 text-red-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                                  title="Delete Product"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -892,6 +925,47 @@ export const Products: React.FC = () => {
             handleLocate(product);
           }}
         />
+      )}
+
+      {/* Delete Verification Modal */}
+      {deleteModalOpen && productToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden relative border border-slate-200">
+            <div className="p-6">
+              <div className="flex items-center gap-4 mb-4 text-red-600">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-bold">Delete Product</h3>
+              </div>
+              <p className="text-slate-600 mb-6">
+                Are you absolutely sure you want to delete <span className="font-bold">{productToDelete.code} - {productToDelete.name}</span>? 
+                This action cannot be undone. You can only delete this product if it has no existing inventory transactions.
+              </p>
+              
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModalOpen(false);
+                    setProductToDelete(null);
+                  }}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteProduct}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors cursor-pointer font-bold flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

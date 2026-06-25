@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import DBStore
-from app.routers import auth, products, vendors, inventory, layout, purchase, reports
+from app.routers import auth, products, vendors, inventory, layout, purchase, reports, employees
 
 app = FastAPI(
     title="Smart Store Management System API",
@@ -28,6 +28,7 @@ app.include_router(inventory.router, prefix="/api")
 app.include_router(layout.router, prefix="/api")
 app.include_router(purchase.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+app.include_router(employees.router, prefix="/api")
 
 # Valuation unit prices for dashboard KPI calculation
 UNIT_PRICES = {

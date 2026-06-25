@@ -29,32 +29,8 @@ interface Bin {
   variant?: string;
   status?: 'Normal' | 'Low' | 'Out';
 }
-
-interface Shelf {
-  shelf: string;
-  category: string;
-  occupancy: number;
-  bins: Bin[];
-}
-
-interface RackData {
-  rack: string;
-  status: 'Normal' | 'Low' | 'Out';
-  aisle: string;
-  zoneName: string;
-  hasFlame?: boolean;
-  shelves: Shelf[];
-}
-
-const C3_RACK: RackData = {
-  rack: 'C3', status: 'Normal', aisle: 'Aisle 2', zoneName: 'Zone C',
-  shelves: [
-    { shelf: 'Shelf 4', category: 'Empty Shelf', occupancy: 0, bins: [] },
-    { shelf: 'Shelf 3', category: 'Empty Shelf', occupancy: 0, bins: [] },
-    { shelf: 'Shelf 2', category: 'Empty Shelf', occupancy: 0, bins: [] },
-    { shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }
-  ]
-};
+// We only use STATIC_MAP_RACKS for the top-level 4x8 grid visual map.
+// The WAREHOUSE_DATABASE has been removed because we now dynamically render shelves based on DB.
 
 const STATIC_MAP_RACKS = [
   { rack: 'A1', status: 'Normal', aisle: 'Aisle 1' },
@@ -62,7 +38,7 @@ const STATIC_MAP_RACKS = [
   { rack: 'B1', status: 'Normal', aisle: 'Aisle 1' },
   { rack: 'B2', status: 'Low', aisle: 'Aisle 1' },
   { rack: 'C1', status: 'Normal', aisle: 'Aisle 1' },
-  { rack: 'C2', status: 'Normal', aisle: 'Aisle 1', hasFlame: true },
+  { rack: 'C2', status: 'Normal', aisle: 'Aisle 1' },
   { rack: 'D1', status: 'Normal', aisle: 'Aisle 1' },
   { rack: 'D2', status: 'Normal', aisle: 'Aisle 1' },
 
@@ -93,35 +69,6 @@ const STATIC_MAP_RACKS = [
   { rack: 'D7', status: 'Normal', aisle: 'Aisle 4' },
   { rack: 'D8', status: 'Normal', aisle: 'Aisle 4' },
 ] as const;
-
-const WAREHOUSE_DATABASE: Record<string, RackData> = {};
-STATIC_MAP_RACKS.forEach((r) => {
-  const rackCode = r.rack;
-  if (rackCode === 'C3') {
-    WAREHOUSE_DATABASE[rackCode] = C3_RACK;
-    return;
-  }
-
-  const isAisle1 = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'].includes(rackCode);
-  const isAisle2 = ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4'].includes(rackCode);
-  const isAisle3 = ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6'].includes(rackCode);
-  const aisle = isAisle1 ? 'Aisle 1' : isAisle2 ? 'Aisle 2' : isAisle3 ? 'Aisle 3' : 'Aisle 4';
-  const zoneName = isAisle1 ? 'Zone A' : isAisle2 ? 'Zone B' : isAisle3 ? 'Zone C' : 'Zone D';
-
-  WAREHOUSE_DATABASE[rackCode] = {
-    rack: rackCode,
-    status: r.status,
-    aisle,
-    zoneName,
-    hasFlame: 'hasFlame' in r ? r.hasFlame : undefined,
-    shelves: [
-      { shelf: 'Shelf 4', category: 'Empty Shelf', occupancy: 0, bins: [] },
-      { shelf: 'Shelf 3', category: 'Empty Shelf', occupancy: 0, bins: [] },
-      { shelf: 'Shelf 2', category: 'Empty Shelf', occupancy: 0, bins: [] },
-      { shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }
-    ]
-  };
-});
 
 export const StoreLayout: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -157,7 +104,7 @@ export const StoreLayout: React.FC = () => {
 
   // Read URL search params as the SINGLE SOURCE OF TRUTH (No duplicated React state)
   const selectedRackCode = useMemo(() => {
-    return searchParams.get('rack') || 'C3';
+    return searchParams.get('rack') || 'A1';
   }, [searchParams]);
 
   useEffect(() => {
@@ -187,7 +134,7 @@ export const StoreLayout: React.FC = () => {
     
     const sortedShelves = [...activeRackDetail.shelves].sort((a, b) => b.shelf.localeCompare(a.shelf));
     
-    const shelves = sortedShelves.map((sh: any) => {
+    let shelves = sortedShelves.map((sh: any) => {
       const bins = sh.bins.map((bn: any) => {
         const content = bn.contents?.[0];
         const prod = content ? products.find(p => p.id === content.product_id) : null;
@@ -226,6 +173,11 @@ export const StoreLayout: React.FC = () => {
       };
     });
     
+    // User requested: render with 1 empty default shelf
+    if (shelves.length === 0) {
+      shelves = [{ shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }];
+    }
+    
     let status: 'Normal' | 'Low' | 'Out' = 'Normal';
     const allBins = shelves.flatMap(s => s.bins);
     if (allBins.some((b: any) => b.status === 'Out')) status = 'Out';
@@ -242,24 +194,39 @@ export const StoreLayout: React.FC = () => {
 
   const activeRack = useMemo(() => {
     if (mappedActiveRack) return mappedActiveRack;
-    return WAREHOUSE_DATABASE[selectedRackCode] || WAREHOUSE_DATABASE['C3'];
+    
+    // Fallback if the rack wasn't found in DB
+    const rack = selectedRackCode;
+    const isAisle1 = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2'].includes(rack);
+    const isAisle2 = ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4'].includes(rack);
+    const isAisle3 = ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6'].includes(rack);
+    const aisle = isAisle1 ? 'Aisle 1' : isAisle2 ? 'Aisle 2' : isAisle3 ? 'Aisle 3' : 'Aisle 4';
+    const zoneName = isAisle1 ? 'Zone A' : isAisle2 ? 'Zone B' : isAisle3 ? 'Zone C' : 'Zone D';
+    
+    return {
+      rack,
+      status: 'Normal',
+      aisle,
+      zoneName,
+      shelves: [
+        { shelf: 'Shelf 1', category: 'Empty Shelf', occupancy: 0, bins: [] }
+      ]
+    };
   }, [mappedActiveRack, selectedRackCode]);
 
   const dynamicMapRacks = useMemo(() => {
     return STATIC_MAP_RACKS.map(staticRack => {
       const dbRack = racks.find(rk => rk.rack === staticRack.rack);
-      let status: 'Normal' | 'Low' | 'Out' = 'Normal';
+      let status: 'Normal' | 'Low' | 'Out' | 'Empty' = 'Empty';
       if (dbRack && dbRack.stored_items && dbRack.stored_items.length > 0) {
         const rackProds = products.filter(p => dbRack.stored_items.includes(p.name));
         if (rackProds.some(p => p.status === 'OUT_OF_STOCK')) {
           status = 'Out';
         } else if (rackProds.some(p => p.status === 'LOW_STOCK' || p.status === 'CRITICAL')) {
           status = 'Low';
+        } else {
+          status = 'Normal';
         }
-      } else if (dbRack) {
-        status = 'Normal';
-      } else {
-        status = staticRack.status;
       }
       return {
         ...staticRack,
@@ -271,7 +238,7 @@ export const StoreLayout: React.FC = () => {
   const selectedShelfIndex = useMemo(() => {
     const shelfParam = searchParams.get('shelf');
     if (!shelfParam) {
-      return selectedRackCode === 'C3' ? 2 : 0; // Default to Shelf 2 for C3, Shelf 4 (index 0) for others
+      return 0; // Default to Shelf 4 (index 0) for others
     }
     const idx = activeRack.shelves.findIndex(
       s => s.shelf.toLowerCase().includes(shelfParam.toLowerCase()) || 
@@ -287,7 +254,7 @@ export const StoreLayout: React.FC = () => {
   const selectedBinIndex = useMemo(() => {
     const binParam = searchParams.get('bin');
     if (!binParam || !activeShelf) {
-      return (selectedRackCode === 'C3' && selectedShelfIndex === 2) ? 1 : 0; // Default to Bin 2 for C3-Shelf2
+      return 0; // Default to Bin 1 (index 0)
     }
     const idx = activeShelf.bins.findIndex(
       (b: any) => b.bin.toLowerCase().includes(binParam.toLowerCase()) || 
@@ -411,9 +378,11 @@ export const StoreLayout: React.FC = () => {
                             .filter(r => r.aisle === aisleName)
                             .map((rackData) => {
                               const isSelected = selectedRackCode === rackData.rack;
+                              const isLocated = Boolean(highlightRack && highlightShelf && highlightBin && highlightRack === rackData.rack);
                               const statusColor = rackData.status === 'Normal' ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100/70' :
                                                   rackData.status === 'Low' ? 'border-yellow-600 bg-yellow-50 text-yellow-800 hover:bg-yellow-100/70' :
-                                                  'border-red-600 bg-red-50 text-red-700 hover:bg-red-100/70';
+                                                  rackData.status === 'Out' ? 'border-red-600 bg-red-50 text-red-700 hover:bg-red-100/70' :
+                                                  'border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100/70 border-dashed';
 
                               return (
                                 <button
@@ -427,7 +396,7 @@ export const StoreLayout: React.FC = () => {
                                 >
                                   {rackData.rack}
                                   
-                                  {isSelected && (
+                                  {isLocated && (
                                     <div className="absolute -top-3.5 bg-primary-600 text-white rounded-full p-0.5 shadow-sm animate-none">
                                       <MapPin className="h-3 w-3 fill-white text-primary-600" />
                                     </div>

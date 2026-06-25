@@ -42,12 +42,12 @@ export const IssueMaterial: React.FC = () => {
   const [activeStep, setActiveStep] = useState(1);
 
   // Form details
-  const [employee, setEmployee] = useState("Surya Kumar (SK001)");
-  const [project, setProject] = useState("Delhi Test House (DTH)");
-  const [purpose, setPurpose] = useState("Control panel assembly and testing");
-  const [issueDate, setIssueDate] = useState("2025-05-20");
-  const [requiredDate, setRequiredDate] = useState("2025-05-21");
-  const [referenceNo, setReferenceNo] = useState("DTH/ISS/0520/01");
+  const [employee, setEmployee] = useState("");
+  const [project, setProject] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [issueDate, setIssueDate] = useState("");
+  const [requiredDate, setRequiredDate] = useState("");
+  const [referenceNo, setReferenceNo] = useState("");
 
   // Items list
   const [items, setItems] = useState<IssueItem[]>([]);
@@ -58,20 +58,9 @@ export const IssueMaterial: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Default dropdown seed data
-  const employees = [
-    "Surya Kumar (SK001)",
-    "Adarsh Sharma (SK002)",
-    "Rahul Kumar (SK003)",
-    "Neha Patel (SK004)"
-  ];
-
-  const projects = [
-    "Delhi Test House (DTH)",
-    "Conveyor Belt Assembly (CBA)",
-    "Control Panel Prototype (CPP)",
-    "Warehouse Renovation (WHR)"
-  ];
+  // Dynamic dropdown seed data
+  const [employeesList, setEmployeesList] = useState<string[]>([]);
+  const [projectsList, setProjectsList] = useState<string[]>([]);
 
   // Helper to extract project abbreviation
   const getProjectCode = (projName: string) => {
@@ -93,9 +82,10 @@ export const IssueMaterial: React.FC = () => {
 
   // Auto-generate reference number
   useEffect(() => {
+    if (!project) return;
     const prjCode = getProjectCode(project);
     const mmdd = getFormattedMMDD(issueDate);
-    setReferenceNo(`${prjCode}/ISS/${mmdd}/01`);
+    setReferenceNo(`${prjCode}/OUT/${mmdd}/01`);
   }, [project, issueDate]);
 
   useEffect(() => {
@@ -105,42 +95,29 @@ export const IssueMaterial: React.FC = () => {
   const fetchDropdownData = async () => {
     try {
       setLoading(true);
-      const [prods, locs] = await Promise.all([
+      const [prods, locs, emps] = await Promise.all([
         apiClient.products.list(),
-        apiClient.reports.locations()
+        apiClient.layout.locations(),
+        apiClient.employees.list().catch(() => []) // Fallback to empty array if fail
       ]);
 
       setProductsList(prods);
       setLocationsList(locs);
 
-      // Prepopulate 4 items matching screenshot
-      if (prods.length > 0) {
-        const prePopulated = prods.slice(0, 4).map((p, idx) => {
-          // Find standard allocation location or fallback
-          const defaultAlloc = p.locations && p.locations.length > 0 ? p.locations[0] : null;
-          const defaultLocId = defaultAlloc ? String(defaultAlloc.location_id) : "1";
-          
-          const mockCodes = ["REL-001", "CAB-001", "MCB-016", "TER-004"];
-          const mockNames = ["Relay Module 24VDC", "CAT6 Cable", "MCB 16A 1P", "Terminal Block 2.5mm"];
-          const units = ["Nos", "Meter", "Nos", "Nos"];
-          const quantities = [5, 10, 2, 10];
-          const remarksList = ["Control Relay", "Wiring", "Protection", "Terminal"];
-
-          return {
-            id: `init-${idx}`,
-            product_id: String(p.id),
-            code: mockCodes[idx] || p.code,
-            name: mockNames[idx] || p.name,
-            category: p.category,
-            unit: units[idx] || p.unit || 'pcs',
-            location_id: defaultLocId,
-            quantity: quantities[idx] || 1,
-            remarks: remarksList[idx] || ""
-          };
-        });
-        setItems(prePopulated);
+      if (Array.isArray(emps)) {
+        // e.g. "John Doe (HR)"
+        setEmployeesList(emps.map((e: any) => `${e.name} (${e.department || 'Employee'})`));
       }
-
+      
+      const savedProjects = localStorage.getItem('smart_store_projects_v2');
+      if (savedProjects) {
+        try {
+          const parsed = JSON.parse(savedProjects);
+          if (Array.isArray(parsed)) {
+            setProjectsList(parsed.map((p: any) => `${p.name} (${p.code})`));
+          }
+        } catch (_) {}
+      }
       setError(null);
     } catch (err) {
       setError("Failed to fetch product catalog metadata.");
@@ -268,13 +245,13 @@ export const IssueMaterial: React.FC = () => {
         })),
         user_name: user?.username || 'Storekeeper',
         user_role: user?.role || 'Storekeeper',
-        recipient: `${employee} - Project: ${project}`,
-        remarks: purpose ? `${purpose} (Ref Doc: ${referenceNo}, Required Date: ${requiredDate})` : `Material issue ref: ${referenceNo}`
+        recipient: employee ? `${employee} - Project: ${project}` : `Project: ${project}`,
+        remarks: purpose ? `${purpose} (Ref Doc: ${referenceNo}, Required Date: ${requiredDate})` : `Material stock out ref: ${referenceNo}`
       };
 
       await apiClient.inventory.bulkStockOut(payload);
       
-      setSuccess(`Material successfully issued under Reference No: ${referenceNo}`);
+      setSuccess(`Material successfully stocked out under Reference No: ${referenceNo}`);
       setActiveStep(3); // Complete stepper visual state
       
       setTimeout(() => {
@@ -286,7 +263,7 @@ export const IssueMaterial: React.FC = () => {
   };
 
   const handleSaveDraft = () => {
-    setSuccess("Material issue record successfully saved as draft.");
+    setSuccess("Material stock out record successfully saved as draft.");
     setTimeout(() => setSuccess(null), 3000);
   };
 
@@ -354,7 +331,7 @@ export const IssueMaterial: React.FC = () => {
           
           {/* Issue Details Form Container */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Issue Details</h3>
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Stock Out Details</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -364,10 +341,18 @@ export const IssueMaterial: React.FC = () => {
                 <div className="relative">
                   <select
                     value={employee}
-                    onChange={(e) => setEmployee(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === "ADD_NEW") {
+                        navigate('/employees');
+                      } else {
+                        setEmployee(e.target.value);
+                      }
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
                   >
-                    {employees.map(emp => (
+                    <option value="" disabled>Select Employee</option>
+                    <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Employee</option>
+                    {employeesList.map(emp => (
                       <option key={emp} value={emp}>{emp}</option>
                     ))}
                   </select>
@@ -377,7 +362,7 @@ export const IssueMaterial: React.FC = () => {
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">
-                  Issue Date <span className="text-red-550">*</span>
+                  Stock Out Date <span className="text-red-550">*</span>
                 </label>
                 <input
                   type="date"
@@ -394,10 +379,18 @@ export const IssueMaterial: React.FC = () => {
                 <div className="relative">
                   <select
                     value={project}
-                    onChange={(e) => setProject(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === "ADD_NEW") {
+                        navigate('/projects');
+                      } else {
+                        setProject(e.target.value);
+                      }
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
                   >
-                    {projects.map(proj => (
+                    <option value="" disabled>Select Project</option>
+                    <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Project</option>
+                    {projectsList.map(proj => (
                       <option key={proj} value={proj}>{proj}</option>
                     ))}
                   </select>
@@ -659,7 +652,7 @@ export const IssueMaterial: React.FC = () => {
 
         {/* Right Sidebar Summary Column */}
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-6">
-          <h3 className="text-sm font-black text-slate-800 border-b border-slate-100 pb-2.5">Issue Summary</h3>
+          <h3 className="text-sm font-black text-slate-800 border-b border-slate-100 pb-2.5">Stock Out Summary</h3>
           
           <div className="space-y-4 text-xs">
             
@@ -667,7 +660,7 @@ export const IssueMaterial: React.FC = () => {
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Employee</span>
               <div className="flex items-center gap-1.5 text-slate-700 font-bold">
                 <Users className="h-4 w-4 text-slate-400 shrink-0" />
-                <span>{employee}</span>
+                <span>{employee || 'Not specified'}</span>
               </div>
             </div>
 
@@ -675,7 +668,7 @@ export const IssueMaterial: React.FC = () => {
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Project</span>
               <div className="flex items-center gap-1.5 text-slate-700 font-bold">
                 <Folder className="h-4 w-4 text-slate-400 shrink-0" />
-                <span>{project}</span>
+                <span>{project || 'Not specified'}</span>
               </div>
             </div>
 
@@ -686,12 +679,12 @@ export const IssueMaterial: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Issue Date</span>
-                <span className="text-slate-700 font-bold block">{issueDate}</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Stock Out Date</span>
+                <span className="text-slate-700 font-bold block">{issueDate || 'Not specified'}</span>
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Required Date</span>
-                <span className="text-slate-700 font-bold block">{requiredDate}</span>
+                <span className="text-slate-700 font-bold block">{requiredDate || 'Not specified'}</span>
               </div>
             </div>
 
@@ -751,7 +744,7 @@ export const IssueMaterial: React.FC = () => {
             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm animate-pulse-subtle"
           >
             <Check className="h-4 w-4" />
-            Confirm Issue
+            Confirm Stock Out
           </button>
         </div>
       </div>

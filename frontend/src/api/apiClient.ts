@@ -25,7 +25,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     try {
       const errBody = await response.json();
       if (errBody && errBody.detail) {
-        errorMessage = errBody.detail;
+        if (Array.isArray(errBody.detail)) {
+          errorMessage = errBody.detail.map((e: any) => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+        } else {
+          errorMessage = typeof errBody.detail === 'string' ? errBody.detail : JSON.stringify(errBody.detail);
+        }
       }
     } catch (_) {}
     throw new Error(errorMessage);
@@ -53,6 +57,12 @@ export const apiClient = {
     create: (body: any) => request<any>('/vendors', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/vendors/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   },
+  employees: {
+    list: () => request<any[]>('/employees'),
+    create: (body: any) => request<any>('/employees', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number | string, body: any) => request<any>(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number | string) => request<any>(`/employees/${id}`, { method: 'DELETE' }),
+  },
   inventory: {
     transactions: () => request<any[]>('/inventory/transactions'),
     stockIn: (body: any) => request<any>('/inventory/stock-in', { method: 'POST', body: JSON.stringify(body) }),
@@ -63,8 +73,10 @@ export const apiClient = {
     adjust: (body: any) => request<any>('/inventory/adjust', { method: 'POST', body: JSON.stringify(body) }),
   },
   layout: {
+    locations: () => request<any[]>('/layout/locations'),
     racks: () => request<any[]>('/layout/racks'),
     rackDetail: (code: string) => request<any>(`/layout/rack/${code}`),
+    addLocation: (body: any) => request<any>('/layout/locations', { method: 'POST', body: JSON.stringify(body) }),
   },
   purchase: {
     recommendations: () => request<Record<string, any[]>>('/purchase/recommendations'),

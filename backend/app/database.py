@@ -366,6 +366,49 @@ class DBStore:
         return locs
 
     @staticmethod
+    def add_location(loc: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Default zone and row/col logic if not provided
+        rack = loc.get("rack", "")
+        zone = loc.get("zone")
+        if not zone and rack:
+            isAisle1 = rack in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2']
+            isAisle2 = rack in ['A3', 'A4', 'B3', 'B4', 'C4', 'D3', 'D4']
+            isAisle3 = rack in ['A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6']
+            zone = 'Zone A' if isAisle1 else 'Zone B' if isAisle2 else 'Zone C' if isAisle3 else 'Zone D'
+            
+        row_idx = loc.get("row_index", 0)
+        col_idx = loc.get("col_index", 0)
+        
+        shelf = loc.get("shelf", "Shelf 1")
+        if not shelf.startswith("Shelf "):
+            shelf = f"Shelf {shelf}"
+            
+        bin_name = loc.get("bin", "Bin 1")
+        if not bin_name.startswith("Bin "):
+            bin_name = f"Bin {bin_name}"
+
+        query = """
+            INSERT INTO locations (zone, rack, shelf, bin, row_index, col_index)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(query, (zone, rack, shelf, bin_name, row_idx, col_idx))
+        loc_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM locations WHERE id = %s", (loc_id,))
+        new_loc = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if new_loc and new_loc.get('created_at'):
+            new_loc['created_at'] = new_loc['created_at'].isoformat()
+            
+        return new_loc
+
+    @staticmethod
     def get_product_locations() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -512,11 +555,26 @@ class DBStore:
                 except:
                     items_parsed = []
                 is_stock_in = t.get("action") == "STOCK_IN"
-                t['product_name'] = "Bulk Intake" if is_stock_in else "Bulk Dispatch"
-                t['product_code'] = "BULK"
-                t['from_location'] = None if is_stock_in else "Multiple Locations"
-                t['to_location'] = "Multiple Locations" if is_stock_in else None
-                t['items'] = items_parsed
+                
+                if len(items_parsed) == 1:
+                    # Treat as a regular single-item transaction
+                    single_item = items_parsed[0]
+                    t['product_name'] = single_item.get("product_name", "Unknown")
+                    t['product_code'] = single_item.get("product_code", "N/A")
+                    t['from_location'] = None if is_stock_in else single_item.get("location_label")
+                    t['to_location'] = single_item.get("location_label") if is_stock_in else None
+                    t['items'] = []  # Clear items so it doesn't render as bulk
+                else:
+                    t['product_name'] = "Bulk Intake" if is_stock_in else "Bulk Dispatch"
+                    t['product_code'] = "BULK"
+                    
+                    # If all items share the same location, display that specific location instead of "Multiple Locations"
+                    unique_locs = list(set(item.get("location_label", "") for item in items_parsed if item.get("location_label")))
+                    loc_display = unique_locs[0] if len(unique_locs) == 1 else "Multiple Locations"
+
+                    t['from_location'] = None if is_stock_in else loc_display
+                    t['to_location'] = loc_display if is_stock_in else None
+                    t['items'] = items_parsed
             else:
                 t['product_name'] = t.pop('p_name') or "Unknown"
                 t['product_code'] = t.pop('p_code') or "N/A"
@@ -672,3 +730,75 @@ class DBStore:
         cursor.close()
         conn.close()
         return updated_req
+
+    @staticmethod
+    def get_employees() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM employees")
+        employees = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for emp in employees:
+            if emp.get('created_at'):
+                emp['created_at'] = emp['created_at'].isoformat()
+        return employees
+
+    @staticmethod
+    def add_employee(employee: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO employees (name, role, phone, email, department)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        values = (
+            employee.get("name"), employee.get("role"), employee.get("phone"),
+            employee.get("email"), employee.get("department")
+        )
+        cursor.execute(query, values)
+        conn.commit()
+        employee["id"] = cursor.lastrowid
+        employee["created_at"] = datetime.now().isoformat()
+        cursor.close()
+        conn.close()
+        return employee
+
+    @staticmethod
+    def update_employee(emp_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        for key in ["name", "role", "phone", "email", "department"]:
+            if key in data:
+                updates.append(f"{key} = %s")
+                values.append(data[key])
+                
+        if not updates:
+            return data
+            
+        values.append(emp_id)
+        query = f"UPDATE employees SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM employees WHERE id = %s", (emp_id,))
+        emp = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if emp and emp.get('created_at'):
+            emp['created_at'] = emp['created_at'].isoformat()
+        return emp
+
+    @staticmethod
+    def delete_employee(emp_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM employees WHERE id = %s", (emp_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True

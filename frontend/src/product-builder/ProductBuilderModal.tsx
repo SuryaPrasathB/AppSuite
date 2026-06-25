@@ -15,6 +15,7 @@ import {
 import QRCode from 'qrcode';
 import { apiClient } from '../api/apiClient';
 import { DynamicField } from './DynamicField';
+import { LocationSelectorModal } from '../components/LocationSelectorModal';
 import {
   ADDITIONAL_FIELDS,
   getCategorySchema,
@@ -838,95 +839,28 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
       </form>
 
       {showMapPicker && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-[1000px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[90vh]">
-            <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-blue-605 p-2 text-white">
-                  <MapPin className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Select Location from Store Map</h3>
-                  <p className="text-xs text-slate-500">Click a shelf (S1 - S4) on any rack to select the zone, rack, and shelf in 1-click.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMapPicker(false)}
-                className="rounded-lg p-2 text-slate-450 transition hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </header>
-            <div className="overflow-y-auto flex-1 bg-slate-50/50">
-              {/* Visual Store Layout Directions */}
-              <div className="flex justify-between px-6 py-2.5 bg-slate-100 border-b border-slate-200/50 text-[10px] font-bold text-slate-450 uppercase tracking-widest">
-                <span>◀ MAIN ENTRANCE</span>
-                <span>EXIT / LOADING ▶</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 p-6">
-                {['Aisle 1', 'Aisle 2', 'Aisle 3', 'Aisle 4'].map((aisleName) => (
-                  <div key={aisleName} className="space-y-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                    <div className="text-xs font-black text-slate-800 text-center uppercase tracking-wider mb-2 pb-1 border-b border-slate-100">
-                      {aisleName}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {MAP_RACKS
-                        .filter(r => r.aisle === aisleName)
-                        .map((rackData) => (
-                          <div key={rackData.rack} className="flex flex-col bg-slate-50 border border-slate-200 rounded-lg p-2 text-center shadow-xs">
-                            <span className="text-[11px] font-black text-slate-700 mb-1">{rackData.rack}</span>
-                            <div className="grid grid-cols-2 gap-1">
-                              {[4, 3, 2, 1].map((shelfNum) => {
-                                const productsOnShelf = getProductsOnShelf(rackData.rack, shelfNum);
-                                const hasProducts = productsOnShelf.length > 0;
-                                const isSelected = values.rack === rackData.rack && values.shelf === `Shelf ${shelfNum}`;
-                                const titleText = hasProducts 
-                                  ? `Rack ${rackData.rack}, Shelf ${shelfNum}\nContains:\n• ${productsOnShelf.join('\n• ')}`
-                                  : `Select Rack ${rackData.rack}, Shelf ${shelfNum} (Empty)`;
-                                return (
-                                  <button
-                                    key={shelfNum}
-                                    type="button"
-                                    onClick={() => handleSelectLocation(rackData.rack, shelfNum)}
-                                    className={`py-1 px-0.5 border rounded text-[9px] font-bold transition-all shadow-xs cursor-pointer relative ${
-                                      isSelected
-                                        ? 'border-blue-600 bg-blue-600 text-white'
-                                        : hasProducts
-                                          ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-600 hover:text-white hover:border-amber-600'
-                                          : 'border-slate-200 bg-white text-slate-600 hover:bg-blue-600 hover:text-white hover:border-blue-600'
-                                    }`}
-                                    title={titleText}
-                                  >
-                                    S{shelfNum}
-                                    {hasProducts && !isSelected && (
-                                      <span className="absolute -top-0.5 -right-0.5 flex h-1.5 w-1.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <footer className="flex items-center justify-end border-t border-slate-200 bg-white px-6 py-3">
-              <button
-                type="button"
-                onClick={() => setShowMapPicker(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </footer>
-          </div>
-        </div>
+        <LocationSelectorModal
+          category={schema.label}
+          onSelectLocation={(loc: any) => {
+            setValues((current) => ({
+              ...current,
+              rack: loc.rack,
+              shelf: loc.shelf,
+              zone: loc.zone || 'Zone A',
+              warehouse: 'Main Store',
+            }));
+            setErrors((current) => {
+              const next = { ...current };
+              delete next.rack;
+              delete next.shelf;
+              delete next.zone;
+              delete next.warehouse;
+              return next;
+            });
+            setShowMapPicker(false);
+          }}
+          onClose={() => setShowMapPicker(false)}
+        />
       )}
     </div>
   );

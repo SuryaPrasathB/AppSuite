@@ -26,7 +26,7 @@ export const Header: React.FC = () => {
       case '/stock-in':
         return { title: 'Stock In', desc: 'Home  >  Stock In' };
       case '/issue-material':
-        return { title: 'Issue Material (Stock Out)', desc: 'Home  >  Issue Material' };
+        return { title: 'Stock Out', desc: 'Home  >  Stock Out' };
       case '/return-material':
         return { title: 'Return Material', desc: 'Home  >  Return Material' };
       case '/layout':
@@ -63,6 +63,15 @@ export const Header: React.FC = () => {
     if (user) {
       fetchProducts();
     }
+
+    const handleProductsUpdated = () => {
+      fetchProducts();
+    };
+
+    window.addEventListener('productsUpdated', handleProductsUpdated);
+    return () => {
+      window.removeEventListener('productsUpdated', handleProductsUpdated);
+    };
   }, [user]);
 
   // Filter products based on search input

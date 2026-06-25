@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 
 export const Requests: React.FC = () => {
+  const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   
   const [requests, setRequests] = useState<any[]>([]);
@@ -57,7 +59,8 @@ export const Requests: React.FC = () => {
   const [activeRequest, setActiveRequest] = useState<any | null>(null);
 
   // Form states
-  const [reqProject, setReqProject] = useState('Delhi Test House (DTH)');
+  const [reqProject, setReqProject] = useState('');
+  const [projectsList, setProjectsList] = useState<string[]>([]);
   const [reqPurpose, setReqPurpose] = useState('');
   const [requestItems, setRequestItems] = useState<any[]>([
     { name: '', code: '', category: 'Electrical', unit: 'pcs', quantity: '10' }
@@ -81,6 +84,17 @@ export const Requests: React.FC = () => {
 
   useEffect(() => {
     fetchRequests();
+    
+    // Load projects from local storage
+    const savedProjects = localStorage.getItem('smart_store_projects_v2');
+    if (savedProjects) {
+      try {
+        const parsed = JSON.parse(savedProjects);
+        if (Array.isArray(parsed)) {
+          setProjectsList(parsed.map((p: any) => `${p.name} (${p.code})`));
+        }
+      } catch (_) {}
+    }
   }, []);
 
   const fetchRequests = async () => {
@@ -1043,14 +1057,20 @@ export const Requests: React.FC = () => {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Associated *</label>
                       <select
                         value={reqProject}
-                        onChange={(e) => setReqProject(e.target.value)}
+                        onChange={(e) => {
+                          if (e.target.value === 'ADD_NEW') {
+                            navigate('/projects');
+                          } else {
+                            setReqProject(e.target.value);
+                          }
+                        }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold text-slate-700"
                       >
-                        <option value="Delhi Test House (DTH)">Delhi Test House (DTH)</option>
-                        <option value="Uma Polymers (UP)">Uma Polymers (UP)</option>
-                        <option value="EIC Project (EIC)">EIC Project (EIC)</option>
-                        <option value="R&D Lab">R&D Lab</option>
-                        <option value="Factory Automation (FA)">Factory Automation (FA)</option>
+                        <option value="" disabled>Select Project</option>
+                        <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Project</option>
+                        {projectsList.map(proj => (
+                          <option key={proj} value={proj}>{proj}</option>
+                        ))}
                       </select>
                     </div>
                     <div>

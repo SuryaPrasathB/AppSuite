@@ -17,6 +17,7 @@ import { Requests } from './pages/Requests';
 import { StockIn } from './pages/StockIn';
 import { IssueMaterial } from './pages/IssueMaterial';
 import { ReturnMaterial } from './pages/ReturnMaterial';
+import { Employees } from './pages/Employees';
 
 const Footer: React.FC = () => {
   const [time, setTime] = useState(new Date());
@@ -92,6 +93,7 @@ const AppContent: React.FC = () => {
             <Route path="/return-material" element={<ReturnMaterial />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/vendors" element={<Vendors />} />
+            <Route path="/employees" element={<Employees />} />
             <Route path="/purchase" element={<PurchasePlanning />} />
             <Route path="/requests" element={<Requests />} />
             <Route path="/projects" element={<Projects />} />

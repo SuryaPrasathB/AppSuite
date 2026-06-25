@@ -104,5 +104,13 @@ CREATE INDEX idx_products_code ON products(code);
 CREATE INDEX idx_products_name ON products(name);
 CREATE INDEX idx_product_locations_product ON product_locations(product_id);
 
-
-
+-- 8. EMPLOYEES TABLE
+CREATE TABLE IF NOT EXISTS employees (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(100),
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    department VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

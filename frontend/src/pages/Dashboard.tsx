@@ -620,7 +620,7 @@ export const Dashboard: React.FC = () => {
               <span className="text-[10px] text-slate-400 mt-1">Add new stock</span>
             </button>
 
-            {/* Issue Material */}
+            {/* Stock Out */}
             <button
               onClick={() => setStockOutOpen(true)}
               className="flex flex-col items-center justify-center p-5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-850 transition-all hover:shadow-xs cursor-pointer group text-center"
@@ -628,7 +628,7 @@ export const Dashboard: React.FC = () => {
               <div className="bg-blue-100 text-blue-650 p-3.5 rounded-xl group-hover:scale-105 transition-transform">
                 <ArrowUpRight className="h-6 w-6" />
               </div>
-              <span className="text-xs font-bold mt-3 text-slate-700">Issue Material</span>
+              <span className="text-xs font-bold mt-3 text-slate-700">Stock Out</span>
               <span className="text-[10px] text-slate-400 mt-1">Issue to employee / project</span>
             </button>
 

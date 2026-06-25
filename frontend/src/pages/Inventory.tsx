@@ -340,13 +340,16 @@ export const Inventory: React.FC = () => {
                           {isBulk ? (
                             <div>
                               <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-slate-800 text-sm block">Bulk Dispatch</span>
+                                <span className="font-semibold text-slate-800 text-sm block">{tx.product_name || 'Bulk Dispatch'}</span>
                                 <span className="bg-orange-100 text-orange-800 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                                   <FileText className="h-3 w-3" />
                                   View Slip
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">Recipient: {tx.recipient}</span>
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
+                                {tx.action === 'STOCK_IN' ? 'Source: ' : 'Recipient: '}
+                                {tx.recipient || 'N/A'}
+                              </span>
                             </div>
                           ) : (
                             <div>

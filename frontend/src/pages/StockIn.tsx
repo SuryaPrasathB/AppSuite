@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
+import { LocationSelectorModal } from '../components/LocationSelectorModal';
 
 interface StockInItem {
   id: string; // React key
@@ -58,10 +59,27 @@ export const StockIn: React.FC = () => {
   // Table items list
   const [items, setItems] = useState<StockInItem[]>([]);
 
+  // Map selector state
+  const [mapSelectorIndex, setMapSelectorIndex] = useState<number | null>(null);
+
   // Status/alert states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Vendor modal state
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [vendorForm, setVendorForm] = useState({
+    name: '',
+    contact_person: '',
+    phone: '',
+    email: '',
+    address: '',
+    gst_number: '',
+    is_preferred: false
+  });
+  const [vendorFormError, setVendorFormError] = useState<string | null>(null);
+  const [vendorFormSuccess, setVendorFormSuccess] = useState(false);
 
   // Initialize reference number, date and load dropdown data
   useEffect(() => {
@@ -84,10 +102,7 @@ export const StockIn: React.FC = () => {
       const [prods, vends, locs, txs] = await Promise.all([
         apiClient.products.list(),
         apiClient.vendors.list(),
-        apiClient.layout.racks().then(async (racks) => {
-          // If racks returns rack summary, fetch list of location bins from reports or layout
-          return apiClient.reports.locations();
-        }).catch(() => apiClient.reports.locations()),
+        apiClient.layout.locations(),
         apiClient.inventory.transactions().catch(() => [])
       ]);
 
@@ -108,27 +123,6 @@ export const StockIn: React.FC = () => {
         setLastStockInDate(newest.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
       }
 
-      // Default pre-populated list matching screenshot using catalog products
-      if (prods.length > 0) {
-        const prePopulated = prods.slice(0, 5).map((p, idx) => {
-          const defaultLoc = locs.find((l: any) => l.zone === (p.category === 'Electrical' ? 'Zone A' : p.category === 'Mechanical' ? 'Zone B' : 'Zone C')) || locs[0];
-          const batches = ["REL240525-01", "CAT6250525", "MCB160525", "PWS525-10", "SEN180525"];
-          const quantities = [20, 100, 10, 5, 15];
-          
-          return {
-            id: `init-${idx}`,
-            product_id: String(p.id),
-            code: p.code,
-            name: p.name,
-            category: p.category,
-            unit: p.unit || 'pcs',
-            batch_no: batches[idx] || `BATCH-${Date.now()}-${idx}`,
-            quantity: quantities[idx] || 10,
-            location_id: defaultLoc ? String(defaultLoc.id) : "1"
-          };
-        });
-        setItems(prePopulated);
-      }
 
       // Select first vendor by default
       if (vends.length > 0) {
@@ -284,6 +278,64 @@ export const StockIn: React.FC = () => {
     setTimeout(() => setSuccess(null), 3000);
   };
 
+  const handleVendorInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setVendorForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleVendorCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, checked } = e.target;
+    setVendorForm(prev => ({
+      ...prev,
+      [name]: checked
+    }));
+  };
+
+  const handleVendorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVendorFormError(null);
+
+    if (!vendorForm.name) {
+      setVendorFormError("Vendor Name is a required field.");
+      return;
+    }
+
+    try {
+      const newVendor = await apiClient.vendors.create(vendorForm);
+      setVendorFormSuccess(true);
+      
+      const updatedVendors = await apiClient.vendors.list();
+      setVendorsList(updatedVendors);
+      if (newVendor && newVendor.id) {
+        setSupplierId(String(newVendor.id));
+      } else {
+        // If the API response doesn't return the ID cleanly, try matching the name
+        const match = updatedVendors.find((v: any) => v.name === vendorForm.name);
+        if (match) setSupplierId(String(match.id));
+      }
+
+      setTimeout(() => {
+        setVendorFormSuccess(false);
+        setVendorModalOpen(false);
+        setVendorForm({
+          name: '',
+          contact_person: '',
+          phone: '',
+          email: '',
+          address: '',
+          gst_number: '',
+          is_preferred: false
+        });
+      }, 1500);
+
+    } catch (err: any) {
+      setVendorFormError(err.message || "Failed to create vendor.");
+    }
+  };
+
   // Calculations
   const totalItemsCount = items.length;
   const totalQuantitySum = items.reduce((sum, item) => sum + (parseFloat(String(item.quantity)) || 0), 0);
@@ -405,10 +457,18 @@ export const StockIn: React.FC = () => {
               <div className="relative">
                 <select
                   value={supplierId}
-                  onChange={(e) => setSupplierId(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value === 'ADD_NEW') {
+                      setVendorModalOpen(true);
+                      setSupplierId("");
+                    } else {
+                      setSupplierId(e.target.value);
+                    }
+                  }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
                 >
-                  <option value="">-- Select Vendor --</option>
+                  <option value="" disabled>-- Select Vendor --</option>
+                  <option value="ADD_NEW" className="text-primary-600 font-bold bg-slate-100">+ Add New Supplier / Vendor</option>
                   {vendorsList.map(vendor => (
                     <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
                   ))}
@@ -582,19 +642,28 @@ export const StockIn: React.FC = () => {
 
                     {/* Location Bin Dropdown */}
                     <td className="px-4 py-3">
-                      <div className="relative">
-                        <select
-                          value={item.location_id}
-                          onChange={(e) => handleRowChange(idx, "location_id", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 text-slate-700 appearance-none pr-8"
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <select
+                            value={item.location_id}
+                            onChange={(e) => handleRowChange(idx, "location_id", e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 text-slate-700 appearance-none pr-8"
+                          >
+                            {locationsList.map(loc => (
+                              <option key={loc.id} value={loc.id}>
+                                {loc.rack} - {loc.shelf} ({loc.zone})
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-2 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                        </div>
+                        <button 
+                          onClick={() => setMapSelectorIndex(idx)}
+                          className="p-1.5 bg-primary-50 text-primary-600 rounded hover:bg-primary-100 transition-colors"
+                          title="Select on Map"
                         >
-                          {locationsList.map(loc => (
-                            <option key={loc.id} value={loc.id}>
-                              {loc.rack} - {loc.shelf} ({loc.zone})
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="absolute right-2 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                          <MapPin className="h-4 w-4" />
+                        </button>
                       </div>
                     </td>
 
@@ -672,6 +741,161 @@ export const StockIn: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Add New Vendor Modal */}
+      {vendorModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-100 overflow-hidden">
+            <div className="bg-primary-600 p-6 text-white flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold">Register Vendor Profile</h3>
+                <p className="text-xs text-primary-100">Setup communication channels and taxation codes</p>
+              </div>
+              <button onClick={() => setVendorModalOpen(false)} className="text-primary-100 hover:text-white transition-colors cursor-pointer">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleVendorSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {vendorFormSuccess ? (
+                <div className="bg-green-50 border border-green-200 text-green-800 text-sm p-4 rounded-lg flex items-center gap-3">
+                  <Check className="h-5 w-5 text-green-500" />
+                  <span>Vendor profile saved successfully!</span>
+                </div>
+              ) : (
+                <>
+                  {vendorFormError && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 text-xs p-3.5 rounded-lg flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                      <span>{vendorFormError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Vendor Company Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      required
+                      placeholder="e.g. Siemens Electrics Ltd"
+                      value={vendorForm.name}
+                      onChange={handleVendorInputChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contact Person</label>
+                      <input
+                        type="text"
+                        name="contact_person"
+                        placeholder="e.g. Aditya Sharma"
+                        value={vendorForm.contact_person}
+                        onChange={handleVendorInputChange}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">GST Tax ID Number</label>
+                      <input
+                        type="text"
+                        name="gst_number"
+                        placeholder="e.g. 29AAAAA1111A1Z1"
+                        value={vendorForm.gst_number}
+                        onChange={handleVendorInputChange}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Phone Number</label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        placeholder="e.g. +91 98765..."
+                        value={vendorForm.phone}
+                        onChange={handleVendorInputChange}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Address</label>
+                      <input
+                        type="email"
+                        name="email"
+                        placeholder="e.g. contact@supplier.in"
+                        value={vendorForm.email}
+                        onChange={handleVendorInputChange}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Physical Office Address</label>
+                    <textarea
+                      name="address"
+                      placeholder="Street address, City, Pin state..."
+                      value={vendorForm.address}
+                      onChange={handleVendorInputChange}
+                      rows={3}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="checkbox"
+                      id="is_preferred"
+                      name="is_preferred"
+                      checked={vendorForm.is_preferred}
+                      onChange={handleVendorCheckboxChange}
+                      className="h-4 w-4 text-primary-600 border-slate-300 rounded focus:ring-primary-500 cursor-pointer"
+                    />
+                    <label htmlFor="is_preferred" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                      Mark as Preferred Vendor
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setVendorModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-colors cursor-pointer"
+                    >
+                      Save Supplier
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {mapSelectorIndex !== null && (
+        <LocationSelectorModal 
+          productId={items[mapSelectorIndex]?.product_id ? parseInt(items[mapSelectorIndex].product_id) : null}
+          onClose={() => setMapSelectorIndex(null)}
+          onSelectLocation={(loc) => {
+            // Add to locationsList if it doesn't exist
+            if (!locationsList.find(l => l.id === loc.id)) {
+              setLocationsList([...locationsList, loc]);
+            }
+            handleRowChange(mapSelectorIndex, "location_id", String(loc.id));
+            setMapSelectorIndex(null);
+          }}
+        />
+      )}
     </div>
   );
 };

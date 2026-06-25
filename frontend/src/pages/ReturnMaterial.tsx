@@ -58,10 +58,10 @@ export const ReturnMaterial: React.FC = () => {
   const [locationsList, setLocationsList] = useState<any[]>([]);
 
   // Form details
-  const [employee, setEmployee] = useState("Surya Kumar (SK001)");
-  const [project, setProject] = useState("Delhi Test House (DTH)");
-  const [returnDate, setReturnDate] = useState("2025-05-20");
-  const [referenceNo, setReferenceNo] = useState("DTH/RET/0520/02");
+  const [employee, setEmployee] = useState("");
+  const [project, setProject] = useState("");
+  const [returnDate, setReturnDate] = useState("");
+  const [referenceNo, setReferenceNo] = useState("");
   const [returnReason, setReturnReason] = useState("Work Completed");
   const [generalRemarks, setGeneralRemarks] = useState("");
 
@@ -84,20 +84,9 @@ export const ReturnMaterial: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Default dropdown options
-  const employees = [
-    "Surya Kumar (SK001)",
-    "Adarsh Sharma (SK002)",
-    "Rahul Kumar (SK003)",
-    "Neha Patel (SK004)"
-  ];
-
-  const projects = [
-    "Delhi Test House (DTH)",
-    "Conveyor Belt Assembly (CBA)",
-    "Control Panel Prototype (CPP)",
-    "Warehouse Renovation (WHR)"
-  ];
+  // Dynamic dropdown seed data
+  const [employeesList, setEmployeesList] = useState<string[]>([]);
+  const [projectsList, setProjectsList] = useState<string[]>([]);
 
   const returnReasons = [
     "Work Completed",
@@ -113,14 +102,29 @@ export const ReturnMaterial: React.FC = () => {
   const fetchDropdownData = async () => {
     try {
       setLoading(true);
-      const [prods, locs, txs] = await Promise.all([
+      const [prods, locs, txs, emps] = await Promise.all([
         apiClient.products.list(),
-        apiClient.reports.locations(),
-        apiClient.inventory.transactions().catch(() => [])
+        apiClient.layout.locations(),
+        apiClient.inventory.transactions().catch(() => []),
+        apiClient.employees.list().catch(() => [])
       ]);
 
       setProductsList(prods);
       setLocationsList(locs);
+
+      if (Array.isArray(emps)) {
+        setEmployeesList(emps.map((e: any) => `${e.name} (${e.department || 'Employee'})`));
+      }
+      
+      const savedProjects = localStorage.getItem('smart_store_projects_v2');
+      if (savedProjects) {
+        try {
+          const parsed = JSON.parse(savedProjects);
+          if (Array.isArray(parsed)) {
+            setProjectsList(parsed.map((p: any) => `${p.name} (${p.code})`));
+          }
+        } catch (_) {}
+      }
 
       // Process statistics
       const returns = txs.filter((t: any) => t.action === 'STOCK_IN' && String(t.remarks).toLowerCase().includes('return'));
@@ -194,28 +198,7 @@ export const ReturnMaterial: React.FC = () => {
         ];
         setIssuedItems(seedIssued);
 
-        // Prepopulate the bottom itemsToReturn list with the 4 items
-        const initialToReturn: ReturnItem[] = seedIssued.map((item, idx) => {
-          const conditions: Array<'Good' | 'Damaged' | 'Defective'> = ['Good', 'Good', 'Good', 'Damaged'];
-          const remarks = ["Working fine", "Extra cable left", "-", "Connector loose"];
-          const defaultLoc = locs.find((l: any) => l.id === parseInt(item.location_id)) || locs[0];
-          
-          return {
-            id: `return-${idx}`,
-            product_id: item.product_id,
-            code: item.code,
-            name: item.name,
-            category: item.category,
-            unit: item.unit,
-            location_id: defaultLoc ? String(defaultLoc.id) : "1",
-            issued_qty: item.issued_qty,
-            already_returned: item.already_returned,
-            return_qty: idx === 1 ? 5 : idx === 2 ? 2 : 1, // quantities matching screenshot: 2, 5, 2, 1
-            condition: conditions[idx] || 'Good',
-            remarks: remarks[idx] || ""
-          };
-        });
-        setItemsToReturn(initialToReturn);
+
       }
 
       setError(null);
@@ -461,10 +444,18 @@ export const ReturnMaterial: React.FC = () => {
               <div className="relative">
                 <select
                   value={employee}
-                  onChange={(e) => setEmployee(e.target.value)}
-                  className="w-full bg-slate-55 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
+                  onChange={(e) => {
+                    if (e.target.value === 'ADD_NEW') {
+                      navigate('/employees');
+                    } else {
+                      setEmployee(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
                 >
-                  {employees.map(emp => (
+                  <option value="" disabled>Select Employee</option>
+                  <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Employee</option>
+                  {employeesList.map(emp => (
                     <option key={emp} value={emp}>{emp}</option>
                   ))}
                 </select>
@@ -479,10 +470,18 @@ export const ReturnMaterial: React.FC = () => {
               <div className="relative">
                 <select
                   value={project}
-                  onChange={(e) => setProject(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value === 'ADD_NEW') {
+                      navigate('/projects');
+                    } else {
+                      setProject(e.target.value);
+                    }
+                  }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
                 >
-                  {projects.map(proj => (
+                  <option value="" disabled>Select Project</option>
+                  <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Project</option>
+                  {projectsList.map(proj => (
                     <option key={proj} value={proj}>{proj}</option>
                   ))}
                 </select>

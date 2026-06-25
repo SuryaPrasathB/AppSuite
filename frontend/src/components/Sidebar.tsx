@@ -19,7 +19,9 @@ import {
   ChevronRight, 
   Warehouse, 
   LogOut,
-  ChevronDown
+  ChevronDown,
+  Truck,
+  Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,12 +47,14 @@ export const Sidebar: React.FC = () => {
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Inventory', path: '/products', icon: Package },
     { name: 'Stock In', path: '/stock-in', icon: ArrowDownToLine },
-    { name: 'Issue Material', path: '/issue-material', icon: ArrowUpToLine },
+    { name: 'Stock Out', path: '/issue-material', icon: ArrowUpToLine },
     { name: 'Return Material', path: '/return-material', icon: Undo2 },
     { name: 'Requests', path: '/requests', icon: ShoppingCart },
     { name: 'Projects', path: '/projects', icon: Folder },
     { name: 'Store Layout', path: '/layout', icon: Warehouse },
     { name: 'Transactions', path: '/inventory', icon: History },
+    { name: 'Suppliers / Vendors', path: '/vendors', icon: Truck },
+    { name: 'Employees', path: '/employees', icon: Users },
     { name: 'Reports', path: '/reports', icon: TrendingUp },
   ];
 
@@ -127,7 +131,7 @@ export const Sidebar: React.FC = () => {
                 className="flex items-center gap-2 w-full px-3 py-2 bg-blue-800/10 hover:bg-blue-800/20 text-blue-400 border border-blue-800/20 rounded-lg text-[11px] font-bold transition-all"
               >
                 <Minus className="h-3.5 w-3.5" />
-                <span>Issue Material</span>
+                <span>Stock Out</span>
               </NavLink>
               <NavLink 
                 to="/return-material" 

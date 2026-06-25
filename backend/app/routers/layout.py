@@ -1,8 +1,26 @@
 from fastapi import APIRouter, HTTPException
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from app.database import DBStore
 
+from pydantic import BaseModel
+
 router = APIRouter(prefix="/layout", tags=["Digital Twin Store Layout"])
+
+class LocationCreate(BaseModel):
+    rack: str
+    shelf: str
+    bin: str
+    zone: Optional[str] = None
+    row_index: Optional[int] = 0
+    col_index: Optional[int] = 0
+
+@router.get("/locations")
+def get_all_locations():
+    """
+    Returns all raw location bins in the store.
+    """
+    return DBStore.get_locations()
+
 
 @router.get("/racks")
 def get_all_racks():
@@ -19,12 +37,12 @@ def get_all_racks():
             rack_shelves = set(l["shelf"] for l in locations if l["rack"] == loc["rack"] and l["zone"] == loc["zone"])
             rack_bins = set(l["bin"] for l in locations if l["rack"] == loc["rack"] and l["zone"] == loc["zone"])
             
-            # Find what items are currently stored in this rack
+            # Find what items are currently stored or designated in this rack
             stored_products_set = set()
             for l in locations:
                 if l["rack"] == loc["rack"] and l["zone"] == loc["zone"]:
                     for pl in DBStore.get_product_locations():
-                        if pl["location_id"] == l["id"] and pl["quantity"] > 0:
+                        if pl["location_id"] == l["id"]:
                             prod = next((p for p in DBStore.get_products() if p["id"] == pl["product_id"]), None)
                             if prod:
                                 stored_products_set.add(prod["name"])
@@ -40,6 +58,14 @@ def get_all_racks():
             }
             
     return list(racks_map.values())
+
+@router.post("/locations")
+def create_location(loc: LocationCreate):
+    """
+    Creates a new location (rack, shelf, bin).
+    """
+    new_loc = DBStore.add_location(loc.dict(exclude_unset=True))
+    return new_loc
 
 @router.get("/rack/{rack_code}")
 def get_rack_detail(rack_code: str):
