@@ -10,5 +10,6 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "lscontrols")
     MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "smart_store")
     PORT: int = int(os.getenv("PORT", "8000"))
+    PROJECTS_BASE_DIR: str = os.getenv("PROJECTS_BASE_DIR", "Z:\\PROJECTS")
 
 settings = Settings()

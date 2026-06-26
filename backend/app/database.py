@@ -819,6 +819,13 @@ class DBStore:
                 p['start_date'] = p['start_date'].isoformat()
             if p.get('end_date') and hasattr(p['end_date'], 'isoformat'):
                 p['end_date'] = p['end_date'].isoformat()
+            if p.get('date_of_delivery') and hasattr(p['date_of_delivery'], 'isoformat'):
+                p['date_of_delivery'] = p['date_of_delivery'].isoformat()
+            
+            # boolean conversion
+            for k in ['has_software', 'has_firmware', 'has_transformer']:
+                if k in p:
+                    p[k] = bool(p[k])
         return projects
 
     @staticmethod
@@ -826,13 +833,21 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
+                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project.get("code"), project.get("name"), project.get("po_number"),
             project.get("client_name"), project.get("description"), project.get("status", "PLANNING"),
-            project.get("start_date") or None, project.get("end_date") or None
+            project.get("start_date") or None, project.get("end_date") or None,
+            project.get("project_incharge"), 
+            1 if project.get("has_software") else 0,
+            1 if project.get("has_firmware") else 0,
+            1 if project.get("has_transformer") else 0,
+            project.get("no_of_panels", 1),
+            project.get("folder_path"),
+            project.get("date_of_delivery") or None
         )
         cursor.execute(query, values)
         conn.commit()
@@ -849,13 +864,18 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date"]:
+        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery"]:
             if key in data:
                 updates.append(f"{key} = %s")
-                if key in ["start_date", "end_date"] and not data[key]:
+                if key in ["start_date", "end_date", "date_of_delivery"] and not data[key]:
                     values.append(None)
                 else:
                     values.append(data[key])
+                    
+        for key in ["has_software", "has_firmware", "has_transformer"]:
+            if key in data:
+                updates.append(f"{key} = %s")
+                values.append(1 if data[key] else 0)
                     
         if not updates:
             return data
@@ -877,6 +897,11 @@ class DBStore:
                 p['start_date'] = p['start_date'].isoformat()
             if p.get('end_date') and hasattr(p['end_date'], 'isoformat'):
                 p['end_date'] = p['end_date'].isoformat()
+            if p.get('date_of_delivery') and hasattr(p['date_of_delivery'], 'isoformat'):
+                p['date_of_delivery'] = p['date_of_delivery'].isoformat()
+            for k in ['has_software', 'has_firmware', 'has_transformer']:
+                if k in p:
+                    p[k] = bool(p[k])
         return p
 
     @staticmethod
@@ -888,6 +913,72 @@ class DBStore:
         cursor.close()
         conn.close()
         return True
+
+    @staticmethod
+    def get_project_tasks(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM project_tasks WHERE project_id = %s", (project_id,))
+        tasks = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for t in tasks:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+        return tasks
+
+    @staticmethod
+    def get_project_files(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM project_files WHERE project_id = %s", (project_id,))
+        files = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for f in files:
+            if f.get('uploaded_at'):
+                f['uploaded_at'] = f['uploaded_at'].isoformat()
+        return files
+
+    @staticmethod
+    def add_project_task(project_id: int, task_name: str, status: str = 'PENDING') -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO project_tasks (project_id, task_name, status) VALUES (%s, %s, %s)",
+            (project_id, task_name, status)
+        )
+        conn.commit()
+        task_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return {"id": task_id, "project_id": project_id, "task_name": task_name, "status": status}
+        
+    @staticmethod
+    def update_project_task(project_id: int, task_name: str, status: str) -> None:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "UPDATE project_tasks SET status = %s WHERE project_id = %s AND task_name = %s",
+            (status, project_id, task_name)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    @staticmethod
+    def add_project_file(project_id: int, task_name: str, file_name: str, file_path: str) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO project_files (project_id, task_name, file_name, file_path) VALUES (%s, %s, %s, %s)",
+            (project_id, task_name, file_name, file_path)
+        )
+        conn.commit()
+        file_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return {"id": file_id, "project_id": project_id, "task_name": task_name, "file_name": file_name, "file_path": file_path}
 
     # BOM METHODS
     @staticmethod
