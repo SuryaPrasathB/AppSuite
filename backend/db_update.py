@@ -56,6 +56,29 @@ def update_db():
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
         """)
+
+        # 3. Dynamic Tasks Table
+        print("Creating dynamic_tasks table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dynamic_tasks (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT,
+                parent_id INT DEFAULT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                status VARCHAR(50) DEFAULT 'TODO',
+                priority VARCHAR(20) DEFAULT 'MEDIUM',
+                assignee_id INT DEFAULT NULL,
+                start_date DATE,
+                due_date DATE,
+                dependencies TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES dynamic_tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (assignee_id) REFERENCES employees(id) ON DELETE SET NULL
+            )
+        """)
         
         conn.commit()
         cursor.close()

@@ -51,7 +51,9 @@ export const Sidebar: React.FC = () => {
   if (activeModule === 'projects') {
     moduleHeader = { title: 'PROJECTS HUB', subtitle: 'PO TRACKING', icon: Folder, color: 'bg-blue-600' };
     menuItems = [
-      { name: 'All Projects', path: '/projects', icon: Folder }
+      { name: 'All Projects', path: '/projects', icon: Folder },
+      { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList },
+      { name: 'Global Timeline', path: '/projects/timeline', icon: Folder }
     ];
   } else if (activeModule === 'bom') {
     moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };

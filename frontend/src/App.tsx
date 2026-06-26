@@ -9,6 +9,8 @@ import { Dashboard } from './modules/store/pages/Dashboard';
 import { StoreLayout } from './modules/store/pages/StoreLayout';
 import { Products } from './modules/store/pages/Products';
 import { Projects } from './modules/projects/Projects';
+import { MyTasks } from './modules/projects/MyTasks';
+import { GlobalTimeline } from './modules/projects/GlobalTimeline';
 import { Inventory } from './modules/store/pages/Inventory';
 import { Vendors } from './modules/store/pages/Vendors';
 import { PurchasePlanning } from './modules/store/pages/PurchasePlanning';
@@ -106,6 +108,8 @@ const AppContent: React.FC = () => {
             <Route path="/purchase" element={<PurchasePlanning />} />
             <Route path="/requests" element={<Requests />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/my-tasks" element={<MyTasks />} />
+            <Route path="/projects/timeline" element={<GlobalTimeline />} />
             <Route path="/bom" element={<BOM />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="*" element={<Navigate to="/" replace />} />

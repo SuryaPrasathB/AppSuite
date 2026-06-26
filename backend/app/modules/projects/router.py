@@ -176,3 +176,54 @@ def delete_project(project_id: int):
     # Optional: also delete the folder from Z drive? Let's leave it on disk for safety.
     DBStore.delete_project(project_id)
     return {"message": "Project deleted successfully from database (files preserved)"}
+
+
+# DYNAMIC TASKS ENDPOINTS & SCHEMAS
+
+class TaskCreate(BaseModel):
+    parent_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    status: str = "TODO"
+    priority: str = "MEDIUM"
+    assignee_id: Optional[int] = None
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    dependencies: Optional[str] = None
+
+class TaskUpdate(BaseModel):
+    parent_id: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    assignee_id: Optional[int] = None
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    dependencies: Optional[str] = None
+
+@router.get("/all-dynamic-tasks")
+def list_all_dynamic_tasks():
+    return DBStore.get_all_dynamic_tasks()
+
+@router.get("/{project_id}/dynamic-tasks")
+def list_dynamic_tasks(project_id: int):
+    return DBStore.get_dynamic_tasks(project_id)
+
+@router.post("/{project_id}/dynamic-tasks")
+def create_dynamic_task(project_id: int, task: TaskCreate):
+    return DBStore.add_dynamic_task(project_id, task.model_dump())
+
+@router.put("/{project_id}/dynamic-tasks/{task_id}")
+def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate):
+    updated = DBStore.update_dynamic_task(task_id, task.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return updated
+
+@router.delete("/{project_id}/dynamic-tasks/{task_id}")
+def delete_dynamic_task(project_id: int, task_id: int):
+    success = DBStore.delete_dynamic_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"message": "Task deleted successfully"}

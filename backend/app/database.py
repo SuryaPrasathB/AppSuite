@@ -980,6 +980,138 @@ class DBStore:
         conn.close()
         return {"id": file_id, "project_id": project_id, "task_name": task_name, "file_name": file_name, "file_path": file_path}
 
+    @staticmethod
+    def get_dynamic_tasks(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            FROM dynamic_tasks t
+            LEFT JOIN employees e ON t.assignee_id = e.id
+            WHERE t.project_id = %s
+            ORDER BY t.id ASC
+        """, (project_id,))
+        tasks = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for t in tasks:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+            if t.get('updated_at'):
+                t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
+                t['start_date'] = t['start_date'].isoformat()
+            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
+                t['due_date'] = t['due_date'].isoformat()
+        return tasks
+
+    @staticmethod
+    def get_all_dynamic_tasks() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            SELECT dt.*, e.name as assignee_name, p.name as project_name
+            FROM dynamic_tasks dt
+            LEFT JOIN employees e ON dt.assignee_id = e.id
+            LEFT JOIN projects p ON dt.project_id = p.id
+            ORDER BY dt.created_at DESC
+        """
+        cursor.execute(query)
+        tasks = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for t in tasks:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+            if t.get('updated_at'):
+                t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
+                t['start_date'] = t['start_date'].isoformat()
+            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
+                t['due_date'] = t['due_date'].isoformat()
+        return tasks
+
+    @staticmethod
+    def add_dynamic_task(project_id: int, task: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, assignee_id, start_date, due_date, dependencies)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            project_id,
+            task.get("parent_id") or None,
+            task.get("title"),
+            task.get("description") or None,
+            task.get("status", "TODO"),
+            task.get("priority", "MEDIUM"),
+            task.get("assignee_id") or None,
+            task.get("start_date") or None,
+            task.get("due_date") or None,
+            task.get("dependencies") or None
+        )
+        cursor.execute(query, values)
+        conn.commit()
+        task_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        task["id"] = task_id
+        task["project_id"] = project_id
+        return task
+
+    @staticmethod
+    def update_dynamic_task(task_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        fields = ["parent_id", "title", "description", "status", "priority", "assignee_id", "start_date", "due_date", "dependencies"]
+        for key in fields:
+            if key in data:
+                updates.append(f"{key} = %s")
+                if key in ["parent_id", "assignee_id", "start_date", "due_date", "dependencies"] and not data[key]:
+                    values.append(None)
+                else:
+                    values.append(data[key])
+                    
+        if not updates:
+            cursor.close()
+            conn.close()
+            return data
+            
+        values.append(task_id)
+        query = f"UPDATE dynamic_tasks SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM dynamic_tasks WHERE id = %s", (task_id,))
+        t = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if t:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+            if t.get('updated_at'):
+                t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
+                t['start_date'] = t['start_date'].isoformat()
+            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
+                t['due_date'] = t['due_date'].isoformat()
+        return t
+
+    @staticmethod
+    def delete_dynamic_task(task_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM dynamic_tasks WHERE id = %s", (task_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
     # BOM METHODS
     @staticmethod
     def get_boms(project_id: Optional[int] = None) -> List[Dict[str, Any]]:

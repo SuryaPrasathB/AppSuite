@@ -229,7 +229,7 @@ export const Projects: React.FC = () => {
                 </tr>
               ) : filteredProjects.length > 0 ? (
                 filteredProjects.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={p.id} onClick={() => setSelectedProjectId(p.id)} className="cursor-pointer hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <div>
                         <div className="font-bold text-slate-800 text-sm">{p.name}</div>
@@ -245,6 +245,7 @@ export const Projects: React.FC = () => {
                     <td className="px-6 py-4 relative">
                       <select
                         value={p.status}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={async (e) => {
                           try {
                             await updateProject(p.id, { status: e.target.value });
@@ -283,24 +284,23 @@ export const Projects: React.FC = () => {
                     <td className="px-6 py-4 text-slate-500">
                       {p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString() : '—'}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         <button 
-                          onClick={() => setSelectedProjectId(p.id)}
-                          title="View Tasks"
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded transition-colors"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleOpenEditProjectModal(p)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditProjectModal(p);
+                          }}
                           title="Edit Project"
                           className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-600 rounded transition-colors"
                         >
                           <Edit className="h-4 w-4" />
                         </button>
                         <button 
-                          onClick={() => confirmDeleteProject(p.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDeleteProject(p.id);
+                          }}
                           title="Delete Project"
                           className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-600 hover:text-red-600 rounded transition-colors"
                         >

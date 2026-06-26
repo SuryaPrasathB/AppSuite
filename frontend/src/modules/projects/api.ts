@@ -85,4 +85,57 @@ export async function uploadTaskFile(projectId: number, taskName: string, file: 
   return res.json();
 }
 
+export async function fetchDynamicTasks(projectId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/dynamic-tasks`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch dynamic tasks');
+  return res.json();
+}
+
+export async function fetchAllDynamicTasks() {
+  const res = await fetch(`${API_BASE}/all-dynamic-tasks`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch all dynamic tasks');
+  return res.json();
+}
+
+export async function createDynamicTask(projectId: number, data: any) {
+  const res = await fetch(`${API_BASE}/${projectId}/dynamic-tasks`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to create task');
+  }
+  return res.json();
+}
+
+export async function updateDynamicTask(projectId: number, taskId: number, data: any) {
+  const res = await fetch(`${API_BASE}/${projectId}/dynamic-tasks/${taskId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to update task');
+  }
+  return res.json();
+}
+
+export async function deleteDynamicTask(projectId: number, taskId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/dynamic-tasks/${taskId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to delete task');
+  return res.json();
+}
+
+export async function fetchEmployees() {
+  const res = await fetch('http://localhost:8000/api/employees', { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch employees');
+  return res.json();
+}
+
 
