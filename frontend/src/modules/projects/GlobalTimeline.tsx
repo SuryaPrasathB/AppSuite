@@ -76,11 +76,11 @@ export const GlobalTimeline: React.FC = () => {
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <GitMerge className="h-6 w-6 text-indigo-600" />
+            <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-3">
+              <GitMerge className="h-7 w-7 text-indigo-600" />
               Global Timeline
             </h1>
-            <p className="text-slate-500 text-sm mt-1">Macro-level overview of all active projects</p>
+            <p className="text-slate-500 text-sm mt-1.5 font-medium">Macro-level overview of all active projects</p>
           </div>
           
           <div className="flex items-center gap-3">
@@ -129,14 +129,14 @@ export const GlobalTimeline: React.FC = () => {
                   return (
                     <div 
                       key={idx} 
-                      className={`p-2 text-center text-[10px] font-bold border-b border-slate-200 flex flex-col justify-center leading-none ${
-                        isToday ? 'bg-indigo-50 text-indigo-600 border-x border-indigo-200 z-10' : 'text-slate-500'
+                      className={`p-2 text-center text-[10px] font-bold border-b flex flex-col justify-center leading-none transition-colors ${
+                        isToday ? 'bg-indigo-50/50 text-indigo-700 border-x border-indigo-200/60 z-10' : 'text-slate-500 border-slate-200/50'
                       }`}
                     >
-                      <span>{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
-                      <span className="mt-1 font-extrabold text-[12px]">{date.getDate()}</span>
+                      <span className="uppercase tracking-widest opacity-80">{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
+                      <span className="mt-1 font-black text-sm">{date.getDate()}</span>
                       {date.getDate() === 1 && (
-                        <span className="mt-1 text-[9px] uppercase tracking-wider text-slate-400">{date.toLocaleDateString(undefined, { month: 'short' })}</span>
+                        <span className="mt-1 text-[9px] uppercase tracking-widest text-indigo-400 font-black">{date.toLocaleDateString(undefined, { month: 'short' })}</span>
                       )}
                     </div>
                   );
@@ -185,7 +185,7 @@ export const GlobalTimeline: React.FC = () => {
                       <div className="border-b border-slate-100 relative group" style={{ gridColumn: `span ${timelineDays}` }}>
                         {/* The Gantt Bar */}
                         <div 
-                          className={`absolute top-3 bottom-3 rounded-md bg-gradient-to-r ${statusColor} border shadow-sm flex flex-col justify-center px-3 text-[10px] overflow-hidden select-none hover:brightness-105 transition-all`}
+                          className={`absolute top-3 bottom-3 rounded-lg bg-gradient-to-r ${statusColor} border shadow-md flex flex-col justify-center px-4 text-[10px] overflow-hidden select-none hover:shadow-lg hover:-translate-y-0.5 hover:brightness-110 transition-all duration-300`}
                           style={{ 
                             left: `calc((${startOffset} / ${timelineDays}) * 100%)`, 
                             width: `calc((${duration} / ${timelineDays}) * 100%)`,
@@ -194,9 +194,9 @@ export const GlobalTimeline: React.FC = () => {
                         >
                           {duration > 2 && (
                             <>
-                              <span className="font-bold truncate opacity-90">{project.status.replace('_', ' ')}</span>
+                              <span className="font-black tracking-wide truncate opacity-95">{project.status.replace('_', ' ')}</span>
                               {duration > 4 && (
-                                <span className="text-[9px] truncate opacity-75">{project.client_name || 'No Client'}</span>
+                                <span className="text-[9px] font-bold truncate opacity-80 mt-0.5">{project.client_name || 'Internal / No Client'}</span>
                               )}
                             </>
                           )}

@@ -5,11 +5,13 @@ import {
   Briefcase, User, CalendarDays, Layers, Cpu, Zap, Building2, Hash, FileCode2, Edit2, Trash2, Edit
 } from 'lucide-react';
 import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject } from './api';
-import { ProjectTasks } from './ProjectTasks';
+import { useNavigate } from 'react-router-dom';
+import { ProjectFormModal } from './ProjectFormModal';
 
 export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   // Filters & State
   const [searchQuery, setSearchQuery] = useState('');
@@ -18,24 +20,12 @@ export const Projects: React.FC = () => {
   
   // Modals
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [editProjectId, setEditProjectId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  // New Project Form State
-  const [newProjectForm, setNewProjectForm] = useState({
-    code: '',
-    name: '',
-    client_name: '',
-    project_incharge: '',
-    date_of_delivery: '',
-    status: 'PLANNING',
-    has_software: false,
-    has_firmware: false,
-    has_transformer: false,
-    no_of_panels: 1
-  });
+  // Code logic for new project
+  const [nextProjectCode, setNextProjectCode] = useState<string>('');
 
   const loadProjects = async () => {
     try {
@@ -57,14 +47,9 @@ export const Projects: React.FC = () => {
   const handleOpenNewProjectModal = async () => {
     setEditProjectId(null);
     setIsNewProjectOpen(true);
-    setIsCodeManualOverride(false);
-    setNewProjectForm({
-      code: '', name: '', client_name: '', project_incharge: '', date_of_delivery: '', status: 'PLANNING',
-      has_software: false, has_firmware: false, has_transformer: false, no_of_panels: 1
-    });
     try {
       const { code } = await fetchNextProjectCode();
-      setNewProjectForm(prev => ({ ...prev, code }));
+      setNextProjectCode(code);
     } catch (err) {
       console.error("Failed to auto-assign project code", err);
     }
@@ -72,19 +57,6 @@ export const Projects: React.FC = () => {
 
   const handleOpenEditProjectModal = (project: any) => {
     setEditProjectId(project.id);
-    setIsCodeManualOverride(true);
-    setNewProjectForm({
-      code: project.code || '',
-      name: project.name || '',
-      client_name: project.client_name || '',
-      project_incharge: project.project_incharge || '',
-      date_of_delivery: project.date_of_delivery || '',
-      status: project.status || 'PLANNING',
-      has_software: project.has_software || false,
-      has_firmware: project.has_firmware || false,
-      has_transformer: project.has_transformer || false,
-      no_of_panels: project.no_of_panels || 1
-    });
     setIsNewProjectOpen(true);
   };
 
@@ -103,27 +75,15 @@ export const Projects: React.FC = () => {
     }
   };
 
-  const handleSaveProject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveProject = async (formData: any) => {
     try {
       if (editProjectId) {
-        await updateProject(editProjectId, newProjectForm);
+        await updateProject(editProjectId, formData);
       } else {
-        await createProject(newProjectForm);
+        await createProject(formData);
       }
       setIsNewProjectOpen(false);
       setEditProjectId(null);
-      setNewProjectForm({
-        code: '',
-        name: '',
-        client_name: '',
-        project_incharge: '',
-        date_of_delivery: '',
-        has_software: false,
-        has_firmware: false,
-        has_transformer: false,
-        no_of_panels: 1
-      });
       loadProjects();
     } catch (err: any) {
       alert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
@@ -214,11 +174,14 @@ export const Projects: React.FC = () => {
           <table className="w-full text-left border-collapse text-xs text-slate-650">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                <th className="px-6 py-4">Project</th>
-                <th className="px-6 py-4">Customer</th>
-                <th className="px-6 py-4">Incharge</th>
+                <th className="px-6 py-4">Project Name</th>
+                <th className="px-6 py-4">Client</th>
+                <th className="px-6 py-4">PO Number</th>
+                <th className="px-6 py-4">Engineer</th>
                 <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Delivery Date</th>
+                <th className="px-6 py-4">Completion</th>
+                <th className="px-6 py-4">Start Date</th>
+                <th className="px-6 py-4">End Date</th>
                 <th className="px-6 py-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -229,7 +192,7 @@ export const Projects: React.FC = () => {
                 </tr>
               ) : filteredProjects.length > 0 ? (
                 filteredProjects.map((p) => (
-                  <tr key={p.id} onClick={() => setSelectedProjectId(p.id)} className="cursor-pointer hover:bg-slate-50/50 transition-colors">
+                  <tr key={p.id} onClick={() => navigate(`/projects/${p.id}`)} className="cursor-pointer hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <div>
                         <div className="font-bold text-slate-800 text-sm">{p.name}</div>
@@ -238,6 +201,9 @@ export const Projects: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 font-bold text-slate-800">
                       {p.client_name || '—'}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">
+                      {p.po_number || '—'}
                     </td>
                     <td className="px-6 py-4 font-bold text-slate-800">
                       {p.project_incharge || '—'}
@@ -281,8 +247,24 @@ export const Projects: React.FC = () => {
                         }`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                       </div>
                     </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-full bg-slate-200 rounded-full h-2 mt-1">
+                          <div 
+                            className={`h-2 rounded-full ${p.completion_percentage === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} 
+                            style={{ width: `${p.completion_percentage ?? (p.status === 'COMPLETED' ? 100 : 0)}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 w-8 text-right">
+                          {p.completion_percentage ?? (p.status === 'COMPLETED' ? 100 : 0)}%
+                        </span>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-slate-500">
-                      {p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString() : '—'}
+                      {p.start_date ? new Date(p.start_date).toLocaleDateString() : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500">
+                      {p.end_date ? new Date(p.end_date).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
@@ -320,282 +302,14 @@ export const Projects: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <ProjectFormModal
+          isOpen={isNewProjectOpen}
+          onClose={() => setIsNewProjectOpen(false)}
+          project={editProjectId ? projects.find(p => p.id === editProjectId) : null}
+          onSave={handleSaveProject}
+          nextCode={nextProjectCode}
+        />
       </div>
-
-      {/* New Project Modal */}
-      {isNewProjectOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
-            {/* Modal Header */}
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary-100 text-primary-700 rounded-lg">
-                  <Folder className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800 leading-tight">
-                    {editProjectId ? 'Edit Project' : 'Create New Project'}
-                  </h2>
-                  <p className="text-xs text-slate-500 font-medium">
-                    {editProjectId ? 'Update project details and requirements.' : 'Initialize a new project workspace and server directories.'}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsNewProjectOpen(false)} 
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSaveProject} className="flex flex-col max-h-[80vh]">
-              <div className="p-6 overflow-y-auto space-y-8">
-                
-                {/* Section 1: Core Details */}
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-                    <Briefcase className="h-4 w-4" />
-                    Core Identity
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide">Project Code *</label>
-                        <button
-                          type="button"
-                          onClick={() => setIsCodeManualOverride(!isCodeManualOverride)}
-                          className={`text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded transition-colors ${
-                            isCodeManualOverride ? 'bg-primary-100 text-primary-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-                          }`}
-                          title="Manual Override"
-                        >
-                          <Edit2 className="h-3 w-3" />
-                          Manual
-                        </button>
-                      </div>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Hash className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <input
-                          required
-                          type="text"
-                          readOnly={!isCodeManualOverride}
-                          value={newProjectForm.code}
-                          onChange={(e) => setNewProjectForm({...newProjectForm, code: e.target.value})}
-                          placeholder="e.g. 1/PRJ/0626"
-                          className={`w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all ${
-                            isCodeManualOverride ? 'text-slate-800' : 'text-slate-500 cursor-not-allowed bg-slate-100'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Name *</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <FileCode2 className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <input
-                          required
-                          type="text"
-                          value={newProjectForm.name}
-                          onChange={(e) => setNewProjectForm({...newProjectForm, name: e.target.value})}
-                          placeholder="Factory Automation System"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {editProjectId && (
-                    <div className="mt-5">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Status</label>
-                      <select
-                        value={newProjectForm.status}
-                        onChange={(e) => setNewProjectForm({...newProjectForm, status: e.target.value})}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all cursor-pointer"
-                      >
-                        <option value="PLANNING">PLANNING</option>
-                        <option value="IN_PROGRESS">IN_PROGRESS</option>
-                        <option value="ON_HOLD">ON_HOLD</option>
-                        <option value="COMPLETED">COMPLETED</option>
-                        <option value="SERVICE">SERVICE</option>
-                        <option value="CANCELLED">CANCELLED</option>
-                      </select>
-                    </div>
-                  )}
-                </section>
-
-                <div className="h-px w-full bg-slate-100"></div>
-
-                {/* Section 2: Management & Client */}
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Management & Client
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Customer Name</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Building2 className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <input
-                          type="text"
-                          value={newProjectForm.client_name}
-                          onChange={(e) => setNewProjectForm({...newProjectForm, client_name: e.target.value})}
-                          placeholder="Acme Corp"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Incharge</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <User className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <input
-                          type="text"
-                          value={newProjectForm.project_incharge}
-                          onChange={(e) => setNewProjectForm({...newProjectForm, project_incharge: e.target.value})}
-                          placeholder="John Doe"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <div className="h-px w-full bg-slate-100"></div>
-
-                {/* Section 3: Timeline & Scale */}
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    Timeline & Scale
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Date of Delivery</label>
-                      <input
-                        type="date"
-                        value={newProjectForm.date_of_delivery}
-                        onChange={(e) => setNewProjectForm({...newProjectForm, date_of_delivery: e.target.value})}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">No. of Panels</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Layers className="h-4 w-4 text-slate-400" />
-                        </div>
-                        <input
-                          type="number"
-                          min="1"
-                          value={newProjectForm.no_of_panels}
-                          onChange={(e) => setNewProjectForm({...newProjectForm, no_of_panels: parseInt(e.target.value) || 1})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <div className="h-px w-full bg-slate-100"></div>
-
-                {/* Section 4: Module Requirements (Cards) */}
-                <section>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-                    <Cpu className="h-4 w-4" />
-                    Additional Requirements
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Software Card */}
-                    <label className={`cursor-pointer relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                      newProjectForm.has_software 
-                        ? 'border-primary-500 bg-primary-50/50 text-primary-700' 
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-600'
-                    }`}>
-                      <input 
-                        type="checkbox" 
-                        className="sr-only"
-                        checked={newProjectForm.has_software}
-                        onChange={(e) => setNewProjectForm({...newProjectForm, has_software: e.target.checked})}
-                      />
-                      <Cpu className={`h-6 w-6 mb-2 ${newProjectForm.has_software ? 'text-primary-600' : 'text-slate-400'}`} />
-                      <span className="text-sm font-bold">Software</span>
-                      {newProjectForm.has_software && (
-                        <div className="absolute top-2 right-2 h-2 w-2 bg-primary-500 rounded-full"></div>
-                      )}
-                    </label>
-
-                    {/* Firmware Card */}
-                    <label className={`cursor-pointer relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                      newProjectForm.has_firmware 
-                        ? 'border-primary-500 bg-primary-50/50 text-primary-700' 
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-600'
-                    }`}>
-                      <input 
-                        type="checkbox" 
-                        className="sr-only"
-                        checked={newProjectForm.has_firmware}
-                        onChange={(e) => setNewProjectForm({...newProjectForm, has_firmware: e.target.checked})}
-                      />
-                      <Layers className={`h-6 w-6 mb-2 ${newProjectForm.has_firmware ? 'text-primary-600' : 'text-slate-400'}`} />
-                      <span className="text-sm font-bold">Firmware</span>
-                      {newProjectForm.has_firmware && (
-                        <div className="absolute top-2 right-2 h-2 w-2 bg-primary-500 rounded-full"></div>
-                      )}
-                    </label>
-
-                    {/* Transformer Card */}
-                    <label className={`cursor-pointer relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                      newProjectForm.has_transformer 
-                        ? 'border-primary-500 bg-primary-50/50 text-primary-700' 
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-600'
-                    }`}>
-                      <input 
-                        type="checkbox" 
-                        className="sr-only"
-                        checked={newProjectForm.has_transformer}
-                        onChange={(e) => setNewProjectForm({...newProjectForm, has_transformer: e.target.checked})}
-                      />
-                      <Zap className={`h-6 w-6 mb-2 ${newProjectForm.has_transformer ? 'text-primary-600' : 'text-slate-400'}`} />
-                      <span className="text-sm font-bold">Transformer</span>
-                      {newProjectForm.has_transformer && (
-                        <div className="absolute top-2 right-2 h-2 w-2 bg-primary-500 rounded-full"></div>
-                      )}
-                    </label>
-                  </div>
-                </section>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 mt-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsNewProjectOpen(false)}
-                  className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm flex items-center gap-2"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  {editProjectId ? 'Save Changes' : 'Create Project'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
@@ -624,17 +338,6 @@ export const Projects: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Project Tasks Modal */}
-      {selectedProjectId && (
-        <ProjectTasks 
-          projectId={selectedProjectId} 
-          onClose={() => {
-            setSelectedProjectId(null);
-            loadProjects(); // refresh status
-          }} 
-        />
       )}
     </div>
   );

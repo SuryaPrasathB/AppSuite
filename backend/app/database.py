@@ -4,6 +4,7 @@ import mysql.connector
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from app.config import settings
+import bcrypt
 
 def get_db_connection():
     return mysql.connector.connect(
@@ -735,7 +736,7 @@ class DBStore:
     def get_employees() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM employees")
+        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees")
         employees = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -748,18 +749,29 @@ class DBStore:
     def add_employee(employee: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        
+        username = employee.get("username")
+        password = employee.get("password")
+        hashed_pw = None
+        if password:
+            pwd_bytes = password.encode('utf-8')
+            salt = bcrypt.gensalt()
+            hashed_pw = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+            
         query = """
-            INSERT INTO employees (name, role, phone, email, department)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO employees (name, role, phone, email, department, username, password_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             employee.get("name"), employee.get("role"), employee.get("phone"),
-            employee.get("email"), employee.get("department")
+            employee.get("email"), employee.get("department"), username, hashed_pw
         )
         cursor.execute(query, values)
         conn.commit()
         employee["id"] = cursor.lastrowid
         employee["created_at"] = datetime.now().isoformat()
+        if "password" in employee:
+            del employee["password"]
         cursor.close()
         conn.close()
         return employee
@@ -771,10 +783,17 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["name", "role", "phone", "email", "department"]:
+        for key in ["name", "role", "phone", "email", "department", "username"]:
             if key in data:
                 updates.append(f"{key} = %s")
                 values.append(data[key])
+                
+        if "password" in data and data["password"]:
+            pwd_bytes = data["password"].encode('utf-8')
+            salt = bcrypt.gensalt()
+            hashed_pw = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+            updates.append("password_hash = %s")
+            values.append(hashed_pw)
                 
         if not updates:
             return data
@@ -784,7 +803,7 @@ class DBStore:
         cursor.execute(query, values)
         conn.commit()
         
-        cursor.execute("SELECT * FROM employees WHERE id = %s", (emp_id,))
+        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees WHERE id = %s", (emp_id,))
         emp = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -803,12 +822,41 @@ class DBStore:
         conn.close()
         return True
 
+    @staticmethod
+    def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, name, role, username, password_hash FROM employees WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if user and user.get("password_hash"):
+            # Check password
+            if bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
+                del user["password_hash"]
+                return user
+        return None
+
     # PROJECTS METHODS
     @staticmethod
     def get_projects() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM projects ORDER BY id DESC")
+        cursor.execute("""
+            SELECT p.*,
+                (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id) as total_dynamic_tasks,
+                (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id AND dt.status = 'COMPLETED') as completed_dynamic_tasks,
+                (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id) as total_static_tasks,
+                (
+                    SELECT COUNT(DISTINCT pt.task_name) 
+                    FROM project_tasks pt 
+                    INNER JOIN project_files pf ON pt.project_id = pf.project_id AND pt.task_name = pf.task_name
+                    WHERE pt.project_id = p.id
+                ) as completed_static_tasks
+            FROM projects p 
+            ORDER BY p.id DESC
+        """)
         projects = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -826,6 +874,22 @@ class DBStore:
             for k in ['has_software', 'has_firmware', 'has_transformer']:
                 if k in p:
                     p[k] = bool(p[k])
+                    
+            # Calculate completion percentage
+            total_tasks = p.get('total_dynamic_tasks', 0) + p.get('total_static_tasks', 0)
+            completed_tasks = p.get('completed_dynamic_tasks', 0) + p.get('completed_static_tasks', 0)
+            
+            # Remove intermediate keys if desired, or keep them for frontend usage
+            # p.pop('total_dynamic_tasks', None)
+            # p.pop('completed_dynamic_tasks', None)
+            # p.pop('total_static_tasks', None)
+            # p.pop('completed_static_tasks', None)
+            
+            if total_tasks > 0:
+                p['completion_percentage'] = int((completed_tasks / total_tasks) * 100)
+            else:
+                p['completion_percentage'] = 100 if p.get('status') == 'COMPLETED' else 0
+
         return projects
 
     @staticmethod
@@ -1277,3 +1341,86 @@ class DBStore:
         conn.close()
         return {"success": True, "total_issued": total_qty}
 
+    @staticmethod
+    def get_project_notes(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT n.*, e.name as created_by_name 
+            FROM project_notes n
+            LEFT JOIN employees e ON n.created_by = e.id
+            WHERE n.project_id = %s
+            ORDER BY n.created_at DESC
+        """, (project_id,))
+        notes = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for n in notes:
+            if n.get('created_at'): n['created_at'] = n['created_at'].isoformat()
+            if n.get('updated_at'): n['updated_at'] = n['updated_at'].isoformat()
+        return notes
+
+    @staticmethod
+    def add_project_note(project_id: int, content: str, created_by: int = None) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO project_notes (project_id, content, created_by) VALUES (%s, %s, %s)",
+            (project_id, content, created_by)
+        )
+        note_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute("""
+            SELECT n.*, e.name as created_by_name 
+            FROM project_notes n
+            LEFT JOIN employees e ON n.created_by = e.id
+            WHERE n.id = %s
+        """, (note_id,))
+        note = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if note and note.get('created_at'): note['created_at'] = note['created_at'].isoformat()
+        if note and note.get('updated_at'): note['updated_at'] = note['updated_at'].isoformat()
+        return note
+
+    @staticmethod
+    def get_project_activities(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, e.name as user_name 
+            FROM project_activities a
+            LEFT JOIN employees e ON a.user_id = e.id
+            WHERE a.project_id = %s
+            ORDER BY a.created_at DESC
+        """, (project_id,))
+        activities = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for a in activities:
+            if a.get('created_at'): a['created_at'] = a['created_at'].isoformat()
+        return activities
+
+    @staticmethod
+    def add_project_activity(project_id: int, action: str, description: str = None, user_id: int = None) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO project_activities (project_id, action, description, user_id) VALUES (%s, %s, %s, %s)",
+            (project_id, action, description, user_id)
+        )
+        activity_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute("""
+            SELECT a.*, e.name as user_name 
+            FROM project_activities a
+            LEFT JOIN employees e ON a.user_id = e.id
+            WHERE a.id = %s
+        """, (activity_id,))
+        activity = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if activity and activity.get('created_at'): activity['created_at'] = activity['created_at'].isoformat()
+        return activity

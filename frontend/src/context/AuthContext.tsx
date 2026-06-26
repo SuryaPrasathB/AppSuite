@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type UserRole = 'Administrator' | 'Store Manager' | 'Store Operator' | 'Purchase Team';
+export type UserRole = 'Administrator' | 'Store Manager' | 'Store Operator' | 'Purchase Team' | 'Employee';
 
 interface User {
   username: string;
@@ -45,10 +45,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('smart_store_user');
   };
 
-  const hasRole = (roles: UserRole[]) => {
+  const hasRole = React.useCallback((roles: UserRole[]) => {
     if (!user) return false;
     return roles.includes(user.role);
-  };
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, isLoading, hasRole }}>

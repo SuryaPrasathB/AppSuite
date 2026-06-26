@@ -1,14 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Folder, ClipboardList, Warehouse, LogOut } from 'lucide-react';
+import { Folder, ClipboardList, Warehouse, LogOut, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export const Portal: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, hasRole } = useAuth();
 
-  const modules = [
-    {
+  const modules: any[] = [];
+
+  // Projects: Administrator, Employee
+  if (hasRole(['Administrator', 'Employee'])) {
+    modules.push({
       id: 'projects',
       title: 'Projects Module',
       description: 'Log and track client Purchase Orders, manage project statuses, dates, and link engineering requirements.',
@@ -18,8 +21,12 @@ export const Portal: React.FC = () => {
       border: 'border-slate-200/80 hover:border-blue-500/40',
       textHover: 'group-hover:text-blue-600',
       path: '/projects',
-    },
-    {
+    });
+  }
+
+  // BOM Builder: Administrator, Employee, Store Operator, Store Manager
+  if (hasRole(['Administrator', 'Employee', 'Store Operator', 'Store Manager'])) {
+    modules.push({
       id: 'bom',
       title: 'BOM Builder',
       description: 'Build Bill of Materials using the live parts catalog. Compare requirements with live stock, and prepare orders.',
@@ -29,8 +36,12 @@ export const Portal: React.FC = () => {
       border: 'border-slate-200/80 hover:border-purple-500/40',
       textHover: 'group-hover:text-purple-600',
       path: '/bom',
-    },
-    {
+    });
+  }
+
+  // Store: Administrator, Store Operator, Store Manager
+  if (hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
+    modules.push({
       id: 'store',
       title: 'SmartStore Manager',
       description: 'Access warehouse inventory logs, process physical stock issues, view layouts, and manage suppliers/vendors.',
@@ -40,8 +51,22 @@ export const Portal: React.FC = () => {
       border: 'border-slate-200/80 hover:border-emerald-500/40',
       textHover: 'group-hover:text-emerald-600',
       path: '/store',
-    },
-  ];
+    });
+  }
+
+  if (hasRole(['Administrator'])) {
+    modules.push({
+      id: 'users',
+      title: 'User Management',
+      description: 'Create and manage user accounts, assign roles, and handle access control across the enterprise portal.',
+      icon: Users,
+      color: 'from-slate-700 to-slate-900',
+      shadow: 'shadow-sm hover:shadow-xl hover:shadow-slate-500/10',
+      border: 'border-slate-200/80 hover:border-slate-500/40',
+      textHover: 'group-hover:text-slate-800',
+      path: '/users',
+    });
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-805 flex flex-col justify-between relative overflow-hidden font-sans">
@@ -78,7 +103,7 @@ export const Portal: React.FC = () => {
       </header>
 
       {/* Main Grid */}
-      <main className="max-w-6xl mx-auto px-6 py-12 flex-1 flex flex-col justify-center z-10 w-full">
+      <main className="max-w-[1600px] mx-auto px-6 py-12 flex-1 flex flex-col justify-center z-10 w-full">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-805 sm:text-4xl">
             Welcome to the SmartStore Hub
@@ -88,14 +113,14 @@ export const Portal: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="flex flex-wrap justify-center gap-6">
           {modules.map((mod) => {
             const Icon = mod.icon;
             return (
               <div
                 key={mod.id}
                 onClick={() => navigate(mod.path)}
-                className={`group cursor-pointer bg-white border rounded-3xl p-8 flex flex-col justify-between h-[340px] transition-all duration-300 ${mod.border} ${mod.shadow} hover:-translate-y-1.5`}
+                className={`group cursor-pointer bg-white border rounded-3xl p-6 lg:p-8 flex flex-col justify-between h-[340px] w-full max-w-[320px] transition-all duration-300 ${mod.border} ${mod.shadow} hover:-translate-y-1.5`}
               >
                 <div>
                   <div className={`h-14 w-14 rounded-2xl bg-linear-to-br ${mod.color} flex items-center justify-center text-white shadow-lg shadow-slate-200`}>

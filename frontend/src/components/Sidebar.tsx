@@ -51,7 +51,8 @@ export const Sidebar: React.FC = () => {
   if (activeModule === 'projects') {
     moduleHeader = { title: 'PROJECTS HUB', subtitle: 'PO TRACKING', icon: Folder, color: 'bg-blue-600' };
     menuItems = [
-      { name: 'All Projects', path: '/projects', icon: Folder },
+      { name: 'Dashboard', path: '/projects/dashboard', icon: LayoutDashboard },
+      { name: 'Projects', path: '/projects', icon: Folder },
       { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList },
       { name: 'Global Timeline', path: '/projects/timeline', icon: Folder }
     ];
@@ -110,7 +111,7 @@ export const Sidebar: React.FC = () => {
           <div key={item.name}>
             <NavLink
               to={item.path}
-              end={item.path === '/' || item.path === '/store'}
+              end={item.path === '/' || item.path === '/store' || item.path === '/projects'}
               title={isCollapsed ? item.name : undefined}
               className={({ isActive }) => {
                 let activeStyle = 'bg-primary-600 text-white shadow-md shadow-primary-900/30';

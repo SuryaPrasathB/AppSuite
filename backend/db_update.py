@@ -80,6 +80,36 @@ def update_db():
             )
         """)
         
+        # 4. Project Notes Table
+        print("Creating project_notes table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS project_notes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT,
+                content TEXT NOT NULL,
+                created_by INT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES employees(id) ON DELETE SET NULL
+            )
+        """)
+
+        # 5. Project Activities Table
+        print("Creating project_activities table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS project_activities (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT,
+                action VARCHAR(255) NOT NULL,
+                description TEXT,
+                user_id INT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES employees(id) ON DELETE SET NULL
+            )
+        """)
+
         conn.commit()
         cursor.close()
         conn.close()

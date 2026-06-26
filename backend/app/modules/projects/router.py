@@ -67,6 +67,10 @@ def get_next_code():
     mmyy = datetime.now().strftime("%m%y")
     return {"code": f"{next_num}/PRJ/{mmyy}"}
 
+@router.get("/all-dynamic-tasks")
+def list_all_dynamic_tasks():
+    return DBStore.get_all_dynamic_tasks()
+
 @router.get("/{project_id}")
 def get_project(project_id: int):
     projects = DBStore.get_projects()
@@ -201,11 +205,6 @@ class TaskUpdate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
-
-@router.get("/all-dynamic-tasks")
-def list_all_dynamic_tasks():
-    return DBStore.get_all_dynamic_tasks()
-
 @router.get("/{project_id}/dynamic-tasks")
 def list_dynamic_tasks(project_id: int):
     return DBStore.get_dynamic_tasks(project_id)
@@ -227,3 +226,29 @@ def delete_dynamic_task(project_id: int, task_id: int):
     if not success:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"message": "Task deleted successfully"}
+
+# PROJECT NOTES & ACTIVITIES ENDPOINTS
+class ProjectNoteCreate(BaseModel):
+    content: str
+    created_by: Optional[int] = None
+
+class ProjectActivityCreate(BaseModel):
+    action: str
+    description: Optional[str] = None
+    user_id: Optional[int] = None
+
+@router.get("/{project_id}/notes")
+def get_project_notes(project_id: int):
+    return DBStore.get_project_notes(project_id)
+
+@router.post("/{project_id}/notes")
+def create_project_note(project_id: int, note: ProjectNoteCreate):
+    return DBStore.add_project_note(project_id, note.content, note.created_by)
+
+@router.get("/{project_id}/activities")
+def get_project_activities(project_id: int):
+    return DBStore.get_project_activities(project_id)
+
+@router.post("/{project_id}/activities")
+def create_project_activity(project_id: int, activity: ProjectActivityCreate):
+    return DBStore.add_project_activity(project_id, activity.action, activity.description, activity.user_id)

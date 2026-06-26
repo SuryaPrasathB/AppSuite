@@ -8,7 +8,9 @@ import { Login } from './modules/store/pages/Login';
 import { Dashboard } from './modules/store/pages/Dashboard';
 import { StoreLayout } from './modules/store/pages/StoreLayout';
 import { Products } from './modules/store/pages/Products';
+import { ProjectsDashboard } from './modules/projects/ProjectsDashboard';
 import { Projects } from './modules/projects/Projects';
+import { ProjectWorkspace } from './modules/projects/ProjectWorkspace';
 import { MyTasks } from './modules/projects/MyTasks';
 import { GlobalTimeline } from './modules/projects/GlobalTimeline';
 import { Inventory } from './modules/store/pages/Inventory';
@@ -21,6 +23,7 @@ import { IssueMaterial } from './modules/store/pages/IssueMaterial';
 import { ReturnMaterial } from './modules/store/pages/ReturnMaterial';
 import { Employees } from './modules/store/pages/Employees';
 import { Portal } from './modules/portal/Portal';
+import { UsersManagement } from './modules/portal/UsersManagement';
 import { BOM } from './modules/bom/BOM';
 
 
@@ -88,6 +91,10 @@ const AppContent: React.FC = () => {
     return <Portal />;
   }
 
+  if (location.pathname === '/users') {
+    return <UsersManagement />;
+  }
+
   // If logged in, render the main layout with sidebar and header
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
@@ -107,7 +114,9 @@ const AppContent: React.FC = () => {
             <Route path="/employees" element={<Employees />} />
             <Route path="/purchase" element={<PurchasePlanning />} />
             <Route path="/requests" element={<Requests />} />
+            <Route path="/projects/dashboard" element={<ProjectsDashboard />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:id" element={<ProjectWorkspace />} />
             <Route path="/projects/my-tasks" element={<MyTasks />} />
             <Route path="/projects/timeline" element={<GlobalTimeline />} />
             <Route path="/bom" element={<BOM />} />

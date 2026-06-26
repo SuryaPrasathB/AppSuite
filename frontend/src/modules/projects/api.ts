@@ -138,4 +138,34 @@ export async function fetchEmployees() {
   return res.json();
 }
 
+export async function fetchProjectNotes(projectId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/notes`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch notes');
+  return res.json();
+}
 
+export async function createProjectNote(projectId: number, data: any) {
+  const res = await fetch(`${API_BASE}/${projectId}/notes`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create note');
+  return res.json();
+}
+
+export async function fetchProjectActivities(projectId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/activities`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch activities');
+  return res.json();
+}
+
+export async function createProjectActivity(projectId: number, data: any) {
+  const res = await fetch(`${API_BASE}/${projectId}/activities`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create activity');
+  return res.json();
+}
