@@ -82,8 +82,8 @@ export const Portal: React.FC = () => {
             <Warehouse className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="font-extrabold text-base tracking-wider leading-none text-slate-900">SMART STORE</h1>
-            <span className="text-[10px] text-slate-400 font-semibold tracking-widest block mt-1">TOOL CLUSTER</span>
+            <h1 className="font-extrabold text-base tracking-wider leading-none text-slate-900">LSCS APP SUITE</h1>
+            <span className="text-[10px] text-slate-400 font-semibold tracking-widest block mt-1">ENTERPRISE PORTAL</span>
           </div>
         </div>
 
@@ -106,7 +106,7 @@ export const Portal: React.FC = () => {
       <main className="max-w-[1600px] mx-auto px-6 py-12 flex-1 flex flex-col justify-center z-10 w-full">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-805 sm:text-4xl">
-            Welcome to the SmartStore Hub
+            Welcome to the LSCS App Suite
           </h2>
           <p className="mt-3 text-sm text-slate-500 max-w-xl mx-auto leading-relaxed">
             Select a specialized tool module from the cluster to manage your workflows, purchase orders, engineering designs, and inventory tracking.
@@ -146,7 +146,7 @@ export const Portal: React.FC = () => {
 
       {/* Footer */}
       <footer className="h-12 border-t border-slate-200 px-8 flex items-center justify-between text-[11px] text-slate-400 font-medium z-10 bg-white">
-        <span>SmartStore Unified Hub</span>
+        <span>LSCS App Suite</span>
         <span>v2.0.0</span>
       </footer>
     </div>

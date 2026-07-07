@@ -49,7 +49,7 @@ export const Sidebar: React.FC = () => {
   let moduleHeader = { title: 'SMART STORE', subtitle: 'MANAGEMENT', icon: Warehouse, color: 'bg-primary-600' };
 
   if (activeModule === 'projects') {
-    moduleHeader = { title: 'PROJECTS HUB', subtitle: 'PO TRACKING', icon: Folder, color: 'bg-blue-600' };
+    moduleHeader = { title: 'PROJECTS HUB', subtitle: 'PROJECT TRACKING', icon: Folder, color: 'bg-blue-600' };
     menuItems = [
       { name: 'Dashboard', path: '/projects/dashboard', icon: LayoutDashboard },
       { name: 'Projects', path: '/projects', icon: Folder },

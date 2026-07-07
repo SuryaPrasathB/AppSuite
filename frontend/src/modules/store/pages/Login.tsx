@@ -40,7 +40,7 @@ export const Login: React.FC = () => {
               <Warehouse className="h-7 w-7" />
             </div>
             <div>
-              <h1 className="font-extrabold text-xl tracking-tight text-slate-900">SMART STORE</h1>
+              <h1 className="font-extrabold text-xl tracking-tight text-slate-900">LSCS APP SUITE</h1>
               <span className="text-[10px] text-slate-500 font-bold tracking-widest uppercase block mt-0.5">Enterprise Portal</span>
             </div>
           </div>
