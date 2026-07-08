@@ -28,7 +28,9 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     has_software: false,
     has_firmware: false,
     has_transformer: false,
-    no_of_panels: 1
+    no_of_panels: 1,
+    budget_estimated: 0,
+    budget_actual: 0
   });
 
   useEffect(() => {
@@ -47,7 +49,9 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           has_software: project.has_software || false,
           has_firmware: project.has_firmware || false,
           has_transformer: project.has_transformer || false,
-          no_of_panels: project.no_of_panels || 1
+          no_of_panels: project.no_of_panels || 1,
+          budget_estimated: project.budget_estimated || 0,
+          budget_actual: project.budget_actual || 0
         });
       } else {
         setIsCodeManualOverride(false);
@@ -64,7 +68,9 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           has_software: false,
           has_firmware: false,
           has_transformer: false,
-          no_of_panels: 1
+          no_of_panels: 1,
+          budget_estimated: 0,
+          budget_actual: 0
         });
       }
     }
@@ -237,6 +243,36 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                   </div>
                 </div>
               </div>
+
+            {/* Budgets */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Estimated Budget ($)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.budget_estimated}
+                    onChange={(e) => setForm({ ...form, budget_estimated: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Actual Budget ($)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.budget_actual}
+                    onChange={(e) => setForm({ ...form, budget_actual: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
             </section>
 
             <div className="h-px w-full bg-slate-100"></div>

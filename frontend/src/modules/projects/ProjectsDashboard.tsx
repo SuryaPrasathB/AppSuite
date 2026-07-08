@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchProjects } from './api';
+import { fetchProjects, fetchWorkload } from './api';
 import { 
   Briefcase, 
   Clock, 
@@ -8,12 +8,14 @@ import {
   TrendingUp,
   ShoppingCart,
   PackageX,
-  Activity
+  Activity,
+  Users
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const ProjectsDashboard: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
+  const [workload, setWorkload] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -23,8 +25,12 @@ export const ProjectsDashboard: React.FC = () => {
   const loadDashboardData = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchProjects();
-      setProjects(data);
+      // For dashboard, fetch more to do client-side aggregations or build specialized endpoints.
+      const projData = await fetchProjects(1, 1000);
+      setProjects(projData.data || []);
+
+      const workData = await fetchWorkload();
+      setWorkload(workData || []);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -191,6 +197,51 @@ export const ProjectsDashboard: React.FC = () => {
             )) : (
               <div className="p-8 text-center text-slate-500 text-sm">No recent projects found.</div>
             )}
+          </div>
+        </div>
+
+        {/* Resource Workload Dashboard */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden lg:col-span-2">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Users className="h-5 w-5 text-indigo-500" />
+              Resource Workload Overview
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {workload.length > 0 ? workload.map((emp: any, i: number) => (
+                <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold text-slate-800">{emp.employee_name}</h3>
+                      <p className="text-[10px] uppercase font-bold text-slate-500">{emp.employee_role}</p>
+                    </div>
+                    <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold">
+                      {emp.tasks.length} Tasks
+                    </span>
+                  </div>
+                  <div className="space-y-2 mt-4">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Total Estimated:</span>
+                      <span className="font-bold text-slate-700">{emp.total_estimated_hours.toFixed(1)}h</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Total Actual:</span>
+                      <span className="font-bold text-slate-700">{emp.total_actual_hours.toFixed(1)}h</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
+                      <div
+                        className={`h-1.5 rounded-full ${emp.total_actual_hours > emp.total_estimated_hours ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${Math.min(100, emp.total_estimated_hours ? (emp.total_actual_hours / emp.total_estimated_hours) * 100 : 0)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="col-span-full p-8 text-center text-slate-500 text-sm">No active tasks assigned.</div>
+              )}
+            </div>
           </div>
         </div>
 

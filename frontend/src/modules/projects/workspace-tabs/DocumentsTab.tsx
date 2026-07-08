@@ -1,18 +1,38 @@
 import React from 'react';
-import { FileText, CheckCircle, AlertTriangle, File, Lock, RefreshCw, UploadCloud } from 'lucide-react';
+import { FileText, CheckCircle, AlertTriangle, File, Lock, RefreshCw, UploadCloud, Download, Trash2 } from 'lucide-react';
+import { downloadTaskFile, deleteTaskFile } from '../api';
 
 interface DocumentsTabProps {
   project: any;
   staticTasks: any[];
   files: any[];
   uploadingTask: string | null;
-  setPreviewFile: (fileInfo: { taskName: string, file: globalThis.File, objectUrl: string }) => void;
-  handleFileUpload: (taskName: string, file: globalThis.File) => void;
+  setPreviewFile: (fileInfo: { taskName: string, file: globalThis.File[], objectUrl: string }) => void;
+  handleFileUpload: (taskName: string, file: globalThis.File[]) => void;
+  onFilesChanged?: () => void;
 }
 
 export const DocumentsTab: React.FC<DocumentsTabProps> = ({
-  project, staticTasks, files, uploadingTask, setPreviewFile, handleFileUpload
+  project, staticTasks, files, uploadingTask, setPreviewFile, handleFileUpload, onFilesChanged
 }) => {
+  const handleDelete = async (fileId: number) => {
+    if (window.confirm("Are you sure you want to delete this file?")) {
+      try {
+        await deleteTaskFile(project.id, fileId);
+        if (onFilesChanged) onFilesChanged();
+      } catch (e: any) {
+        alert(e.message || "Failed to delete file");
+      }
+    }
+  };
+
+  const handleDownload = async (fileId: number) => {
+    try {
+      await downloadTaskFile(project.id, fileId);
+    } catch (e: any) {
+      alert(e.message || "Failed to download file");
+    }
+  };
   const isStaticTaskCompleted = (taskName: string) => {
     return files.some(f => f.task_name === taskName);
   };
@@ -60,6 +80,14 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
                         <File className="h-4 w-4 text-indigo-600" />
                         <span className="truncate" title={f.file_name}>{f.file_name}</span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleDownload(f.id)} className="p-1 hover:bg-slate-200 rounded text-slate-600 transition-colors" title="Download">
+                          <Download className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDelete(f.id)} className="p-1 hover:bg-slate-200 rounded text-rose-600 transition-colors" title="Delete">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -85,15 +113,13 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
                   </span>
                   <input 
                     type="file" 
+                    multiple
                     className="hidden" 
                     onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        const file = e.target.files[0];
-                        const objectUrl = URL.createObjectURL(file);
-                        setPreviewFile({ taskName: task.task_name, file, objectUrl });
+                      if (e.target.files && e.target.files.length > 0) {
+                        const filesArray = Array.from(e.target.files);
+                        handleFileUpload(task.task_name, filesArray);
                         e.target.value = ''; // reset
-                        // Optionally call handleFileUpload here if not using a preview confirmation
-                        handleFileUpload(task.task_name, file);
                       }
                     }}
                     disabled={isUploading}

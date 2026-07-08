@@ -38,8 +38,10 @@ export const ProjectWorkspace: React.FC = () => {
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any | null>(null);
   const [taskForm, setTaskForm] = useState({
+    parent_id: null as number | null,
     title: '', description: '', status: 'TODO', priority: 'MEDIUM',
     assignee_id: '', start_date: '', due_date: '', dependencies: [] as any[],
+    estimated_hours: 0, actual_hours: 0,
   });
 
   const loadData = async (projectId: number) => {
@@ -100,10 +102,10 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (taskName: string, file: globalThis.File) => {
+  const handleFileUpload = async (taskName: string, files: globalThis.File[]) => {
     try {
       setUploadingTask(taskName);
-      await uploadTaskFile(project.id, taskName, file);
+      await uploadTaskFile(project.id, taskName, files);
       await loadData(project.id);
       if (previewFile) {
         URL.revokeObjectURL(previewFile.objectUrl);
@@ -134,17 +136,21 @@ export const ProjectWorkspace: React.FC = () => {
         }
       }
       setTaskForm({
+        parent_id: task.parent_id || null,
         title: task.title, description: task.description || '', status: task.status, priority: task.priority,
         assignee_id: task.assignee_id ? task.assignee_id.toString() : '',
         start_date: task.start_date || '', due_date: task.due_date || '', dependencies: depsArray,
+        estimated_hours: task.estimated_hours || 0, actual_hours: task.actual_hours || 0,
       });
     } else {
       setEditingTask(null);
       setTaskForm({
+        parent_id: null,
         title: '', description: '', status: 'TODO', priority: 'MEDIUM', assignee_id: '',
         start_date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         dependencies: [],
+        estimated_hours: 0, actual_hours: 0,
       });
     }
     setIsTaskFormOpen(true);
@@ -294,6 +300,22 @@ export const ProjectWorkspace: React.FC = () => {
                   </div>
                 </dl>
               </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <h3 className="font-bold text-slate-800 mb-4">Budget Overview</h3>
+                <dl className="space-y-4 text-sm">
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Estimated Budget</dt>
+                    <dd className="font-bold text-slate-800">${project.budget_estimated?.toLocaleString() || '0.00'}</dd>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Actual Budget</dt>
+                    <dd className={`font-bold ${project.budget_actual > project.budget_estimated ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      ${project.budget_actual?.toLocaleString() || '0.00'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </div>
           </div>
         )}
@@ -351,6 +373,7 @@ export const ProjectWorkspace: React.FC = () => {
             uploadingTask={uploadingTask}
             setPreviewFile={setPreviewFile as any}
             handleFileUpload={handleFileUpload as any}
+            onFilesChanged={() => loadData(project.id)}
           />
         )}
         
