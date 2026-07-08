@@ -32,6 +32,19 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         
         <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
           <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Parent Task</label>
+            <select
+              value={taskForm.parent_id || ''}
+              onChange={(e) => setTaskForm((prev: any) => ({ ...prev, parent_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 mb-4"
+            >
+              <option value="">None (Top Level Task)</option>
+              {dynamicTasks.filter(t => t.id !== (editingTask?.id)).map(t => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Task Title *</label>
             <input 
               type="text" 
@@ -113,6 +126,31 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 type="date" 
                 value={taskForm.due_date}
                 onChange={(e) => setTaskForm((prev: any) => ({ ...prev, due_date: e.target.value }))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Estimated Hours</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={taskForm.estimated_hours || ''}
+                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, estimated_hours: e.target.value ? parseFloat(e.target.value) : 0 }))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Hours</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={taskForm.actual_hours || ''}
+                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, actual_hours: e.target.value ? parseFloat(e.target.value) : 0 }))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
               />
             </div>

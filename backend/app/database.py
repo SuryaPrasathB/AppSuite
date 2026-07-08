@@ -840,10 +840,31 @@ class DBStore:
 
     # PROJECTS METHODS
     @staticmethod
-    def get_projects() -> List[Dict[str, Any]]:
+    def get_projects(page: int = 1, limit: int = 100, search: str = None, status: str = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
+
+        where_clauses = []
+        params = []
+
+        if search:
+            where_clauses.append("(p.name LIKE %s OR p.code LIKE %s OR p.client_name LIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+
+        if status and status != 'All':
+            where_clauses.append("p.status = %s")
+            params.append(status)
+
+        where_str = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        # Count total
+        cursor.execute(f"SELECT COUNT(*) as total FROM projects p {where_str}", tuple(params))
+        total = cursor.fetchone()["total"]
+
+        offset = (page - 1) * limit
+        params.extend([limit, offset])
+
+        cursor.execute(f"""
             SELECT p.*,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id) as total_dynamic_tasks,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id AND dt.status = 'COMPLETED') as completed_dynamic_tasks,
@@ -855,8 +876,10 @@ class DBStore:
                     WHERE pt.project_id = p.id
                 ) as completed_static_tasks
             FROM projects p 
+            {where_str}
             ORDER BY p.id DESC
-        """)
+            LIMIT %s OFFSET %s
+        """, tuple(params))
         projects = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -890,6 +913,21 @@ class DBStore:
             else:
                 p['completion_percentage'] = 100 if p.get('status') == 'COMPLETED' else 0
 
+        return {
+            "data": projects,
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+
+    @staticmethod
+    def get_all_projects_unpaginated() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM projects")
+        projects = cursor.fetchall()
+        cursor.close()
+        conn.close()
         return projects
 
     @staticmethod

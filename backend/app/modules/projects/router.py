@@ -1,12 +1,15 @@
 import os
 import re
 import shutil
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import json
 from app.database import DBStore
 from app.config import settings
+from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -25,6 +28,8 @@ class ProjectCreate(BaseModel):
     has_firmware: bool = False
     has_transformer: bool = False
     no_of_panels: int = 1
+    budget_estimated: Optional[float] = 0.00
+    budget_actual: Optional[float] = 0.00
 
 class ProjectUpdate(BaseModel):
     code: Optional[str] = None
@@ -41,6 +46,8 @@ class ProjectUpdate(BaseModel):
     has_firmware: Optional[bool] = None
     has_transformer: Optional[bool] = None
     no_of_panels: Optional[int] = None
+    budget_estimated: Optional[float] = None
+    budget_actual: Optional[float] = None
 
 def get_next_project_num():
     base_dir = settings.PROJECTS_BASE_DIR
@@ -58,8 +65,8 @@ def get_next_project_num():
     return max_num + 1 if max_num > 0 else 1
 
 @router.get("")
-def list_projects():
-    return DBStore.get_projects()
+def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None):
+    return DBStore.get_projects(page, limit, search, status)
 
 @router.get("/next-code")
 def get_next_code():
@@ -71,9 +78,37 @@ def get_next_code():
 def list_all_dynamic_tasks():
     return DBStore.get_all_dynamic_tasks()
 
+@router.get("/workload")
+def get_workload():
+    all_tasks = DBStore.get_all_dynamic_tasks()
+
+    workload = {}
+    for task in all_tasks:
+        if task["status"] in ["COMPLETED", "CANCELLED"]:
+            continue
+
+        emp_id = task.get("assignee_id")
+        if not emp_id:
+            continue
+
+        if emp_id not in workload:
+            workload[emp_id] = {
+                "employee_name": task.get("assignee_name", "Unknown"),
+                "employee_role": task.get("assignee_role", "Employee"),
+                "tasks": [],
+                "total_estimated_hours": 0,
+                "total_actual_hours": 0
+            }
+
+        workload[emp_id]["tasks"].append(task)
+        workload[emp_id]["total_estimated_hours"] += task.get("estimated_hours") or 0
+        workload[emp_id]["total_actual_hours"] += task.get("actual_hours") or 0
+
+    return list(workload.values())
+
 @router.get("/{project_id}")
 def get_project(project_id: int):
-    projects = DBStore.get_projects()
+    projects = DBStore.get_all_projects_unpaginated()
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -88,8 +123,8 @@ def get_project(project_id: int):
     }
 
 @router.post("")
-def create_project(project: ProjectCreate):
-    existing = [p for p in DBStore.get_projects() if p["code"] == project.code]
+def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    existing = [p for p in DBStore.get_all_projects_unpaginated() if p["code"] == project.code]
     if existing:
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
     
@@ -135,18 +170,33 @@ def create_project(project: ProjectCreate):
     for sf in subfolders:
         DBStore.add_project_task(saved_project["id"], sf, "PENDING")
         
+    DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
+
     return saved_project
 
 @router.put("/{project_id}")
-def update_project(project_id: int, project: ProjectUpdate):
-    updated = DBStore.update_project(project_id, project.model_dump(exclude_unset=True))
-    if not updated:
+def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    projects = DBStore.get_all_projects_unpaginated()
+    existing_proj = next((p for p in projects if p["id"] == project_id), None)
+    if not existing_proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check permissions if completing or changing critical info
+    if project.status == "COMPLETED" and existing_proj["status"] != "COMPLETED":
+        if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != existing_proj.get("project_incharge"):
+            raise HTTPException(status_code=403, detail="Not authorized to complete project")
+
+    updated = DBStore.update_project(project_id, project.model_dump(exclude_unset=True))
+
+    # Log activity
+    if project.status and project.status != existing_proj["status"]:
+        DBStore.add_project_activity(project_id, "STATUS_CHANGED", f"Project status changed to {project.status}", current_user["id"])
+
     return updated
 
 @router.post("/{project_id}/upload")
-async def upload_project_file(project_id: int, task_name: str = Form(...), file: UploadFile = File(...)):
-    projects = DBStore.get_projects()
+async def upload_project_file(project_id: int, task_name: str = Form(...), files: List[UploadFile] = File(...), current_user: Dict[str, Any] = Depends(get_current_user)):
+    projects = DBStore.get_all_projects_unpaginated()
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -160,24 +210,67 @@ async def upload_project_file(project_id: int, task_name: str = Form(...), file:
         # Create it just in case
         os.makedirs(task_dir, exist_ok=True)
         
-    file_path = os.path.join(task_dir, file.filename)
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
-        
-    # Save file record
-    saved_file = DBStore.add_project_file(project_id, task_name, file.filename, file_path)
+    saved_files = []
+    for file in files:
+        file_path = os.path.join(task_dir, file.filename)
+        try:
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save file {file.filename}: {e}")
+
+        # Save file record
+        saved_file = DBStore.add_project_file(project_id, task_name, file.filename, file_path)
+        saved_files.append(saved_file)
     
     # Update task status
     DBStore.update_project_task(project_id, task_name, "COMPLETED")
+    DBStore.add_project_activity(project_id, "FILE_UPLOADED", f"Uploaded files for task: {task_name}", current_user["id"])
     
-    return saved_file
+    return {"uploaded_files": saved_files}
+
+@router.get("/{project_id}/files/{file_id}/download")
+def download_project_file(project_id: int, file_id: int):
+    file_record = DBStore.get_project_file(file_id)
+    if not file_record or file_record["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = file_record["file_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    return FileResponse(path=file_path, filename=file_record["file_name"])
+
+@router.delete("/{project_id}/files/{file_id}")
+def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    file_record = DBStore.get_project_file(file_id)
+    if not file_record or file_record["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = file_record["file_path"]
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete file from disk: {e}")
+
+    success = DBStore.delete_project_file(file_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete file record from database")
+
+    DBStore.add_project_activity(project_id, "FILE_DELETED", f"Deleted file: {file_record['file_name']}", current_user["id"])
+    return {"message": "File deleted successfully"}
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int):
-    # Optional: also delete the folder from Z drive? Let's leave it on disk for safety.
+def delete_project(project_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    projects = DBStore.get_all_projects_unpaginated()
+    proj = next((p for p in projects if p["id"] == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != proj.get("project_incharge"):
+        raise HTTPException(status_code=403, detail="Not authorized to delete project")
+
     DBStore.delete_project(project_id)
     return {"message": "Project deleted successfully from database (files preserved)"}
 
@@ -194,6 +287,8 @@ class TaskCreate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
+    estimated_hours: Optional[float] = 0.00
+    actual_hours: Optional[float] = 0.00
 
 class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
@@ -205,26 +300,136 @@ class TaskUpdate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+
 @router.get("/{project_id}/dynamic-tasks")
 def list_dynamic_tasks(project_id: int):
     return DBStore.get_dynamic_tasks(project_id)
 
+def validate_task_dates(start_date: str, due_date: str):
+    if start_date and due_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+            if due < start:
+                raise HTTPException(status_code=400, detail="Due date cannot be before start date")
+        except ValueError:
+            pass
+
+def check_circular_dependencies(project_id: int, task_id: Optional[int], new_dependencies: str):
+    if not new_dependencies:
+        return
+
+    try:
+        deps = json.loads(new_dependencies)
+        new_dep_ids = [d["id"] if isinstance(d, dict) else d for d in deps]
+    except Exception:
+        new_dep_ids = [int(d) for d in new_dependencies.split(",") if d.strip().isdigit()]
+
+    if not new_dep_ids:
+        return
+
+    if task_id and task_id in new_dep_ids:
+        raise HTTPException(status_code=400, detail="Task cannot depend on itself")
+
+    all_tasks = DBStore.get_dynamic_tasks(project_id)
+    task_dict = {t["id"]: t for t in all_tasks}
+
+    # Build adjacency list (directed graph: task -> depends_on)
+    adj = {}
+    for t in all_tasks:
+        adj[t["id"]] = []
+        if t.get("dependencies"):
+            try:
+                d_list = json.loads(t["dependencies"])
+                adj[t["id"]] = [d["id"] if isinstance(d, dict) else d for d in d_list]
+            except Exception:
+                adj[t["id"]] = [int(d) for d in t["dependencies"].split(",") if d.strip().isdigit()]
+
+    # Update graph with the proposed change
+    if task_id:
+        adj[task_id] = new_dep_ids
+
+    # DFS to detect cycles
+    def has_cycle(node, visited, path):
+        visited.add(node)
+        path.add(node)
+        for neighbor in adj.get(node, []):
+            if neighbor not in visited:
+                if has_cycle(neighbor, visited, path):
+                    return True
+            elif neighbor in path:
+                return True
+        path.remove(node)
+        return False
+
+    visited = set()
+    for node in adj:
+        if node not in visited:
+            if has_cycle(node, visited, set()):
+                raise HTTPException(status_code=400, detail="Circular dependency detected")
+
 @router.post("/{project_id}/dynamic-tasks")
-def create_dynamic_task(project_id: int, task: TaskCreate):
-    return DBStore.add_dynamic_task(project_id, task.model_dump())
+def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_task_dates(task.start_date, task.due_date)
+    check_circular_dependencies(project_id, None, task.dependencies)
+    new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
+    DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
+    return new_task
 
 @router.put("/{project_id}/dynamic-tasks/{task_id}")
-def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate):
-    updated = DBStore.update_dynamic_task(task_id, task.model_dump(exclude_unset=True))
+def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_task_dates(task.start_date, task.due_date)
+    if task.dependencies is not None:
+        check_circular_dependencies(project_id, task_id, task.dependencies)
+
+    # Check permissions for regular users
+    all_tasks = DBStore.get_dynamic_tasks(project_id)
+    existing_task = next((t for t in all_tasks if t["id"] == task_id), None)
+    if not existing_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    is_admin_or_pm = current_user["role"] in ["Administrator", "Store Manager"]
+    projects = DBStore.get_all_projects_unpaginated()
+    proj = next((p for p in projects if p["id"] == project_id), None)
+    if proj and current_user["name"] == proj.get("project_incharge"):
+        is_admin_or_pm = True
+
+    if not is_admin_or_pm:
+        if existing_task.get("assignee_id") != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to edit this task")
+
+        # Ensure they are only updating status
+        task_dump = task.model_dump(exclude_unset=True)
+        allowed_keys = ["status", "actual_hours"]
+        for key in list(task_dump.keys()):
+            if key not in allowed_keys:
+                del task_dump[key]
+    else:
+        task_dump = task.model_dump(exclude_unset=True)
+
+    updated = DBStore.update_dynamic_task(task_id, task_dump)
     if not updated:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status and task.status != existing_task.get("status"):
+        DBStore.add_project_activity(project_id, "TASK_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
+
     return updated
 
 @router.delete("/{project_id}/dynamic-tasks/{task_id}")
-def delete_dynamic_task(project_id: int, task_id: int):
+def delete_dynamic_task(project_id: int, task_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    all_tasks = DBStore.get_dynamic_tasks(project_id)
+    existing_task = next((t for t in all_tasks if t["id"] == task_id), None)
+
     success = DBStore.delete_dynamic_task(task_id)
     if not success:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if existing_task:
+        DBStore.add_project_activity(project_id, "TASK_DELETED", f"Deleted task: {existing_task.get('title')}", current_user["id"])
+
     return {"message": "Task deleted successfully"}
 
 # PROJECT NOTES & ACTIVITIES ENDPOINTS

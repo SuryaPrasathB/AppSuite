@@ -4,13 +4,14 @@ export type UserRole = 'Administrator' | 'Store Manager' | 'Store Operator' | 'P
 
 interface User {
   username: string;
+  name?: string;
   role: UserRole;
   token: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (username: string, role: UserRole, token: string) => void;
+  login: (username: string, role: UserRole, token: string, name?: string) => void;
   logout: () => void;
   isLoading: boolean;
   hasRole: (roles: UserRole[]) => boolean;
@@ -34,8 +35,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = (username: string, role: UserRole, token: string) => {
-    const newUser = { username, role, token };
+  const login = (username: string, role: UserRole, token: string, name?: string) => {
+    const newUser = { username, role, token, name };
     setUser(newUser);
     localStorage.setItem('smart_store_user', JSON.stringify(newUser));
   };

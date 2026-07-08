@@ -18,6 +18,11 @@ export const Projects: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [activeTab, setActiveTab] = useState('All Projects');
   
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [totalProjects, setTotalProjects] = useState(0);
+
   // Modals
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
@@ -30,8 +35,9 @@ export const Projects: React.FC = () => {
   const loadProjects = async () => {
     try {
       setLoading(true);
-      const data = await fetchProjects();
-      setProjects(data);
+      const data = await fetchProjects(page, limit, searchQuery, activeTab === 'All Projects' ? statusFilter : activeTab.toUpperCase().replace(' ', '_'));
+      setProjects(data.data || []);
+      setTotalProjects(data.total || 0);
     } catch (err) {
       console.error(err);
       alert("Failed to load projects");
@@ -41,8 +47,11 @@ export const Projects: React.FC = () => {
   };
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    const timer = setTimeout(() => {
+      loadProjects();
+    }, 300); // debounce search
+    return () => clearTimeout(timer);
+  }, [page, limit, searchQuery, statusFilter, activeTab]);
 
   const handleOpenNewProjectModal = async () => {
     setEditProjectId(null);
@@ -90,22 +99,9 @@ export const Projects: React.FC = () => {
     }
   };
 
-  // Filter projects list
-  const filteredProjects = projects.filter(p => {
-    const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.client_name?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredProjects = projects;
 
-    const matchesStatus = statusFilter === 'All' ? true : p.status === statusFilter;
-    const matchesTab = activeTab === 'All Projects' ? true : 
-                       activeTab === 'Active' ? p.status === 'PLANNING' || p.status === 'IN_PROGRESS' :
-                       activeTab === 'On Hold' ? p.status === 'ON_HOLD' :
-                       activeTab === 'Completed' ? p.status === 'COMPLETED' :
-                       activeTab === 'Service' ? p.status === 'SERVICE' : 
-                       activeTab === 'Cancelled' ? p.status === 'CANCELLED' : true;
-
-    return matchesSearch && matchesStatus && matchesTab;
-  });
+  const totalPages = Math.ceil(totalProjects / limit);
 
   return (
     <div className="space-y-6">
@@ -302,6 +298,32 @@ export const Projects: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
+            <span className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-700">{(page - 1) * limit + 1}</span> to <span className="font-bold text-slate-700">{Math.min(page * limit, totalProjects)}</span> of <span className="font-bold text-slate-700">{totalProjects}</span> projects
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-bold disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-bold disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+
         <ProjectFormModal
           isOpen={isNewProjectOpen}
           onClose={() => setIsNewProjectOpen(false)}
