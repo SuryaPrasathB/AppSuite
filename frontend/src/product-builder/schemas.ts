@@ -266,17 +266,30 @@ export const PRODUCT_CATEGORY_SCHEMAS: ProductCategorySchema[] = [
     text('standard', 'Standard / Compliance'),
   ], '{category}, {series} {model}, {current}, {voltage}, {characteristic}',
   '{codePrefix}-{manufacturerShort}-{series}-{current}-{voltage}'),
+  category('CAPACITOR', 'Capacitor', 'Capacitor', [
+    text('partNumber', 'Part Number', false),
+    text('series', 'Series', false),
+    text('model', 'Package / Size', false),
+    text('capacitance', 'Capacitance', true),
+    text('voltage', 'Voltage Rating', true),
+    text('dielectric', 'Dielectric', false),
+    text('tolerance', 'Tolerance', false),
+  ], '{description}, {series} {model}, {capacitance}, {voltage}, {dielectric}, {tolerance}',
+  '{codePrefix}-{manufacturerShort}-{series}-{capacitance}-{voltage}'),
 ];
 
 export const STORE_FIELDS: ProductFieldSchema[] = [
   { key: 'unit', label: 'Unit', type: 'select', options: ['Nos', 'pcs', 'm', 'kg', 'roll', 'set', 'box', 'lot'].map(value => ({ label: value, value })), validation: required, defaultValue: 'Nos', width: 'third' },
   { key: 'minimumStock', label: 'Minimum Stock', type: 'number', validation: { required: true, min: 0 }, defaultValue: '10', width: 'third' },
   { key: 'reorderLevel', label: 'Reorder Level', type: 'number', validation: { required: true, min: 0 }, defaultValue: '20', width: 'third' },
+  { key: 'initialStock', label: 'Initial Stock', type: 'number', validation: { min: 0 }, defaultValue: '0', width: 'third' },
   { key: 'rack', label: 'Rack', type: 'text', validation: required, width: 'third' },
   { key: 'shelf', label: 'Shelf', type: 'text', validation: required, width: 'third' },
   { key: 'bin', label: 'Bin', type: 'text', width: 'third' },
   { key: 'warehouse', label: 'Warehouse', type: 'text', validation: required, defaultValue: 'Main Store', width: 'third' },
   { key: 'zone', label: 'Zone', type: 'text', width: 'third' },
+  { key: 'standardCost', label: 'Standard Cost', type: 'number', validation: { min: 0 }, defaultValue: '0.00', width: 'third' },
+  { key: 'currency', label: 'Currency', type: 'select', options: ['INR', 'USD', 'EUR', 'GBP'].map(value => ({ label: value, value })), defaultValue: 'INR', width: 'third' },
   { key: 'remarks', label: 'Remarks', type: 'textarea', width: 'full', placeholder: 'Store-specific notes, handling instructions, or restrictions…' },
 ];
 

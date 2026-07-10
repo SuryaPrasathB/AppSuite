@@ -94,7 +94,13 @@ class DBStore:
         
         cursor.execute("""
             SELECT p.*, 
-                   COALESCE(SUM(pl.quantity), 0) as current_quantity
+                   COALESCE(SUM(pl.quantity), 0) as current_quantity,
+                   (
+                       SELECT COALESCE(SUM(GREATEST(0, bi.quantity_required - bi.quantity_issued)), 0)
+                       FROM bom_items bi
+                       JOIN boms b ON bi.bom_id = b.id
+                       WHERE bi.product_id = p.id AND b.status = 'APPROVED'
+                   ) as reserved_quantity
             FROM products p
             LEFT JOIN product_locations pl ON p.id = pl.product_id
             GROUP BY p.id
@@ -123,8 +129,12 @@ class DBStore:
             
             p['min_quantity'] = float(p['min_quantity'] or 0)
             p['max_quantity'] = float(p['max_quantity'] or 0)
+            p['standard_cost'] = float(p.get('standard_cost') or 0)
+            p['latest_cost'] = float(p.get('latest_cost') or 0)
+            p['average_cost'] = float(p.get('average_cost') or 0)
             total_qty = float(p['current_quantity'] or 0)
             p['current_quantity'] = total_qty
+            p['reserved_quantity'] = float(p.get('reserved_quantity') or 0)
             
             if total_qty == 0:
                 p['status'] = "OUT_OF_STOCK"
@@ -164,14 +174,17 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         
         query = """
-            INSERT INTO products (code, name, description, category, unit, min_quantity, max_quantity, barcode, qr_code, image_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO products (code, name, description, category, unit, min_quantity, max_quantity, barcode, qr_code, image_url, manufacturer, link, standard_cost, latest_cost, average_cost, currency)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             product.get("code"), product.get("name"), product.get("description"),
             product.get("category"), product.get("unit", "pcs"), 
             product.get("min_quantity", 0), product.get("max_quantity", 0),
-            product.get("barcode", ""), product.get("qr_code", ""), product.get("image_url", "")
+            product.get("barcode", ""), product.get("qr_code", ""), product.get("image_url", ""),
+            product.get("manufacturer", ""), product.get("link", ""),
+            product.get("standard_cost", 0.0), product.get("latest_cost", 0.0),
+            product.get("average_cost", 0.0), product.get("currency", "INR")
         )
         cursor.execute(query, values)
         p_id = cursor.lastrowid
@@ -235,7 +248,7 @@ class DBStore:
                         """, (zone, rack, shelf, bin_name, row_idx, col_idx))
                         loc_id = cursor.lastrowid
                         
-                    cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, 0.00)", (p_id, loc_id))
+                    cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, %s)", (p_id, loc_id, float(product.get("initial_quantity", 0.0))))
             except Exception as e:
                 print("Error mapping product location during add:", e, file=sys.stderr)
             
@@ -252,7 +265,7 @@ class DBStore:
         
         updates = []
         values = []
-        fields = ["code", "name", "description", "category", "unit", "min_quantity", "max_quantity", "barcode", "qr_code", "image_url"]
+        fields = ["code", "name", "description", "category", "unit", "min_quantity", "max_quantity", "barcode", "qr_code", "image_url", "manufacturer", "link", "standard_cost", "latest_cost", "average_cost", "currency"]
         for key in fields:
             if key in data:
                 updates.append(f"{key} = %s")
@@ -327,7 +340,9 @@ class DBStore:
                         existing_pls = [r["location_id"] for r in cursor.fetchall()]
                         if loc_id not in existing_pls:
                             cursor.execute("DELETE FROM product_locations WHERE product_id = %s AND quantity = 0", (product_id,))
-                            cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, 0.00)", (product_id, loc_id))
+                            cursor.execute("INSERT INTO product_locations (product_id, location_id, quantity) VALUES (%s, %s, %s)", (product_id, loc_id, float(data.get("initial_quantity", 0.0))))
+                        elif "initial_quantity" in data:
+                            cursor.execute("UPDATE product_locations SET quantity = %s WHERE product_id = %s AND location_id = %s", (float(data["initial_quantity"]), product_id, loc_id))
                 except Exception as e:
                     print("Error mapping product location during update:", e, file=sys.stderr)
                     
@@ -736,7 +751,7 @@ class DBStore:
     def get_employees() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees")
+        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees ORDER BY name ASC")
         employees = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -826,7 +841,7 @@ class DBStore:
     def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, role, username, password_hash FROM employees WHERE username = %s", (username,))
+        cursor.execute("SELECT id, name, role, username, password_hash, email, department FROM employees WHERE username = %s", (username,))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1083,6 +1098,28 @@ class DBStore:
         return {"id": file_id, "project_id": project_id, "task_name": task_name, "file_name": file_name, "file_path": file_path}
 
     @staticmethod
+    def get_project_file(file_id: int) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM project_files WHERE id = %s", (file_id,))
+        file_record = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if file_record and file_record.get('uploaded_at'):
+            file_record['uploaded_at'] = file_record['uploaded_at'].isoformat()
+        return file_record
+
+    @staticmethod
+    def delete_project_file(file_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM project_files WHERE id = %s", (file_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
     def get_dynamic_tasks(project_id: int) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1223,7 +1260,7 @@ class DBStore:
             cursor.execute("""
                 SELECT b.*, p.name as project_name, p.code as project_code 
                 FROM boms b
-                JOIN projects p ON b.project_id = p.id
+                LEFT JOIN projects p ON b.project_id = p.id
                 WHERE b.project_id = %s
                 ORDER BY b.id DESC
             """, (project_id,))
@@ -1231,7 +1268,7 @@ class DBStore:
             cursor.execute("""
                 SELECT b.*, p.name as project_name, p.code as project_code 
                 FROM boms b
-                JOIN projects p ON b.project_id = p.id
+                LEFT JOIN projects p ON b.project_id = p.id
                 ORDER BY b.id DESC
             """)
         boms = cursor.fetchall()
@@ -1245,21 +1282,33 @@ class DBStore:
         return boms
 
     @staticmethod
-    def create_bom(project_id: int, name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def create_bom(project_id: int, name: str, items: List[Dict[str, Any]], status: str = 'DRAFT') -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
         cursor.execute("""
             INSERT INTO boms (project_id, name, status)
-            VALUES (%s, %s, 'DRAFT')
-        """, (project_id, name))
+            VALUES (%s, %s, %s)
+        """, (project_id, name, status))
         bom_id = cursor.lastrowid
         
         for item in items:
+            product_id = item.get("product_id")
             cursor.execute("""
-                INSERT INTO bom_items (bom_id, product_id, quantity_required, quantity_issued, remarks)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (bom_id, item["product_id"], item["quantity_required"], 0.00, item.get("remarks", "")))
+                INSERT INTO bom_items (bom_id, product_id, manual_product_name, part_number, manufacturer, link, quantity_required, quantity_issued, remarks, custom_fields)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                bom_id, 
+                product_id if product_id else None,
+                item.get("manual_product_name"),
+                item.get("part_number"),
+                item.get("manufacturer"),
+                item.get("link"),
+                item.get("quantity_required", 1), 
+                0.00, 
+                item.get("remarks", ""),
+                json.dumps(item.get("custom_fields", {}))
+            ))
             
         conn.commit()
         cursor.close()
@@ -1274,7 +1323,7 @@ class DBStore:
         cursor.execute("""
             SELECT b.*, p.name as project_name, p.code as project_code 
             FROM boms b
-            JOIN projects p ON b.project_id = p.id
+            LEFT JOIN projects p ON b.project_id = p.id
             WHERE b.id = %s
         """, (bom_id,))
         bom = cursor.fetchone()
@@ -1290,10 +1339,11 @@ class DBStore:
             
         cursor.execute("""
             SELECT bi.id, bi.bom_id, bi.product_id, bi.quantity_required, bi.quantity_issued, bi.remarks,
+                   bi.manual_product_name, bi.part_number, bi.manufacturer, bi.link, bi.custom_fields,
                    p.name as product_name, p.code as product_code, p.unit as product_unit,
                    COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock
             FROM bom_items bi
-            JOIN products p ON bi.product_id = p.id
+            LEFT JOIN products p ON bi.product_id = p.id
             WHERE bi.bom_id = %s
         """, (bom_id,))
         items = cursor.fetchall()
@@ -1301,6 +1351,16 @@ class DBStore:
             item["quantity_required"] = float(item["quantity_required"])
             item["quantity_issued"] = float(item["quantity_issued"])
             item["current_stock"] = float(item["current_stock"])
+            
+            if not item.get("product_id"):
+                item["product_name"] = item.get("manual_product_name") or "Manual Item"
+                item["product_code"] = "MANUAL"
+                item["product_unit"] = "pcs"
+            
+            try:
+                item["custom_fields"] = json.loads(item.get("custom_fields") or "{}")
+            except:
+                item["custom_fields"] = {}
             
         bom["items"] = items
         cursor.close()
@@ -1321,6 +1381,7 @@ class DBStore:
     def delete_bom(bom_id: int) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM bom_items WHERE bom_id = %s", (bom_id,))
         cursor.execute("DELETE FROM boms WHERE id = %s", (bom_id,))
         conn.commit()
         cursor.close()
@@ -1333,6 +1394,8 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         
         for issue in issuings:
+            if not issue.get("product_id"):
+                continue
             cursor.execute("SELECT quantity FROM product_locations WHERE product_id = %s AND location_id = %s", 
                            (issue["product_id"], issue["location_id"]))
             row = cursor.fetchone()
@@ -1347,23 +1410,30 @@ class DBStore:
         
         detailed_items = []
         for issue in issuings:
-            DBStore.update_product_location(issue["product_id"], issue["location_id"], -issue["quantity"])
-            
+            if issue.get("product_id") and issue.get("location_id"):
+                DBStore.update_product_location(issue["product_id"], issue["location_id"], -issue["quantity"])
+                
+                cursor.execute("SELECT name, code FROM products WHERE id = %s", (issue["product_id"],))
+                p = cursor.fetchone()
+                
+                cursor.execute("SELECT zone, rack, shelf, bin FROM locations WHERE id = %s", (issue["location_id"],))
+                l = cursor.fetchone()
+            else:
+                p = None
+                l = None
+                
             cursor.execute("UPDATE bom_items SET quantity_issued = quantity_issued + %s WHERE id = %s", 
                            (issue["quantity"], issue["bom_item_id"]))
             
-            cursor.execute("SELECT name, code FROM products WHERE id = %s", (issue["product_id"],))
-            p = cursor.fetchone()
-            
-            cursor.execute("SELECT zone, rack, shelf, bin FROM locations WHERE id = %s", (issue["location_id"],))
-            l = cursor.fetchone()
+            cursor.execute("SELECT manual_product_name FROM bom_items WHERE id = %s", (issue["bom_item_id"],))
+            manual_item = cursor.fetchone()
             
             detailed_items.append({
-                "product_id": issue["product_id"],
-                "product_name": p["name"] if p else "Unknown",
-                "product_code": p["code"] if p else "N/A",
-                "location_id": issue["location_id"],
-                "location_label": f"{l['zone']}-Rack {l['rack']}-Shelf {l['shelf']}-Bin {l['bin']}" if l else "Unknown",
+                "product_id": issue.get("product_id"),
+                "product_name": p["name"] if p else (manual_item["manual_product_name"] if manual_item else "Service/Labour"),
+                "product_code": p["code"] if p else "MANUAL",
+                "location_id": issue.get("location_id"),
+                "location_label": f"{l['zone']}-Rack {l['rack']}-Shelf {l['shelf']}-Bin {l['bin']}" if l else "N/A",
                 "quantity": issue["quantity"],
                 "remarks": f"Issued for BOM ID: {bom_id}"
             })
@@ -1441,6 +1511,26 @@ class DBStore:
         return activities
 
     @staticmethod
+    def get_all_project_activities(limit: int = 50) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, e.name as user_name, p.name as project_name
+            FROM project_activities a
+            LEFT JOIN employees e ON a.user_id = e.id
+            LEFT JOIN projects p ON a.project_id = p.id
+            ORDER BY a.created_at DESC
+            LIMIT %s
+        """, (limit,))
+        activities = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for a in activities:
+            if a.get('created_at'): a['created_at'] = a['created_at'].isoformat()
+        return activities
+
+
+    @staticmethod
     def add_project_activity(project_id: int, action: str, description: str = None, user_id: int = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1462,3 +1552,69 @@ class DBStore:
         conn.close()
         if activity and activity.get('created_at'): activity['created_at'] = activity['created_at'].isoformat()
         return activity
+
+    @staticmethod
+    def get_notifications(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT * FROM notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+            (user_id, limit)
+        )
+        notifications = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for n in notifications:
+            if n.get('created_at'):
+                n['created_at'] = n['created_at'].isoformat()
+            n['is_read'] = bool(n.get('is_read'))
+        return notifications
+
+    @staticmethod
+    def add_notification(user_id: int, title: str, message: str = None, link: str = None) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO notifications (user_id, title, message, link) VALUES (%s, %s, %s, %s)",
+            (user_id, title, message, link)
+        )
+        notif_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM notifications WHERE id = %s", (notif_id,))
+        notif = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if notif and notif.get('created_at'):
+            notif['created_at'] = notif['created_at'].isoformat()
+        if notif:
+            notif['is_read'] = bool(notif.get('is_read'))
+        return notif
+
+    @staticmethod
+    def mark_notification_read(notification_id: int, user_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s",
+            (notification_id, user_id)
+        )
+        success = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return success
+
+    @staticmethod
+    def mark_all_notifications_read(user_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "UPDATE notifications SET is_read = TRUE WHERE user_id = %s",
+            (user_id,)
+        )
+        success = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return success

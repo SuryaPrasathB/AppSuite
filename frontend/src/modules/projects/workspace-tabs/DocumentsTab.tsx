@@ -1,6 +1,7 @@
 import React from 'react';
 import { FileText, CheckCircle, AlertTriangle, File, Lock, RefreshCw, UploadCloud, Download, Trash2 } from 'lucide-react';
 import { downloadTaskFile, deleteTaskFile } from '../api';
+import { useDialog } from '../../../context/DialogContext';
 
 interface DocumentsTabProps {
   project: any;
@@ -15,14 +16,22 @@ interface DocumentsTabProps {
 export const DocumentsTab: React.FC<DocumentsTabProps> = ({
   project, staticTasks, files, uploadingTask, setPreviewFile, handleFileUpload, onFilesChanged
 }) => {
-  const handleDelete = async (fileId: number) => {
-    if (window.confirm("Are you sure you want to delete this file?")) {
-      try {
-        await deleteTaskFile(project.id, fileId);
-        if (onFilesChanged) onFilesChanged();
-      } catch (e: any) {
-        alert(e.message || "Failed to delete file");
-      }
+  const { showAlert } = useDialog();
+  const [fileToDelete, setFileToDelete] = React.useState<number | null>(null);
+
+  const handleDelete = (fileId: number) => {
+    setFileToDelete(fileId);
+  };
+
+  const confirmDelete = async () => {
+    if (fileToDelete === null) return;
+    try {
+      await deleteTaskFile(project.id, fileToDelete);
+      if (onFilesChanged) onFilesChanged();
+    } catch (e: any) {
+      showAlert(e.message || "Failed to delete file");
+    } finally {
+      setFileToDelete(null);
     }
   };
 
@@ -30,7 +39,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
     try {
       await downloadTaskFile(project.id, fileId);
     } catch (e: any) {
-      alert(e.message || "Failed to download file");
+      showAlert(e.message || "Failed to download file");
     }
   };
   const isStaticTaskCompleted = (taskName: string) => {
@@ -102,7 +111,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
                   </span>
                 </div>
               ) : (
-                <label className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed ${completed && task.task_name !== 'Photos' && task.task_name !== 'Service Report' ? 'hidden' : 'border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/50 cursor-pointer transition-all'}`}>
+                <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/50 cursor-pointer transition-all">
                   {isUploading ? (
                     <RefreshCw className="h-4 w-4 text-indigo-600 animate-spin" />
                   ) : (
@@ -130,6 +139,35 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
           );
         })}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {fileToDelete !== null && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Delete File</h3>
+              <p className="text-slate-600">Are you sure you want to delete this file? This action cannot be undone.</p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setFileToDelete(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+              >
+                Delete File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -60,10 +60,15 @@ export interface ProductBuilderPayload {
   unit: string;
   min_quantity: number;
   max_quantity: number;
+  initial_quantity: number;
   barcode: string;
   qr_code: string;
   image_url: string;
   vendor_ids: number[];
   preferred_vendor_id: number | null;
+  standard_cost: number;
+  latest_cost: number;
+  average_cost: number;
+  currency: string;
 }
 

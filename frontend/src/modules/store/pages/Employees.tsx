@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, Plus, Mail, Phone, Edit2, Trash2, X, Check, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
+import { useDialog } from '../../../context/DialogContext';
 
 export const Employees: React.FC = () => {
   const { hasRole } = useAuth();
+  const { showAlert, showConfirm } = useDialog();
   
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,8 @@ export const Employees: React.FC = () => {
     try {
       setLoading(true);
       const data = await apiClient.employees.list();
-      setEmployees(data);
+      const sorted = Array.isArray(data) ? [...data].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : data;
+      setEmployees(sorted);
       setError(null);
     } catch (err) {
       setError("Failed to fetch employee directory.");
@@ -81,12 +84,13 @@ export const Employees: React.FC = () => {
 
   const handleDelete = async (empId: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to remove this employee?")) return;
+    const confirmed = await showConfirm("Are you sure you want to remove this employee?");
+    if (!confirmed) return;
     try {
       await apiClient.employees.delete(empId);
       fetchData();
     } catch (err: any) {
-      alert(err.message || "Failed to delete employee.");
+      await showAlert(err.message || "Failed to delete employee.");
     }
   };
 

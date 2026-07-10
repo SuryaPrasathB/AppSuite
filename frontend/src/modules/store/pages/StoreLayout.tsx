@@ -152,9 +152,9 @@ export const StoreLayout: React.FC = () => {
           category: prod ? prod.category : 'N/A',
           unit: prod ? prod.unit : 'pcs',
           availableStock: content ? content.quantity : 0,
-          reservedStock: 0,
+          reservedStock: prod ? (prod.reserved_quantity || 0) : 0,
           totalStock: content ? content.quantity : 0,
-          image: prod ? (prod.image_url || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=150') : 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=150',
+          image: prod ? (prod.image_url || '') : '',
           walkingDistance: isAisle1 ? 8 : isAisle2 ? 14 : isAisle3 ? 20 : 25,
           nearestEntrance: isAisle1 ? 'Main Entrance' : 'Exit / Loading Dock',
           zone: activeRackDetail.zone,
@@ -682,13 +682,15 @@ export const StoreLayout: React.FC = () => {
 
             {activeBin ? (
               <div className="space-y-4">
-                <div className="flex justify-center p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
-                  <img 
-                    src={activeBin.image} 
-                    alt={activeBin.productName}
-                    className="h-32 w-32 object-cover rounded-lg shadow-xs bg-white" 
-                  />
-                </div>
+                {activeBin.image && (
+                  <div className="flex justify-center p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+                    <img 
+                      src={activeBin.image} 
+                      alt={activeBin.productName}
+                      className="h-32 w-32 object-cover rounded-lg shadow-xs bg-white" 
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-2.5 text-xs">
                   <div className="flex items-start justify-between gap-2">

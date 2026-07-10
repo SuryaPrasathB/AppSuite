@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = `http://${window.location.hostname}:8000/api`;
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
@@ -113,5 +113,10 @@ export const apiClient = {
     updateStatus: (id: number | string, status: string) => request<any>(`/boms/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
     delete: (id: number | string) => request<any>(`/boms/${id}`, { method: 'DELETE' }),
     issue: (id: number | string, body: any) => request<any>(`/boms/${id}/issue`, { method: 'POST', body: JSON.stringify(body) }),
+  },
+  notifications: {
+    list: (limit = 50) => request<any[]>(`/notifications?limit=${limit}`),
+    markRead: (id: number | string) => request<any>(`/notifications/${id}/read`, { method: 'PUT' }),
+    markAllRead: () => request<any>('/notifications/read-all', { method: 'PUT' }),
   }
 };

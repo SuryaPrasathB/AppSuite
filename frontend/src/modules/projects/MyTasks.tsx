@@ -12,7 +12,7 @@ export const MyTasks: React.FC = () => {
   const [view, setView] = useState<'list' | 'kanban'>('list');
 
   // Filter state
-  const [selectedAssignee, setSelectedAssignee] = useState<string>(user?.username || 'All');
+  const [selectedAssignee, setSelectedAssignee] = useState<string>(user?.name || 'All');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
 
   const toggleProjectCollapse = (projName: string) => {
@@ -85,16 +85,9 @@ export const MyTasks: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <CheckSquare className="h-6 w-6 text-indigo-600" />
-              My Tasks
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">Manage your cross-project assignments</p>
-          </div>
+      {/* Header Controls */}
+      <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
           
           <div className="flex items-center gap-3">
             <div className="bg-slate-100 p-1 rounded-lg flex items-center border border-slate-200">
@@ -120,8 +113,8 @@ export const MyTasks: React.FC = () => {
               <option value="All">All Assignees (Global)</option>
               <option value="Unassigned">Unassigned</option>
               <option disabled>──────</option>
-              {user?.username && <option value={user.username}>{user.username} (Me)</option>}
-              {getUniqueAssignees().filter(a => a !== user?.username).map(a => (
+              {user?.name && <option value={user.name}>{user.name} (Me)</option>}
+              {getUniqueAssignees().filter(a => a !== user?.name).map(a => (
                 <option key={a} value={a}>{a}</option>
               ))}
             </select>

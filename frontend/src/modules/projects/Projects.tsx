@@ -173,7 +173,7 @@ export const Projects: React.FC = () => {
                 <th className="px-6 py-4">Project Name</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">PO Number</th>
-                <th className="px-6 py-4">Engineer</th>
+                <th className="px-6 py-4">Project Incharge</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Completion</th>
                 <th className="px-6 py-4">Start Date</th>
@@ -260,7 +260,7 @@ export const Projects: React.FC = () => {
                       {p.start_date ? new Date(p.start_date).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
-                      {p.end_date ? new Date(p.end_date).toLocaleDateString() : '—'}
+                      {p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">

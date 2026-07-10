@@ -17,16 +17,18 @@ import { DocumentsTab } from './workspace-tabs/DocumentsTab';
 import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
+import { useDialog } from '../../context/DialogContext';
 
 export const ProjectWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { showAlert, showConfirm } = useDialog();
   const [project, setProject] = useState<any>(null);
   const [staticTasks, setStaticTasks] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [dynamicTasks, setDynamicTasks] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -44,9 +46,9 @@ export const ProjectWorkspace: React.FC = () => {
     estimated_hours: 0, actual_hours: 0,
   });
 
-  const loadData = async (projectId: number) => {
+  const loadData = async (projectId: number, silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [projDetails, taskList, empList] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
@@ -56,11 +58,12 @@ export const ProjectWorkspace: React.FC = () => {
       setStaticTasks(projDetails.tasks);
       setFiles(projDetails.files);
       setDynamicTasks(taskList);
-      setEmployees(empList);
+      const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
+      setEmployees(sortedEmps);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -71,13 +74,13 @@ export const ProjectWorkspace: React.FC = () => {
   }, [id]);
 
   const tabs = [
-    { id: 'overview', name: 'Overview', icon: LayoutDashboard },
     { id: 'tasks', name: 'Tasks', icon: CheckSquare },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
     { id: 'documents', name: 'Documents', icon: FileText },
     { id: 'notes', name: 'Notes', icon: StickyNote },
-    { id: 'activity', name: 'Activity', icon: Activity }
+    { id: 'activity', name: 'Activity', icon: Activity },
+    { id: 'overview', name: 'Overview', icon: LayoutDashboard }
   ];
 
   if (loading) {
@@ -98,7 +101,7 @@ export const ProjectWorkspace: React.FC = () => {
       setIsEditModalOpen(false);
       loadData(project.id);
     } catch (err: any) {
-      alert(err.message || 'Failed to update project');
+      showAlert(err.message || 'Failed to update project');
     }
   };
 
@@ -112,7 +115,7 @@ export const ProjectWorkspace: React.FC = () => {
         setPreviewFile(null);
       }
     } catch (err: any) {
-      alert(err.message || "Failed to upload file");
+      showAlert(err.message || "Failed to upload file");
     } finally {
       setUploadingTask(null);
     }
@@ -158,7 +161,10 @@ export const ProjectWorkspace: React.FC = () => {
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taskForm.title.trim()) return alert("Title is required");
+    if (!taskForm.title.trim()) {
+      showAlert("Title is required");
+      return;
+    }
     const payload = {
       ...taskForm,
       assignee_id: taskForm.assignee_id ? parseInt(taskForm.assignee_id, 10) : null,
@@ -168,19 +174,34 @@ export const ProjectWorkspace: React.FC = () => {
       if (editingTask) await updateDynamicTask(project.id, editingTask.id, payload);
       else await createDynamicTask(project.id, payload);
       setIsTaskFormOpen(false);
-      loadData(project.id);
+      loadData(project.id, true);
     } catch (err: any) {
-      alert(err.message || "Failed to save task");
+      showAlert(err.message || "Failed to save task");
     }
   };
 
   const handleDeleteTask = async (taskId: number) => {
-    if (!window.confirm("Are you sure you want to delete this task?")) return;
+    const confirmed = await showConfirm("Are you sure you want to delete this task?");
+    if (!confirmed) return;
     try {
       await deleteDynamicTask(project.id, taskId);
-      loadData(project.id);
+      loadData(project.id, true);
     } catch (err) {
-      alert("Failed to delete task");
+      showAlert("Failed to delete task");
+    }
+  };
+
+  const handleCreateQuickTask = async (taskData: any) => {
+    try {
+      const payload = {
+        ...taskData,
+        start_date: taskData.start_date || new Date().toISOString().split('T')[0],
+        due_date: taskData.due_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      };
+      await createDynamicTask(project.id, payload);
+      await loadData(project.id, true);
+    } catch (err: any) {
+      showAlert(err.message || "Failed to create quick task");
     }
   };
 
@@ -189,8 +210,19 @@ export const ProjectWorkspace: React.FC = () => {
       await updateDynamicTask(project.id, taskId, { status: newStatus });
       setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     } catch (err) {
-      alert("Failed to update status");
-      loadData(project.id);
+      showAlert("Failed to update status");
+      loadData(project.id, true);
+    }
+  };
+
+  const handleUpdateTaskField = async (taskId: number, field: string, value: any) => {
+    try {
+      await updateDynamicTask(project.id, taskId, { [field]: value });
+      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value } : t));
+      await loadData(project.id, true);
+    } catch (err: any) {
+      showAlert(err.message || `Failed to update task ${field}`);
+      loadData(project.id, true);
     }
   };
 
@@ -223,12 +255,20 @@ export const ProjectWorkspace: React.FC = () => {
               </div>
             </div>
           </div>
-          <button 
-            onClick={() => setIsEditModalOpen(true)}
-            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg transition-colors border border-indigo-200"
-          >
-            Edit Project
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => handleOpenEditTask()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
+            >
+              + Add Task
+            </button>
+            <button 
+              onClick={() => setIsEditModalOpen(true)}
+              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg transition-colors border border-indigo-200"
+            >
+              Edit Project
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -263,15 +303,6 @@ export const ProjectWorkspace: React.FC = () => {
                 <h3 className="font-bold text-slate-800 mb-4">Project Description</h3>
                 <p className="text-slate-600 text-sm leading-relaxed">{project.description || 'No description provided.'}</p>
               </div>
-              
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-800 mb-4">Project Scope</h3>
-                <div className="flex gap-4">
-                  {project.has_software && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-100">Software Required</span>}
-                  {project.has_firmware && <span className="px-3 py-1 bg-sky-50 text-sky-700 rounded-lg text-xs font-bold border border-sky-100">Firmware Required</span>}
-                  {project.has_transformer && <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-100">Transformer Included</span>}
-                </div>
-              </div>
             </div>
             
             <div className="space-y-6">
@@ -300,39 +331,20 @@ export const ProjectWorkspace: React.FC = () => {
                   </div>
                 </dl>
               </div>
-
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-800 mb-4">Budget Overview</h3>
-                <dl className="space-y-4 text-sm">
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Estimated Budget</dt>
-                    <dd className="font-bold text-slate-800">${project.budget_estimated?.toLocaleString() || '0.00'}</dd>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Actual Budget</dt>
-                    <dd className={`font-bold ${project.budget_actual > project.budget_estimated ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      ${project.budget_actual?.toLocaleString() || '0.00'}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
             </div>
           </div>
         )}
         
         {activeTab === 'tasks' && (
-          <div className="h-full relative">
-             <div className="absolute top-2 right-4 z-20">
-               <button onClick={() => handleOpenEditTask()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm">
-                 + Add Task
-               </button>
-             </div>
-             <TasksTab 
-               dynamicTasks={dynamicTasks}
-               handleOpenEditTask={handleOpenEditTask}
-               handleDeleteTask={handleDeleteTask}
-             />
-          </div>
+          <TasksTab 
+            dynamicTasks={dynamicTasks}
+            handleOpenEditTask={handleOpenEditTask}
+            handleDeleteTask={handleDeleteTask}
+            project={project}
+            employees={employees}
+            onCreateQuickTask={handleCreateQuickTask}
+            onUpdateTaskField={handleUpdateTaskField}
+          />
         )}
 
         {activeTab === 'kanban' && (
@@ -347,17 +359,14 @@ export const ProjectWorkspace: React.FC = () => {
                handleOpenEditTask={handleOpenEditTask}
                handleDeleteTask={handleDeleteTask}
                handleUpdateTaskStatus={handleUpdateTaskStatus}
+               onUpdateTaskField={handleUpdateTaskField}
+               employees={employees}
              />
           </div>
         )}
 
         {activeTab === 'timeline' && (
           <div className="h-full relative">
-             <div className="absolute top-0 right-2 z-20">
-               <button onClick={() => handleOpenEditTask()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm">
-                 + Add Task
-               </button>
-             </div>
              <TimelineTab 
                dynamicTasks={dynamicTasks}
                handleOpenEditTask={handleOpenEditTask}

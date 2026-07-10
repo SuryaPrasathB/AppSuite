@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, X } from 'lucide-react';
+import { X, User, Calendar, Flag, GitBranch, AlignLeft } from 'lucide-react';
+import { DateRangePicker } from './DateRangePicker';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -17,160 +18,176 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const currentProjectName = "Project Task";
+
   return (
     <div className="fixed inset-0 z-[70] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <form onSubmit={onSave} className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col text-slate-800 animate-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <h3 className="font-bold text-md text-slate-800 flex items-center gap-2">
-            <Plus className="h-5 w-5 text-indigo-600" />
-            {editingTask ? 'Edit Task Details' : 'Create New Project Task'}
-          </h3>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 p-1 rounded-md hover:bg-slate-200">
+      <form onSubmit={onSave} className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-slate-800 animate-in zoom-in-95 duration-150">
+        
+        {/* Top Header Row */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-100">
+              {editingTask ? 'Edit Task' : 'New Task'}
+            </span>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
-        
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Parent Task</label>
-            <select
-              value={taskForm.parent_id || ''}
-              onChange={(e) => setTaskForm((prev: any) => ({ ...prev, parent_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 mb-4"
-            >
-              <option value="">None (Top Level Task)</option>
-              {dynamicTasks.filter(t => t.id !== (editingTask?.id)).map(t => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
+
+        {/* Content Area */}
+        <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto custom-scrollbar">
+          
+          {/* Project Breadcrumb */}
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            {currentProjectName}
           </div>
+
+          {/* Task Name Title Input (Borderless, Bold, Large) */}
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Task Title *</label>
             <input 
               type="text" 
               value={taskForm.title}
               onChange={(e) => setTaskForm((prev: any) => ({ ...prev, title: e.target.value }))}
-              placeholder="e.g. Test PCB soldering joint"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+              placeholder="Task Name"
+              className="w-full bg-transparent border-0 border-b border-transparent focus:border-indigo-100 text-xl font-bold text-slate-800 placeholder-slate-350 focus:outline-none focus:ring-0 pb-1.5 transition-all"
               required
+              autoFocus
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
+          {/* Task Description Textarea (Borderless, Clean) */}
+          <div className="flex gap-2.5 items-start">
+            <AlignLeft className="h-4 w-4 text-slate-300 mt-1 shrink-0" />
             <textarea 
               value={taskForm.description}
               onChange={(e) => setTaskForm((prev: any) => ({ ...prev, description: e.target.value }))}
-              placeholder="Write clear instructions for engineers..."
-              rows={3}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all resize-none"
+              placeholder="Add description..."
+              rows={4}
+              className="w-full bg-transparent border-0 focus:ring-0 text-sm text-slate-600 placeholder-slate-400 focus:outline-none resize-none p-0"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Status</label>
-              <select 
+          {/* Action Chips Grid/Flex Area */}
+          <div className="flex flex-wrap gap-2.5 pt-4 border-t border-slate-100">
+            
+            {/* Status Selector Pill */}
+            <div className="relative">
+              <select
                 value={taskForm.status}
                 onChange={(e) => setTaskForm((prev: any) => ({ ...prev, status: e.target.value }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm ${
+                  taskForm.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
+                  taskForm.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
+                  taskForm.status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-600 border-amber-500/20' :
+                  'bg-sky-50 text-sky-600 border-sky-500/20'
+                }`}
               >
-                <option value="TODO">To Do</option>
+                <option value="TODO">Not Started</option>
                 <option value="IN_PROGRESS">In Progress</option>
-                <option value="REVIEW">Review</option>
+                <option value="REVIEW">Pending Review</option>
                 <option value="COMPLETED">Completed</option>
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Priority</label>
-              <select 
-                value={taskForm.priority}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, priority: e.target.value }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="CRITICAL">Critical</option>
-              </select>
+
+            {/* Assignee Selector Chip */}
+            <div className="relative">
+              <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
+                <User className="h-3.5 w-3.5 text-slate-400" />
+                {taskForm.assignee_id ? (employees.find(e => e.id.toString() === taskForm.assignee_id.toString())?.name || 'Assignee') : 'Assignee'}
+                <select
+                  value={taskForm.assignee_id}
+                  onChange={(e) => setTaskForm((prev: any) => ({ ...prev, assignee_id: e.target.value }))}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                >
+                  <option value="">Unassigned</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </label>
             </div>
+
+            {/* Start & Due Date Range Picker */}
+            <DateRangePicker
+              startDate={taskForm.start_date}
+              dueDate={taskForm.due_date}
+              onSave={(start, due) => {
+                setTaskForm((prev: any) => ({ ...prev, start_date: start, due_date: due }));
+              }}
+              triggerElement={
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      {taskForm.start_date ? `Start: ${taskForm.start_date}` : 'Start Date'}
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      {taskForm.due_date ? `Due: ${taskForm.due_date}` : 'Due Date'}
+                    </label>
+                  </div>
+                </div>
+              }
+            />
+
+            {/* Priority Selector Chip */}
+            <div className="relative">
+              <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
+                <Flag className="h-3.5 w-3.5 text-slate-400" />
+                Priority: {taskForm.priority}
+                <select
+                  value={taskForm.priority}
+                  onChange={(e) => setTaskForm((prev: any) => ({ ...prev, priority: e.target.value }))}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                >
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </label>
+            </div>
+
+            {/* Parent Task Selector Chip */}
+            <div className="relative">
+              <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
+                <GitBranch className="h-3.5 w-3.5 text-slate-400" />
+                Parent: {taskForm.parent_id ? (dynamicTasks.find(t => t.id === taskForm.parent_id)?.title || 'None') : 'None'}
+                <select
+                  value={taskForm.parent_id || ''}
+                  onChange={(e) => setTaskForm((prev: any) => ({ ...prev, parent_id: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                >
+                  <option value="">None (Top Level)</option>
+                  {dynamicTasks.filter(t => t.id !== (editingTask?.id)).map(t => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Assignee</label>
-            <select 
-              value={taskForm.assignee_id}
-              onChange={(e) => setTaskForm((prev: any) => ({ ...prev, assignee_id: e.target.value }))}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-            >
-              <option value="">Unassigned</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Start Date</label>
-              <input 
-                type="date" 
-                value={taskForm.start_date}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, start_date: e.target.value }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Due Date</label>
-              <input 
-                type="date" 
-                value={taskForm.due_date}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, due_date: e.target.value }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Estimated Hours</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={taskForm.estimated_hours || ''}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, estimated_hours: e.target.value ? parseFloat(e.target.value) : 0 }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Hours</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={taskForm.actual_hours || ''}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, actual_hours: e.target.value ? parseFloat(e.target.value) : 0 }))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Dependencies (Tasks that must finish first)</label>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl max-h-40 overflow-y-auto custom-scrollbar p-2 space-y-1">
+          {/* Dependencies / Blocked By Selector */}
+          <div className="pt-4 border-t border-slate-100">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Blocked By (Dependencies)</label>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl max-h-40 overflow-y-auto custom-scrollbar p-3 space-y-1.5">
               {dynamicTasks.filter(t => t.id !== (editingTask?.id)).map(task => {
                 const isSelected = taskForm.dependencies.some((d: any) => typeof d === 'number' ? d === task.id : d.id === task.id);
                 const currentDep = taskForm.dependencies.find((d: any) => typeof d === 'number' ? d === task.id : d.id === task.id);
                 const currentType = typeof currentDep === 'object' && currentDep ? currentDep.type : 'FS';
 
                 return (
-                  <div key={task.id} className={`flex flex-col gap-1.5 p-2 rounded-lg border transition-colors ${isSelected ? 'bg-indigo-55 border-indigo-200' : 'hover:bg-slate-100 border-transparent'}`}>
+                  <div key={task.id} className={`flex flex-col gap-1.5 p-2 rounded-xl border transition-colors ${isSelected ? 'bg-indigo-55 border-indigo-200' : 'hover:bg-slate-100 border-transparent'}`}>
                     <label className="flex items-start gap-3 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        className="mt-1"
+                        className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                         onChange={(e) => {
                           if (e.target.checked) {
                             setTaskForm((prev: any) => ({ ...prev, dependencies: [...prev.dependencies, { id: task.id, type: 'FS' }] }));
@@ -181,12 +198,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                       />
                       <div className="flex flex-col flex-1">
                         <span className="text-sm font-bold text-slate-800 leading-tight">{task.title}</span>
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">{task.status}</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{task.status}</span>
                       </div>
                     </label>
                     {isSelected && (
                       <div className="pl-7 flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Dependency Type:</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Type:</span>
                         <select
                           value={currentType}
                           onChange={(e) => {
@@ -214,13 +231,15 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 );
               })}
               {dynamicTasks.filter(t => t.id !== (editingTask?.id)).length === 0 && (
-                <div className="text-xs text-slate-500 p-2 text-center">No other tasks available</div>
+                <div className="text-xs text-slate-400 p-2 text-center italic">No other tasks available</div>
               )}
             </div>
           </div>
 
         </div>
-        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50">
+
+        {/* Bottom Actions Bar */}
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
           <button type="button" onClick={onClose} className="px-5 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors">
             Cancel
           </button>
@@ -228,6 +247,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
             {editingTask ? 'Save Changes' : 'Create Task'}
           </button>
         </div>
+
       </form>
     </div>
   );

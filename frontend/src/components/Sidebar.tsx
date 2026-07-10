@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, 
   Package, 
@@ -25,6 +26,7 @@ import {
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
+  const { hasRole } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('smart_store_sidebar_collapsed') === 'true';
   });
@@ -37,11 +39,22 @@ export const Sidebar: React.FC = () => {
 
   // Determine active module
   const path = location.pathname;
-  let activeModule: 'projects' | 'bom' | 'store' = 'store';
+  
+  // Default module based on roles
+  let defaultModule: 'projects' | 'bom' | 'store' = 'store';
+  if (hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
+    defaultModule = 'store';
+  } else if (hasRole(['Administrator', 'Employee'])) {
+    defaultModule = 'projects';
+  }
+
+  let activeModule: 'projects' | 'bom' | 'store' = defaultModule;
   if (path.startsWith('/projects')) {
     activeModule = 'projects';
   } else if (path.startsWith('/bom')) {
     activeModule = 'bom';
+  } else if (['/store', '/products', '/layout', '/stock-in', '/issue-material', '/return-material', '/inventory', '/vendors', '/employees', '/purchase', '/requests', '/reports'].includes(path)) {
+    activeModule = 'store';
   }
 
   // Configure menu items based on module
@@ -61,7 +74,7 @@ export const Sidebar: React.FC = () => {
     menuItems = [
       { name: 'BOM Workspace', path: '/bom', icon: ClipboardList }
     ];
-  } else {
+  } else if (activeModule === 'store' && hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
     // Store Module (Default)
     menuItems = [
       { name: 'Dashboard', path: '/store', icon: LayoutDashboard },
@@ -73,16 +86,12 @@ export const Sidebar: React.FC = () => {
       { name: 'Store Layout', path: '/layout', icon: Warehouse },
       { name: 'Transactions', path: '/inventory', icon: History },
       { name: 'Suppliers / Vendors', path: '/vendors', icon: Truck },
-      { name: 'Employees', path: '/employees', icon: Users },
       { name: 'Reports', path: '/reports', icon: TrendingUp },
     ];
   }
 
-  // Prepend Portal Lobby link to all modules so users can easily switch
-  const allMenuItems = [
-    { name: 'Lobby Portal', path: '/', icon: Grid },
-    ...menuItems
-  ];
+  // Navigation items specific to the active module
+  const allMenuItems = menuItems;
 
   return (
     <aside className={`bg-slate-900 text-white flex flex-col h-screen sticky top-0 left-0 z-20 shadow-xl border-r border-slate-800 transition-all duration-300 ease-in-out ${
@@ -148,7 +157,7 @@ export const Sidebar: React.FC = () => {
         ))}
 
         {/* Quick Actions (Sidebar Middle/Bottom) - Only show for Store Module */}
-        {activeModule === 'store' && !isCollapsed && (
+        {activeModule === 'store' && hasRole(['Administrator', 'Store Operator', 'Store Manager']) && !isCollapsed && (
           <div className="pt-4 border-t border-slate-800/80 mt-4 space-y-2">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block px-1">Quick Actions</span>
             <div className="space-y-1.5">
@@ -187,6 +196,17 @@ export const Sidebar: React.FC = () => {
 
       {/* Sidebar Footer Area */}
       <div className="border-t border-slate-800 shrink-0">
+        <NavLink
+          to="/"
+          title={isCollapsed ? "Lobby Portal" : undefined}
+          className={`flex items-center w-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all duration-200 ${
+            isCollapsed ? 'justify-center p-3' : 'gap-3 px-8 py-3 text-xs font-semibold'
+          }`}
+        >
+          <Grid className="h-4.5 w-4.5" />
+          {!isCollapsed && <span>Lobby Portal</span>}
+        </NavLink>
+        
         <button
           onClick={toggleCollapse}
           className={`flex items-center w-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all duration-200 cursor-pointer ${

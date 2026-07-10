@@ -220,7 +220,7 @@ export const Products: React.FC = () => {
   const totalItems = products.length;
   const totalStockAll = products.reduce((sum, p: any) => sum + (p.current_quantity || 0), 0);
   const lowStockCount = products.filter((p: any) => p.status === 'LOW_STOCK' || p.status === 'CRITICAL').length;
-  const reservedStock = 0;
+  const reservedStock = products.reduce((sum, p: any) => sum + (p.reserved_quantity || 0), 0);
   const outOfStockCount = products.filter(p => p.current_quantity === 0 || p.status === 'OUT_OF_STOCK').length;
 
   const handleDeleteProduct = async () => {
@@ -383,7 +383,7 @@ export const Products: React.FC = () => {
             <Download className="h-4 w-4 text-slate-500" />
             Export
           </button>
-          {hasRole(['Administrator', 'Store Manager']) && (
+          {hasRole(['Administrator']) && (
             <button
               onClick={() => setAddModalOpen(true)}
               className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -424,6 +424,7 @@ export const Products: React.FC = () => {
                   <th className="px-6 py-4">Item Name</th>
                   <th className="px-6 py-4">Category</th>
                   <th className="px-6 py-4">Unit</th>
+                  <th className="px-6 py-4">Cost</th>
                   <th className="px-6 py-4">Current Stock</th>
                   <th className="px-6 py-4">Reserved</th>
                   <th className="px-6 py-4">Available</th>
@@ -439,7 +440,7 @@ export const Products: React.FC = () => {
                     const firstLoc = prod.locations && prod.locations.length > 0 ? prod.locations[0] : null;
                     const locationText = firstLoc ? `Rack ${firstLoc.rack} ${firstLoc.shelf}` : 'N/A';
                     
-                    const reserved = Math.round((prod.current_quantity || 0) * 0.22);
+                    const reserved = prod.reserved_quantity || 0;
                     const available = Math.max(0, (prod.current_quantity || 0) - reserved);
 
                     return (
@@ -472,6 +473,7 @@ export const Products: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-500 font-semibold whitespace-nowrap">{prod.unit || 'pcs'}</td>
+                        <td className="px-6 py-4 text-slate-600 font-bold whitespace-nowrap">{prod.currency || 'INR'} {prod.standard_cost ?? '0.00'}</td>
                         <td className={`px-6 py-4 font-black whitespace-nowrap ${(prod.current_quantity ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>
                           {prod.current_quantity ?? 0}
                         </td>

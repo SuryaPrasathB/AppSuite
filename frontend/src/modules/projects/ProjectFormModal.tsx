@@ -3,6 +3,7 @@ import {
   Folder, CheckCircle2, Building2, User, CalendarDays, Layers, 
   Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X
 } from 'lucide-react';
+import { fetchEmployees } from './api';
 
 interface ProjectFormModalProps {
   project?: any; // If provided, edit mode. If null, create mode.
@@ -16,6 +17,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   project, isOpen, onClose, onSave, nextCode 
 }) => {
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [form, setForm] = useState({
     code: '',
     name: '',
@@ -32,6 +34,10 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     budget_estimated: 0,
     budget_actual: 0
   });
+
+  useEffect(() => {
+    fetchEmployees().then(data => setEmployees(data || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -235,44 +241,20 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                     </div>
                     <input
                       type="text"
+                      list="employee-list"
                       value={form.project_incharge}
                       onChange={(e) => setForm({...form, project_incharge: e.target.value})}
                       placeholder="John Doe"
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                     />
+                    <datalist id="employee-list">
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.name} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
               </div>
-
-            {/* Budgets */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Estimated Budget ($)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.budget_estimated}
-                    onChange={(e) => setForm({ ...form, budget_estimated: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Actual Budget ($)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.budget_actual}
-                    onChange={(e) => setForm({ ...form, budget_actual: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-            </div>
             </section>
 
             <div className="h-px w-full bg-slate-100"></div>

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
+import { useDialog } from '../../../context/DialogContext';
 
 interface ReturnItem {
   id: string; // React key
@@ -52,6 +53,7 @@ interface IssuedItemRecord {
 export const ReturnMaterial: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showAlert, showConfirm } = useDialog();
 
   // Core database options
   const [productsList, setProductsList] = useState<any[]>([]);
@@ -113,7 +115,8 @@ export const ReturnMaterial: React.FC = () => {
       setLocationsList(locs);
 
       if (Array.isArray(emps)) {
-        setEmployeesList(emps.map((e: any) => `${e.name} (${e.department || 'Employee'})`));
+        const sortedEmps = [...emps].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+        setEmployeesList(sortedEmps.map((e: any) => `${e.name} (${e.department || 'Employee'})`));
       }
       
       const savedProjects = localStorage.getItem('smart_store_projects_v2');
@@ -238,7 +241,7 @@ export const ReturnMaterial: React.FC = () => {
     // Check if already in itemsToReturn
     const exists = itemsToReturn.some(item => String(item.product_id) === String(issued.product_id));
     if (exists) {
-      alert("This item has already been added to the return checklist.");
+      showAlert("This item has already been added to the return checklist.");
       return;
     }
 
@@ -275,8 +278,9 @@ export const ReturnMaterial: React.FC = () => {
     setItemsToReturn(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleClearAll = () => {
-    if (window.confirm("Clear all items from the return list?")) {
+  const handleClearAll = async () => {
+    const confirmed = await showConfirm("Clear all items from the return list?");
+    if (confirmed) {
       setItemsToReturn([]);
     }
   };
@@ -563,7 +567,7 @@ export const ReturnMaterial: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={() => alert("Simulating barcode scanner...")}
+              onClick={() => showAlert("Simulating barcode scanner...")}
               className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-655 rounded-lg text-xs font-bold bg-white transition-colors cursor-pointer shrink-0"
             >
               Scan Barcode
@@ -642,7 +646,7 @@ export const ReturnMaterial: React.FC = () => {
             <span>Showing 1 to {filteredIssuedItems.length} of {issuedItems.length} items</span>
             <button 
               type="button" 
-              onClick={() => alert("Showing all logs...")}
+              onClick={() => showAlert("Showing all logs...")}
               className="text-primary-600 hover:text-primary-750 font-bold"
             >
               View All

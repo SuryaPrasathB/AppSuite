@@ -163,6 +163,7 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [autofilledFields, setAutofilledFields] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const schema = useMemo(() => getCategorySchema(categoryId), [categoryId]);
@@ -248,6 +249,9 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
           unit: initialProduct.unit || 'pcs',
           minimumStock: initialProduct.min_quantity?.toString() || '10',
           reorderLevel: initialProduct.max_quantity?.toString() || '100',
+          initialStock: initialProduct.current_quantity?.toString() || '0',
+          standardCost: initialProduct.standard_cost?.toString() || '0.00',
+          currency: initialProduct.currency || 'INR',
         });
         
         setManualCode(initialProduct.code || '');
@@ -443,11 +447,16 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
       unit: values.unit,
       min_quantity: Number(values.minimumStock) || 0,
       max_quantity: Number(values.reorderLevel) || 0,
+      initial_quantity: Number(values.initialStock) || 0,
       barcode: values.catalogNumber || values.manufacturerPartNumber || itemCode,
       qr_code: itemCode,
       image_url: imageUrl,
       vendor_ids: supplierId ? [supplierId] : [],
       preferred_vendor_id: supplierId || null,
+      standard_cost: Number(values.standardCost) || 0,
+      latest_cost: 0,
+      average_cost: 0,
+      currency: values.currency || 'INR',
     });
   };
 
@@ -457,6 +466,22 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-2 backdrop-blur-sm sm:p-4">
+      {toast && (
+        <div
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl transition-all animate-in fade-in slide-in-from-top-4 ${
+            toast.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-red-200 bg-red-50 text-red-800'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <Check className="h-4 w-4 text-emerald-600" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-red-600" />
+          )}
+          {toast.message}
+        </div>
+      )}
       <form
         onSubmit={submit}
         className="flex max-h-[96vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl"
@@ -615,14 +640,27 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                                       next.poles = String(v);
                                       filledKeys.add('poles');
                                     } else if (k.toLowerCase().includes('voltage') || k.toLowerCase().includes('coil')) {
-                                      next.coilVoltage = String(v);
-                                      filledKeys.add('coilVoltage');
+                                      if ('coilVoltage' in next) {
+                                        next.coilVoltage = String(v);
+                                        filledKeys.add('coilVoltage');
+                                      }
+                                      next.voltage = String(v);
+                                      filledKeys.add('voltage');
+                                    } else if (k.toLowerCase().includes('capacitance')) {
+                                      next.capacitance = String(v);
+                                      filledKeys.add('capacitance');
                                     } else if (k.toLowerCase().includes('series')) {
                                       next.series = String(v);
                                       filledKeys.add('series');
-                                    } else if (k.toLowerCase().includes('model')) {
+                                    } else if (k.toLowerCase().includes('model') || k.toLowerCase().includes('package') || k.toLowerCase().includes('size')) {
                                       next.model = String(v);
                                       filledKeys.add('model');
+                                    } else if (k.toLowerCase().includes('dielectric')) {
+                                      next.dielectric = String(v);
+                                      filledKeys.add('dielectric');
+                                    } else if (k.toLowerCase().includes('tolerance')) {
+                                      next.tolerance = String(v);
+                                      filledKeys.add('tolerance');
                                     }
                                   });
                                 }
@@ -636,10 +674,12 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                                 setImageUrl(res.image_url);
                               }
 
-                              alert('Product specifications auto-filled successfully! Please review the specifications.');
+                              setToast({ message: 'Product specifications auto-filled successfully! Please review the specifications.', type: 'success' });
+                              setTimeout(() => setToast(null), 4000);
                             }
                           } catch (err: any) {
-                            alert(`Failed to fetch part details: ${err?.message || err}`);
+                            setToast({ message: `Failed to fetch part details: ${err?.message || err}`, type: 'error' });
+                            setTimeout(() => setToast(null), 4000);
                           } finally {
                             if (btn) {
                               btn.innerText = origText;
@@ -841,11 +881,15 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
       {showMapPicker && (
         <LocationSelectorModal
           category={schema.label}
+          initialRack={values.rack}
+          initialShelf={values.shelf}
+          initialBin={values.bin}
           onSelectLocation={(loc: any) => {
             setValues((current) => ({
               ...current,
               rack: loc.rack,
               shelf: loc.shelf,
+              bin: loc.bin,
               zone: loc.zone || 'Zone A',
               warehouse: 'Main Store',
             }));
@@ -853,6 +897,7 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
               const next = { ...current };
               delete next.rack;
               delete next.shelf;
+              delete next.bin;
               delete next.zone;
               delete next.warehouse;
               return next;

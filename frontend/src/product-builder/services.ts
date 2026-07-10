@@ -120,6 +120,8 @@ export const buildMetadataDescription = (
       warehouse: values.warehouse || '',
       zone: values.zone || '',
       remarks: values.remarks || '',
+      standardCost: values.standardCost || '0.00',
+      currency: values.currency || 'INR',
     },
     additional: {
       supplier: values.supplier || '',

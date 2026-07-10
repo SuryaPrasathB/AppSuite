@@ -13,7 +13,7 @@ export const GlobalTimeline: React.FC = () => {
     try {
       setLoading(true);
       const allProjects = await fetchProjects();
-      setProjects(allProjects);
+      setProjects(allProjects.data || []);
     } catch (err) {
       console.error(err);
     } finally {

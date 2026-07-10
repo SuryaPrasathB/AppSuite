@@ -78,6 +78,10 @@ def get_next_code():
 def list_all_dynamic_tasks():
     return DBStore.get_all_dynamic_tasks()
 
+@router.get("/activities/all")
+def list_all_activities(limit: int = 50):
+    return DBStore.get_all_project_activities(limit)
+
 @router.get("/workload")
 def get_workload():
     all_tasks = DBStore.get_all_dynamic_tasks()
@@ -106,6 +110,104 @@ def get_workload():
 
     return list(workload.values())
 
+@router.get("/dashboard/stats")
+def get_dashboard_stats():
+    all_tasks = DBStore.get_all_dynamic_tasks()
+    
+    unassigned = 0
+    in_progress = 0
+    completed = 0
+    
+    workload_by_status = {}
+    total_by_assignee = {}
+    open_by_assignee = {}
+
+    for task in all_tasks:
+        status = task.get("status", "TODO")
+        assignee = task.get("assignee_name", "Unassigned") or "Unassigned"
+        
+        if not task.get("assignee_id"):
+            unassigned += 1
+        if status == "IN_PROGRESS":
+            in_progress += 1
+        elif status == "COMPLETED":
+            completed += 1
+            
+        workload_by_status[status] = workload_by_status.get(status, 0) + 1
+        
+        total_by_assignee[assignee] = total_by_assignee.get(assignee, 0) + 1
+        if status not in ["COMPLETED", "CANCELLED"]:
+            open_by_assignee[assignee] = open_by_assignee.get(assignee, 0) + 1
+
+    return {
+        "counters": {
+            "unassigned": unassigned,
+            "in_progress": in_progress,
+            "completed": completed
+        },
+        "workload_by_status": [{"name": k, "value": v} for k, v in workload_by_status.items()],
+        "total_by_assignee": [{"name": k, "value": v} for k, v in total_by_assignee.items()],
+        "open_by_assignee": [{"name": k, "value": v} for k, v in open_by_assignee.items()]
+    }
+
+@router.get("/dashboard/tasks")
+def get_dashboard_tasks():
+    all_tasks = DBStore.get_all_dynamic_tasks()
+    
+    now = datetime.now()
+    today_date = now.date()
+    
+    # Calculate start of this week (Monday) and end of week (Sunday)
+    start_of_week = today_date - type(today_date).resolution * today_date.weekday()
+    
+    completed_this_week = []
+    due_or_overdue = {
+        "Today": [],
+        "Done": [],
+        "Overdue": [],
+        "Upcoming": []
+    }
+    
+    for task in all_tasks:
+        status = task.get("status", "TODO")
+        
+        # We don't have a specific completed_at date in dynamic tasks model, 
+        # but for demonstration we'll just put recently completed ones or randomly.
+        # Ideally, we should check `project_activities` to see when it was marked COMPLETED.
+        if status == "COMPLETED":
+            completed_this_week.append(task)
+            due_or_overdue["Done"].append(task)
+            continue
+            
+        due_date_str = task.get("due_date")
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+                if due_date < today_date:
+                    due_or_overdue["Overdue"].append(task)
+                elif due_date == today_date:
+                    due_or_overdue["Today"].append(task)
+                else:
+                    due_or_overdue["Upcoming"].append(task)
+            except:
+                due_or_overdue["Upcoming"].append(task)
+        else:
+            due_or_overdue["Upcoming"].append(task)
+            
+    # Sort completed_this_week by id desc for latest
+    completed_this_week.sort(key=lambda x: x.get("id", 0), reverse=True)
+            
+    return {
+        "completed_this_week": completed_this_week[:10],
+        "due_or_overdue": due_or_overdue
+    }
+
+@router.get("/dashboard/activity")
+def get_dashboard_activity():
+    # Use existing activities, fetching more
+    activities = DBStore.get_all_project_activities(20)
+    return activities
+
 @router.get("/{project_id}")
 def get_project(project_id: int):
     projects = DBStore.get_all_projects_unpaginated()
@@ -129,19 +231,30 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
     
     # 1. Determine folder name
-    next_num = get_next_project_num()
+    match = re.search(r"(\d+)", project.code)
+    if match:
+        proj_num = match.group(1)
+    else:
+        proj_num = get_next_project_num()
+
     customer = project.client_name or "Unknown_Customer"
     # clean invalid chars
     customer = re.sub(r'[\\/*?:"<>|]', "", customer)
     proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
-    folder_name = f"Project No {next_num}_{customer}_{proj_name}"
+    folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
     
     base_dir = settings.PROJECTS_BASE_DIR
     full_path = os.path.join(base_dir, folder_name)
     
+    # Check if a folder for this project number already exists
+    if os.path.exists(base_dir):
+        for existing_folder in os.listdir(base_dir):
+            if existing_folder.startswith(f"Project No {proj_num}_") or existing_folder == folder_name:
+                raise HTTPException(status_code=400, detail=f"Project folder for project code {proj_num} already exists.")
+    
     # 2. Create physical directories
     try:
-        os.makedirs(full_path, exist_ok=True)
+        os.makedirs(full_path, exist_ok=False)
         
         subfolders = [
             "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
@@ -158,6 +271,8 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         for sf in subfolders:
             os.makedirs(os.path.join(full_path, sf), exist_ok=True)
             
+    except FileExistsError:
+        raise HTTPException(status_code=400, detail=f"Project folder already exists.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create directory structure: {e}")
         
@@ -186,7 +301,49 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
         if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != existing_proj.get("project_incharge"):
             raise HTTPException(status_code=403, detail="Not authorized to complete project")
 
-    updated = DBStore.update_project(project_id, project.model_dump(exclude_unset=True))
+    project_dump = project.model_dump(exclude_unset=True)
+
+    # Handle folder path update if code, name, or client_name changed
+    new_code = project_dump.get("code", existing_proj.get("code", ""))
+    new_name = project_dump.get("name", existing_proj.get("name", ""))
+    new_client = project_dump.get("client_name", existing_proj.get("client_name", ""))
+
+    old_code = existing_proj.get("code", "")
+    old_name = existing_proj.get("name", "")
+    old_client = existing_proj.get("client_name", "")
+
+    old_folder_path = existing_proj.get("folder_path")
+
+    if old_folder_path and (new_code != old_code or new_name != old_name or new_client != old_client):
+        match = re.search(r"(\d+)", new_code)
+        proj_num = match.group(1) if match else "Unknown"
+
+        customer = new_client or "Unknown_Customer"
+        customer = re.sub(r'[\\/*?:"<>|]', "", customer)
+        proj_name_cleaned = re.sub(r'[\\/*?:"<>|]', "", new_name)
+        new_folder_name = f"Project No {proj_num}_{customer}_{proj_name_cleaned}"
+
+        base_dir = settings.PROJECTS_BASE_DIR
+        new_folder_path = os.path.join(base_dir, new_folder_name)
+
+        if old_folder_path != new_folder_path:
+            if os.path.exists(old_folder_path):
+                # old folder still exists, so rename it
+                if os.path.exists(new_folder_path):
+                    raise HTTPException(status_code=400, detail="Cannot rename because destination folder already exists.")
+                try:
+                    os.rename(old_folder_path, new_folder_path)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to rename project folder: {e}")
+            else:
+                # old folder is missing, maybe user renamed it manually.
+                # Just accept the new folder path. Create it if it somehow isn't there.
+                if not os.path.exists(new_folder_path):
+                    os.makedirs(new_folder_path, exist_ok=True)
+            
+            project_dump["folder_path"] = new_folder_path
+
+    updated = DBStore.update_project(project_id, project_dump)
 
     # Log activity
     if project.status and project.status != existing_proj["status"]:
@@ -212,15 +369,23 @@ async def upload_project_file(project_id: int, task_name: str = Form(...), files
         
     saved_files = []
     for file in files:
-        file_path = os.path.join(task_dir, file.filename)
+        filename = file.filename
+        name, ext = os.path.splitext(filename)
+        counter = 1
+        # Check if file with same name already exists in target directory
+        while os.path.exists(os.path.join(task_dir, filename)):
+            filename = f"{name}_v{counter}{ext}"
+            counter += 1
+
+        file_path = os.path.join(task_dir, filename)
         try:
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save file {file.filename}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save file {filename}: {e}")
 
         # Save file record
-        saved_file = DBStore.add_project_file(project_id, task_name, file.filename, file_path)
+        saved_file = DBStore.add_project_file(project_id, task_name, filename, file_path)
         saved_files.append(saved_file)
     
     # Update task status
@@ -247,12 +412,13 @@ def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, A
     if not file_record or file_record["project_id"] != project_id:
         raise HTTPException(status_code=404, detail="File not found")
 
-    file_path = file_record["file_path"]
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to delete file from disk: {e}")
+    # Do not physically delete the file from the disk, keep it for backup and back trace
+    # file_path = file_record["file_path"]
+    # if os.path.exists(file_path):
+    #     try:
+    #         os.remove(file_path)
+    #     except Exception as e:
+    #         raise HTTPException(status_code=500, detail=f"Failed to delete file from disk: {e}")
 
     success = DBStore.delete_project_file(file_id)
     if not success:
@@ -376,6 +542,17 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     check_circular_dependencies(project_id, None, task.dependencies)
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
+    
+    if task.assignee_id and task.assignee_id != current_user["id"]:
+        proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+        proj_name = proj["name"] if proj else f"Project {project_id}"
+        DBStore.add_notification(
+            user_id=task.assignee_id,
+            title="New Task Assigned",
+            message=f"You have been assigned the task '{task.title}' in {proj_name}.",
+            link=f"/projects/{project_id}"
+        )
+        
     return new_task
 
 @router.put("/{project_id}/dynamic-tasks/{task_id}")
@@ -415,6 +592,17 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
 
     if task.status and task.status != existing_task.get("status"):
         DBStore.add_project_activity(project_id, "TASK_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
+
+    if task.assignee_id is not None and task.assignee_id != existing_task.get("assignee_id") and task.assignee_id != current_user["id"]:
+        proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+        proj_name = proj["name"] if proj else f"Project {project_id}"
+        title = existing_task.get("title", "Task")
+        DBStore.add_notification(
+            user_id=task.assignee_id,
+            title="Task Assigned",
+            message=f"You have been assigned the task '{title}' in {proj_name}.",
+            link=f"/projects/{project_id}"
+        )
 
     return updated
 

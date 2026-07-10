@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, UserRole } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
+import { DialogProvider } from './context/DialogContext';
+import { ToastProvider } from './context/ToastContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Login } from './modules/store/pages/Login';
@@ -25,6 +27,8 @@ import { Employees } from './modules/store/pages/Employees';
 import { Portal } from './modules/portal/Portal';
 import { UsersManagement } from './modules/portal/UsersManagement';
 import { BOM } from './modules/bom/BOM';
+import { CreateBOMPage } from './modules/bom/CreateBOMPage';
+import { Profile } from './modules/profile/Profile';
 
 
 const Footer: React.FC = () => {
@@ -69,6 +73,16 @@ const Footer: React.FC = () => {
   );
 };
 
+const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles: UserRole[] }) => {
+  const { hasRole } = useAuth();
+  
+  if (!hasRole(allowedRoles)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const location = useLocation();
@@ -103,24 +117,29 @@ const AppContent: React.FC = () => {
         <Header />
         <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0">
           <Routes>
-            <Route path="/store" element={<Dashboard />} />
-            <Route path="/layout" element={<StoreLayout />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/stock-in" element={<StockIn />} />
-            <Route path="/issue-material" element={<IssueMaterial />} />
-            <Route path="/return-material" element={<ReturnMaterial />} />
-            <Route path="/inventory" element={<Inventory />} />
-            <Route path="/vendors" element={<Vendors />} />
-            <Route path="/employees" element={<Employees />} />
-            <Route path="/purchase" element={<PurchasePlanning />} />
-            <Route path="/requests" element={<Requests />} />
-            <Route path="/projects/dashboard" element={<ProjectsDashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectWorkspace />} />
-            <Route path="/projects/my-tasks" element={<MyTasks />} />
-            <Route path="/projects/timeline" element={<GlobalTimeline />} />
-            <Route path="/bom" element={<BOM />} />
-            <Route path="/reports" element={<Reports />} />
+            <Route path="/store" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/layout" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><StoreLayout /></ProtectedRoute>} />
+            <Route path="/products" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Products /></ProtectedRoute>} />
+            <Route path="/stock-in" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><StockIn /></ProtectedRoute>} />
+            <Route path="/issue-material" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><IssueMaterial /></ProtectedRoute>} />
+            <Route path="/return-material" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><ReturnMaterial /></ProtectedRoute>} />
+            <Route path="/inventory" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Inventory /></ProtectedRoute>} />
+            <Route path="/vendors" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Vendors /></ProtectedRoute>} />
+            <Route path="/employees" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Employees /></ProtectedRoute>} />
+            <Route path="/purchase" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><PurchasePlanning /></ProtectedRoute>} />
+            <Route path="/requests" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Requests /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Reports /></ProtectedRoute>} />
+
+            <Route path="/projects/dashboard" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ProjectsDashboard /></ProtectedRoute>} />
+            <Route path="/projects" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><Projects /></ProtectedRoute>} />
+            <Route path="/projects/:id" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ProjectWorkspace /></ProtectedRoute>} />
+            <Route path="/projects/my-tasks" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><MyTasks /></ProtectedRoute>} />
+            <Route path="/projects/timeline" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><GlobalTimeline /></ProtectedRoute>} />
+
+            <Route path="/bom" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><BOM /></ProtectedRoute>} />
+            <Route path="/bom/create" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><CreateBOMPage /></ProtectedRoute>} />
+            
+            <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -132,13 +151,17 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <Router>
-          <AppContent />
-        </Router>
-      </CartProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <DialogProvider>
+          <CartProvider>
+            <Router>
+              <AppContent />
+            </Router>
+          </CartProvider>
+        </DialogProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

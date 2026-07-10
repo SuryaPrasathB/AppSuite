@@ -6,21 +6,27 @@ from app.database import DBStore
 router = APIRouter(prefix="/boms", tags=["BOM"])
 
 class BOMItemCreate(BaseModel):
-    product_id: int
-    quantity_required: float
+    product_id: Optional[int] = None
+    manual_product_name: Optional[str] = ""
+    part_number: Optional[str] = ""
+    manufacturer: Optional[str] = ""
+    link: Optional[str] = ""
+    quantity_required: float = 1.0
     remarks: Optional[str] = ""
+    custom_fields: Optional[dict] = Field(default_factory=dict)
 
 class BOMCreate(BaseModel):
-    project_id: int
+    project_id: Optional[int] = None
     name: str
     items: List[BOMItemCreate]
+    status: Optional[str] = 'DRAFT'
 
 class BOMStatusUpdate(BaseModel):
     status: str
 
 class BOMIssueItem(BaseModel):
-    product_id: int
-    location_id: int
+    product_id: Optional[int] = None
+    location_id: Optional[int] = None
     quantity: float
     bom_item_id: int
 
@@ -46,8 +52,21 @@ def create_bom(bom: BOMCreate):
         new_bom = DBStore.create_bom(
             bom.project_id, 
             bom.name, 
-            [item.model_dump() for item in bom.items]
+            [item.model_dump() for item in bom.items],
+            bom.status
         )
+        
+        # Notify Store Users
+        employees = DBStore.get_employees()
+        for emp in employees:
+            if emp.get("role") in ["Administrator", "Store Manager"]:
+                DBStore.add_notification(
+                    user_id=emp["id"],
+                    title="New BOM Created",
+                    message=f"A new BOM '{bom.name}' has been created and is ready for review.",
+                    link="/bom"
+                )
+                
         return new_bom
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

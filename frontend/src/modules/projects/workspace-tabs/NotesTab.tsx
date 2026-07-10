@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { StickyNote, Send, Clock, User } from 'lucide-react';
 import { fetchProjectNotes, createProjectNote } from '../api';
+import { useDialog } from '../../../context/DialogContext';
 
 interface NotesTabProps {
   projectId: number;
 }
 
 export const NotesTab: React.FC<NotesTabProps> = ({ projectId }) => {
+  const { showAlert } = useDialog();
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
@@ -46,7 +48,7 @@ export const NotesTab: React.FC<NotesTabProps> = ({ projectId }) => {
       loadNotes();
     } catch (err) {
       console.error(err);
-      alert('Failed to post note');
+      showAlert('Failed to post note');
     } finally {
       setSubmitting(false);
     }

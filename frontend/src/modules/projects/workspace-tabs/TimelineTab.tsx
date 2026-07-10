@@ -118,8 +118,13 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ dynamicTasks, handleOp
               return (
                 <React.Fragment key={task.id}>
                   {/* Left task label */}
-                  <div className="bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-10 flex items-center justify-between text-xs font-bold text-slate-700 h-[48px]">
-                    <span className="truncate pr-1" title={task.title}>{task.title}</span>
+                  <div className={`bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-10 flex items-center justify-between text-xs font-bold text-slate-700 h-[48px] ${task.parent_id ? 'pl-8' : ''}`}>
+                    <div className="flex items-center overflow-hidden">
+                      {task.parent_id && (
+                        <div className="w-3 h-3 border-l-2 border-b-2 border-slate-300 rounded-bl-sm mr-2 mb-1 opacity-70 flex-shrink-0" />
+                      )}
+                      <span className="truncate pr-1" title={task.title}>{task.title}</span>
+                    </div>
                     <div className="flex gap-1.5 flex-shrink-0">
                       <button onClick={() => handleOpenEditTask(task)} className="text-slate-500 hover:text-indigo-600">
                         <Edit2 className="h-3 w-3" />

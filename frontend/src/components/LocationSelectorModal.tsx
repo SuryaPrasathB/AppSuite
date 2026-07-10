@@ -5,6 +5,9 @@ import { apiClient } from '../api/apiClient';
 interface LocationSelectorModalProps {
   productId?: number | null;
   category?: string;
+  initialRack?: string;
+  initialShelf?: string;
+  initialBin?: string;
   onSelectLocation: (location: any) => void;
   onClose: () => void;
 }
@@ -47,15 +50,15 @@ const STATIC_MAP_RACKS = [
   { rack: 'D8', aisle: 'Aisle 4' },
 ] as const;
 
-export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ productId, category, onSelectLocation, onClose }) => {
+export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ productId, category, initialRack, initialShelf, initialBin, onSelectLocation, onClose }) => {
   const [locations, setLocations] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [racksData, setRacksData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Drilldown states
-  const [selectedRack, setSelectedRack] = useState<string | null>(null);
-  const [selectedShelf, setSelectedShelf] = useState<string | null>(null);
+  const [selectedRack, setSelectedRack] = useState<string | null>(initialRack || null);
+  const [selectedShelf, setSelectedShelf] = useState<string | null>(initialShelf || null);
 
   // New addition states
   const [newShelfName, setNewShelfName] = useState('');
@@ -101,6 +104,36 @@ export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ pr
     });
     return racksWithCategory.map(r => r.rack);
   }, [productCategory, racksData, products]);
+
+  const highlightedShelves = useMemo(() => {
+    if (!productCategory || !selectedRack || products.length === 0) return [];
+    const shelves = new Set<string>();
+    products.forEach(p => {
+      if (p.category === productCategory && p.locations) {
+        p.locations.forEach((loc: any) => {
+          if (loc.rack === selectedRack) {
+            shelves.add(loc.shelf);
+          }
+        });
+      }
+    });
+    return Array.from(shelves);
+  }, [productCategory, selectedRack, products]);
+
+  const highlightedBins = useMemo(() => {
+    if (!productCategory || !selectedRack || !selectedShelf || products.length === 0) return [];
+    const bins = new Set<string>();
+    products.forEach(p => {
+      if (p.category === productCategory && p.locations) {
+        p.locations.forEach((loc: any) => {
+          if (loc.rack === selectedRack && loc.shelf === selectedShelf) {
+            bins.add(loc.bin);
+          }
+        });
+      }
+    });
+    return Array.from(bins);
+  }, [productCategory, selectedRack, selectedShelf, products]);
 
   const handleAddNewLocation = async (rack: string, shelf: string, bin: string) => {
     setSavingLocation(true);
@@ -209,12 +242,12 @@ export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ pr
                             onClick={() => setSelectedRack(rack.rack)}
                             className={`h-12 flex items-center justify-center rounded-lg border text-xs font-black transition-all ${
                               isSuggested 
-                                ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-[0_0_12px_rgba(59,130,246,0.3)] ring-1 ring-blue-400' 
+                                ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-[0_0_12px_rgba(59,130,246,0.3)] ring-1 ring-blue-400 animate-pulse' 
                                 : 'bg-white border-slate-200 text-slate-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700'
                             }`}
                           >
                             {rack.rack}
-                            {isSuggested && <Sparkles className="absolute -top-1 -right-1 h-3 w-3 text-blue-500 animate-pulse" />}
+                            {isSuggested && <Sparkles className="absolute -top-1 -right-1 h-3 w-3 text-blue-500" />}
                           </button>
                         );
                       })}
@@ -277,21 +310,29 @@ export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ pr
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currentRackShelves.map(shelf => (
-                  <button
-                    key={shelf as string}
-                    onClick={() => setSelectedShelf(shelf as string)}
-                    className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-primary-400 hover:shadow-md transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-primary-50 transition-colors">
-                        <Layers className="h-5 w-5 text-slate-500 group-hover:text-primary-600" />
+                {currentRackShelves.map(shelf => {
+                  const isSuggested = highlightedShelves.includes(shelf as string);
+                  return (
+                    <button
+                      key={shelf as string}
+                      onClick={() => setSelectedShelf(shelf as string)}
+                      className={`flex items-center justify-between p-4 bg-white border rounded-xl transition-all group ${
+                        isSuggested 
+                          ? 'border-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.4)] animate-pulse' 
+                          : 'border-slate-200 hover:border-primary-400 hover:shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg transition-colors ${isSuggested ? 'bg-blue-100' : 'bg-slate-100 group-hover:bg-primary-50'}`}>
+                          <Layers className={`h-5 w-5 ${isSuggested ? 'text-blue-600' : 'text-slate-500 group-hover:text-primary-600'}`} />
+                        </div>
+                        <span className="font-bold text-slate-700">{shelf as string}</span>
+                        {isSuggested && <Sparkles className="h-4 w-4 text-blue-500" />}
                       </div>
-                      <span className="font-bold text-slate-700">{shelf as string}</span>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-primary-600 transition-colors" />
-                  </button>
-                ))}
+                      <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-primary-600 transition-colors" />
+                    </button>
+                  );
+                })}
                 {currentRackShelves.length === 0 && !isAddingShelf && (
                   <div className="col-span-2 text-center py-8 text-slate-400 text-sm">
                     No shelves found in this rack. Click "Add New Shelf" to create one.
@@ -351,23 +392,81 @@ export const LocationSelectorModal: React.FC<LocationSelectorModalProps> = ({ pr
               )}
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {currentShelfBins.map(loc => (
+                {currentShelfBins.map(loc => {
+                  const binProducts = products.filter(p => p.locations?.some((l: any) => l.rack === selectedRack && l.shelf === selectedShelf && l.bin === loc.bin));
+                  const isOccupied = binProducts.length > 0;
+                  const isSuggested = !isOccupied && highlightedBins.includes(loc.bin);
+                  
+                  return (
+                    <button
+                      key={loc.id}
+                      onClick={() => onSelectLocation(loc)}
+                      disabled={isOccupied}
+                      className={`flex flex-col p-4 bg-white border rounded-xl transition-all text-left ${
+                        isOccupied
+                          ? 'opacity-60 cursor-not-allowed border-slate-200 bg-slate-50'
+                          : isSuggested 
+                            ? 'border-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.4)] animate-pulse ring-1 ring-blue-400 group' 
+                            : 'border-slate-200 hover:border-primary-500 hover:ring-2 hover:ring-primary-200 group'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Box className={`h-4 w-4 ${isSuggested ? 'text-blue-500' : isOccupied ? 'text-slate-400' : 'text-slate-400 group-hover:text-primary-600'}`} />
+                          <span className={`font-bold ${isOccupied ? 'text-slate-600' : 'text-slate-800'}`}>{loc.bin}</span>
+                        </div>
+                        {isSuggested && <Sparkles className="h-4 w-4 text-blue-500" />}
+                      </div>
+                      
+                      {/* Products in this bin */}
+                      <div className="mb-3 text-[10px] text-slate-500 line-clamp-2 min-h-[30px] w-full">
+                        {isOccupied ? (
+                          <div className="flex flex-col gap-1">
+                            {binProducts.map(p => (
+                              <span key={p.id} className="truncate font-medium text-slate-700" title={p.name}>• {p.name}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="italic text-slate-400">Empty bin</span>
+                        )}
+                      </div>
+
+                      <span className={`text-xs font-medium mt-auto ${isOccupied ? 'text-slate-400' : isSuggested ? 'text-blue-600' : 'text-slate-500 group-hover:text-primary-600'}`}>
+                        {isOccupied ? 'Occupied' : 'Select this Bin'}
+                      </span>
+                    </button>
+                  );
+                })}
+                
+                {/* Auto-suggest New Bin Card */}
+                {!isAddingBin && (
                   <button
-                    key={loc.id}
-                    onClick={() => onSelectLocation(loc)}
-                    className="flex flex-col p-4 bg-white border border-slate-200 rounded-xl hover:border-primary-500 hover:ring-2 hover:ring-primary-200 transition-all group text-left"
+                    onClick={() => handleAddNewLocation(selectedRack!, selectedShelf!, nextBinName)}
+                    disabled={savingLocation}
+                    className={`flex flex-col p-4 border-2 border-dashed rounded-xl transition-all group text-left ${
+                      savingLocation 
+                        ? 'opacity-50 cursor-not-allowed border-slate-300 bg-slate-50' 
+                        : highlightedShelves.includes(selectedShelf!)
+                          ? 'border-blue-300 bg-blue-50/50 hover:border-blue-400 hover:bg-blue-50 shadow-[0_0_8px_rgba(59,130,246,0.2)] animate-pulse'
+                          : 'border-slate-300 hover:border-primary-400 hover:bg-slate-50'
+                    }`}
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <Box className="h-4 w-4 text-slate-400 group-hover:text-primary-600" />
-                      <span className="font-bold text-slate-800">{loc.bin}</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Plus className={`h-4 w-4 ${highlightedShelves.includes(selectedShelf!) ? 'text-blue-600' : 'text-slate-500 group-hover:text-primary-600'}`} />
+                        <span className={`font-bold ${highlightedShelves.includes(selectedShelf!) ? 'text-blue-800' : 'text-slate-700 group-hover:text-primary-700'}`}>Add {nextBinName}</span>
+                      </div>
+                      {highlightedShelves.includes(selectedShelf!) && <Sparkles className="h-4 w-4 text-blue-500" />}
                     </div>
-                    <span className="text-xs text-slate-500 group-hover:text-primary-600 font-medium">Select this Bin</span>
+                    
+                    <div className={`mb-3 text-[10px] line-clamp-2 min-h-[30px] ${highlightedShelves.includes(selectedShelf!) ? 'text-blue-600/70' : 'text-slate-500'}`}>
+                      Create a new bin on this shelf for the item.
+                    </div>
+                    
+                    <span className={`text-xs font-bold mt-auto ${highlightedShelves.includes(selectedShelf!) ? 'text-blue-700' : 'text-slate-600 group-hover:text-primary-600'}`}>
+                      {savingLocation ? 'Creating...' : 'Create & Select Location'}
+                    </span>
                   </button>
-                ))}
-                {currentShelfBins.length === 0 && !isAddingBin && (
-                  <div className="col-span-3 text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-sm">
-                    No bins found in this shelf.<br/>Click "Add New Bin" to create one.
-                  </div>
                 )}
               </div>
             </div>

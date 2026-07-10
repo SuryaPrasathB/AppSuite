@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.database import DBStore
+from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -18,6 +19,13 @@ class ProductCreate(BaseModel):
     image_url: Optional[str] = None
     vendor_ids: List[int] = []
     preferred_vendor_id: Optional[int] = None
+    manufacturer: Optional[str] = None
+    link: Optional[str] = None
+    initial_quantity: float = 0.0
+    standard_cost: float = 0.0
+    latest_cost: float = 0.0
+    average_cost: float = 0.0
+    currency: str = "INR"
 
 class ProductUpdate(BaseModel):
     code: Optional[str] = None
@@ -32,13 +40,22 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     vendor_ids: Optional[List[int]] = None
     preferred_vendor_id: Optional[int] = None
+    manufacturer: Optional[str] = None
+    link: Optional[str] = None
+    standard_cost: Optional[float] = None
+    latest_cost: Optional[float] = None
+    average_cost: Optional[float] = None
+    currency: Optional[str] = None
+    initial_quantity: Optional[float] = None
 
 @router.get("")
 def list_products():
     return DBStore.get_products()
 
 @router.post("")
-def create_product(product: ProductCreate):
+def create_product(product: ProductCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can add items to the inventory catalog.")
     # Check if product code already exists
     existing = [p for p in DBStore.get_products() if p["code"] == product.code]
     if existing:
@@ -177,11 +194,15 @@ def fetch_mpn_details(mpn: str):
         extracted_brand = "Omron"
     elif "abb" in desc_lower:
         extracted_brand = "ABB"
+    elif "kemet" in desc_lower:
+        extracted_brand = "KEMET"
 
     # Guess category
     category = "Electrical"
     if "plc" in desc_lower or "module" in desc_lower or "programmable logic" in desc_lower:
         category = "PLC"
+    elif "capacitor" in desc_lower or "capacitance" in desc_lower or "mlcc" in desc_lower:
+        category = "CAPACITOR"
     elif "acb" in desc_lower or "air circuit breaker" in desc_lower:
         category = "ACB"
     elif "mccb" in desc_lower or "moulded case" in desc_lower or "molded case" in desc_lower:
@@ -205,17 +226,45 @@ def fetch_mpn_details(mpn: str):
     }
     
     # Try parsing specs from description
-    amp_match = re.search(r"(\d+)\s*(?:a|amp|ampere)", combined_desc, re.IGNORECASE)
-    if amp_match:
+    amp_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:a|amp|ampere)", combined_desc, re.IGNORECASE)
+    if amp_match and category != "CAPACITOR":
         specs["Current Rating"] = f"{amp_match.group(1)}A"
     
-    volt_match = re.search(r"(\d+)\s*(?:v|volt)", combined_desc, re.IGNORECASE)
+    volt_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:v|volt|vdc|vac)", combined_desc, re.IGNORECASE)
     if volt_match:
         specs["Voltage Rating"] = f"{volt_match.group(1)}V"
         
     poles_match = re.search(r"(\d+)\s*(?:pole|p\b)", combined_desc, re.IGNORECASE)
     if poles_match:
         specs["Poles"] = f"{poles_match.group(1)}P"
+
+    cap_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:uf|nf|pf|µf|microfarad|nanofarad|picofarad)", combined_desc, re.IGNORECASE)
+    if cap_match:
+        specs["Capacitance"] = cap_match.group(0).strip()
+
+    if category == "CAPACITOR":
+        # Extract Package / Size
+        pkg_match = re.search(r"\b(0201|0402|0603|0805|1206|1210|1808|1812|2220)\b", combined_desc)
+        if pkg_match:
+            specs["Package / Size"] = pkg_match.group(1)
+        else:
+            pkg_mpn = re.search(r"(0201|0402|0603|0805|1206|1210|1808|1812|2220)", mpn)
+            if pkg_mpn:
+                specs["Package / Size"] = pkg_mpn.group(1)
+
+        # Extract Dielectric
+        dielectric_match = re.search(r"\b(X7R|X5R|C0G|NP0|Y5V|Z5U)\b", combined_desc, re.IGNORECASE)
+        if dielectric_match:
+            specs["Dielectric"] = dielectric_match.group(1).upper()
+        else:
+            dielectric_mpn = re.search(r"(X7R|X5R|C0G|NP0|Y5V|Z5U)", mpn, re.IGNORECASE)
+            if dielectric_mpn:
+                specs["Dielectric"] = dielectric_mpn.group(1).upper()
+
+        # Extract Tolerance
+        tol_match = re.search(r"(±\s*\d+%|\b\d+\s*%)", combined_desc)
+        if tol_match:
+            specs["Tolerance"] = tol_match.group(1).replace(" ", "")
 
     return {
         "brand": extracted_brand,

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../api/apiClient';
+import BOMCreator from './BOMCreator';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 import { 
   ClipboardList, 
   Plus, 
@@ -8,8 +11,11 @@ import {
   Check, 
   ShoppingCart, 
   Trash2,
-  ArrowUpRight
+  ArrowUpRight,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
 
 interface BOMItem {
   id: number;
@@ -22,6 +28,10 @@ interface BOMItem {
   product_code: string;
   product_unit: string;
   current_stock: number;
+  part_number?: string;
+  manufacturer?: string;
+  link?: string;
+  custom_fields?: Record<string, string>;
 }
 
 interface BOMData {
@@ -58,7 +68,9 @@ interface LocationData {
 }
 
 export const BOM: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const { showAlert, showConfirm } = useDialog();
   
   const [boms, setBoms] = useState<BOMData[]>([]);
   const [projects, setProjects] = useState<ProjectData[]>([]);
@@ -87,7 +99,8 @@ export const BOM: React.FC = () => {
     try {
       setLoading(true);
       const bData = await apiClient.boms.list() as BOMData[];
-      const pData = await apiClient.projects.list() as ProjectData[];
+      const pResponse = await apiClient.projects.list() as any;
+      const pData = (pResponse.data ? pResponse.data : pResponse) as ProjectData[];
       const prData = await apiClient.products.list() as ProductData[];
       const lData = await apiClient.layout.locations() as LocationData[];
       
@@ -109,7 +122,7 @@ export const BOM: React.FC = () => {
   const handleCreateBOM = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId || !bomName || selectedItems.length === 0) {
-      alert('Please select a project, set a name, and add at least one item.');
+      await showAlert('Please select a project, set a name, and add at least one item.');
       return;
     }
 
@@ -125,17 +138,17 @@ export const BOM: React.FC = () => {
       setSelectedItems([]);
       fetchData();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to create BOM');
+      await showAlert(e instanceof Error ? e.message : 'Failed to create BOM');
     }
   };
 
-  const handleAddProductToBOM = () => {
+  const handleAddProductToBOM = async () => {
     if (!currentProductId || currentQty <= 0) return;
     
     // Check if duplicate
     const exists = selectedItems.find(item => item.product_id === Number(currentProductId));
     if (exists) {
-      alert('Product already added to this BOM. Adjust quantity instead.');
+      await showAlert('Product already added to this BOM. Adjust quantity instead.');
       return;
     }
 
@@ -165,7 +178,7 @@ export const BOM: React.FC = () => {
       const initialMap: Record<number, { location_id: number; quantity: number }> = {};
       setSelectedLocationMap(initialMap);
     } catch (e: unknown) {
-      alert('Failed to load BOM items: ' + (e instanceof Error ? e.message : String(e)));
+      await showAlert('Failed to load BOM items: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -177,7 +190,7 @@ export const BOM: React.FC = () => {
       }
       fetchData();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      await showAlert(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -185,19 +198,23 @@ export const BOM: React.FC = () => {
     if (!detailBom) return;
     
     const issuings = Object.entries(selectedLocationMap)
-      .filter(([_, data]) => data.quantity > 0 && data.location_id)
+      .filter(([itemId, data]) => {
+        const bomItem = detailBom.items.find((i) => i.id === Number(itemId));
+        const isManual = bomItem?.product_code === 'MANUAL';
+        return data.quantity > 0 && (data.location_id > 0 || isManual);
+      })
       .map(([itemId, data]) => {
         const bomItem = detailBom.items.find((i) => i.id === Number(itemId));
         return {
-          product_id: bomItem?.product_id || 0,
-          location_id: data.location_id,
+          product_id: bomItem?.product_id || null,
+          location_id: data.location_id || null,
           quantity: data.quantity,
           bom_item_id: Number(itemId)
         };
       });
 
     if (issuings.length === 0) {
-      alert('No quantities selected for issue.');
+      await showAlert('No quantities selected for issue.');
       return;
     }
 
@@ -207,13 +224,128 @@ export const BOM: React.FC = () => {
         user_name: user?.username || 'Operator',
         user_role: user?.role || 'Administrator'
       });
-      alert('Material issued successfully!');
+      await showAlert('Material issued successfully!');
       setIssueModalOpen(false);
       handleViewDetails(detailBom.id);
       fetchData();
     } catch (e: unknown) {
-      alert('Error issuing material: ' + (e instanceof Error ? e.message : String(e)));
+      await showAlert('Error issuing material: ' + (e instanceof Error ? e.message : String(e)));
     }
+  };
+
+  const handleDeleteBOM = async (bomId: number) => {
+    const confirm1 = await showConfirm('Are you sure you want to delete this Bill of Materials?');
+    if (!confirm1) return;
+    const confirm2 = await showConfirm('This action is completely irreversible and will remove all items in this BOM. Are you absolutely sure?', 'Final Warning');
+    if (!confirm2) return;
+    
+    try {
+      await apiClient.boms.delete(bomId);
+      if (detailBom?.id === bomId) {
+        setDetailBom(null);
+      }
+      fetchData();
+    } catch (e: unknown) {
+      await showAlert(e instanceof Error ? e.message : 'Failed to delete BOM');
+    }
+  };
+
+
+  const handleExportToExcel = () => {
+    if (!detailBom) return;
+
+    // Get all custom field keys present in items
+    const customKeys = Array.from(
+      new Set(detailBom.items.flatMap(item => Object.keys(item.custom_fields || {})))
+    );
+
+    // Prepare workbook metadata and details
+    const headerRows = [
+      ['BILL OF MATERIALS (BOM) EXPORT'],
+      [],
+      ['BOM Name:', detailBom.name],
+      ['Project:', `${detailBom.project_name} (${detailBom.project_code})`],
+      ['Status:', detailBom.status],
+      ['Export Date:', new Date().toLocaleString()],
+      [],
+      // Item Table Header
+      [
+        'S.No',
+        'Product Name',
+        'Product Code',
+        'Part Number',
+        'Manufacturer',
+        'Link',
+        'Remarks',
+        ...customKeys,
+        'Qty Required',
+        'Qty Issued',
+        'Current Stock',
+        'Status'
+      ]
+    ];
+
+    // Map items to rows
+    const itemRows = detailBom.items.map((item, idx) => {
+      const isManual = item.product_code === 'MANUAL';
+      const complete = item.quantity_issued >= item.quantity_required;
+      let status = 'Shortage';
+      if (isManual) {
+        status = complete ? 'Fulfilled' : 'Service/Labour';
+      } else if (complete) {
+        status = 'Fulfilled';
+      } else if (item.current_stock >= (item.quantity_required - item.quantity_issued)) {
+        status = 'Ready';
+      }
+
+      const customValues = customKeys.map(key => item.custom_fields?.[key] || '-');
+
+      return [
+        idx + 1,
+        item.product_name,
+        item.product_code,
+        item.part_number || '-',
+        item.manufacturer || '-',
+        item.link || '-',
+        item.remarks || '-',
+        ...customValues,
+        item.quantity_required,
+        item.quantity_issued,
+        isManual ? 'N/A' : item.current_stock,
+        status
+      ];
+    });
+
+    const allData = [...headerRows, ...itemRows];
+
+    // Create Sheet
+    const ws = XLSX.utils.aoa_to_sheet(allData);
+
+    // Format column widths roughly based on content
+    const wscols = [
+      { wch: 6 },  // S.No
+      { wch: 25 }, // Product Name
+      { wch: 15 }, // Product Code
+      { wch: 15 }, // Part Number
+      { wch: 15 }, // Manufacturer
+      { wch: 20 }, // Link
+      { wch: 25 }, // Remarks
+      ...customKeys.map(() => ({ wch: 15 })), // Custom Fields
+      { wch: 15 }, // Qty Required
+      { wch: 15 }, // Qty Issued
+      { wch: 15 }, // Current Stock
+      { wch: 12 }  // Status
+    ];
+    ws['!cols'] = wscols;
+
+    // Create Workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BOM Details');
+
+    // Save File
+    const sanitizedProjectCode = detailBom.project_code.replace(/[^a-z0-9]/gi, '_');
+    const sanitizedBomName = detailBom.name.replace(/[^a-z0-9]/gi, '_');
+    XLSX.writeFile(wb, `${sanitizedProjectCode}_${sanitizedBomName}_BOM.xlsx`);
   };
 
   const handleAutoRaisePR = async (item: BOMItem) => {
@@ -227,10 +359,11 @@ export const BOM: React.FC = () => {
         quantity: shortage,
         remarks: `Auto-generated for shortage in BOM: "${detailBom?.name}" (Project: ${detailBom?.project_name})`
       });
-      alert(`Purchase request raised for ${shortage} ${item.product_unit} of ${item.product_name}.`);
+      await showAlert(`Purchase request raised for ${shortage} ${item.product_unit} of ${item.product_name}.`);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      await showAlert(e instanceof Error ? e.message : String(e));
     }
+
   };
 
   if (loading) {
@@ -239,6 +372,18 @@ export const BOM: React.FC = () => {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
     );
+  }
+
+  if (creatorOpen) {
+    return <BOMCreator 
+      projects={projects}
+      products={products}
+      onCancel={() => setCreatorOpen(false)}
+      onSuccess={() => {
+        setCreatorOpen(false);
+        fetchData();
+      }}
+    />;
   }
 
   return (
@@ -255,7 +400,7 @@ export const BOM: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setCreatorOpen(true)}
+          onClick={() => navigate('/bom/create')}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-md transition-all cursor-pointer"
         >
           <Plus className="h-4 w-4" />
@@ -340,6 +485,21 @@ export const BOM: React.FC = () => {
                       Issue Stock
                     </button>
                   )}
+                  <button
+                    onClick={handleExportToExcel}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer ml-2"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                    Export
+                  </button>
+                  <button
+                    onClick={() => handleDeleteBOM(detailBom.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer ml-2"
+                  >
+
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
                 </div>
               </div>
 
@@ -349,6 +509,13 @@ export const BOM: React.FC = () => {
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-400 font-bold bg-slate-50/50">
                       <th className="py-2.5 px-3">Product</th>
+                      <th className="py-2.5 px-3">Part No</th>
+                      <th className="py-2.5 px-3">Mfr</th>
+                      <th className="py-2.5 px-3">Link</th>
+                      <th className="py-2.5 px-3">Remarks</th>
+                      {Array.from(new Set(detailBom.items.flatMap(item => Object.keys(item.custom_fields || {})))).map(col => (
+                        <th key={col} className="py-2.5 px-3">{col}</th>
+                      ))}
                       <th className="py-2.5 px-3 text-center">Required</th>
                       <th className="py-2.5 px-3 text-center">Issued</th>
                       <th className="py-2.5 px-3 text-center">In Store</th>
@@ -358,6 +525,7 @@ export const BOM: React.FC = () => {
                   </thead>
                   <tbody>
                     {detailBom.items.map((item) => {
+                      const isManual = item.product_code === 'MANUAL';
                       const complete = item.quantity_issued >= item.quantity_required;
                       const hasStock = item.current_stock > 0;
                       return (
@@ -366,28 +534,41 @@ export const BOM: React.FC = () => {
                             <span className="font-bold text-slate-800 block">{item.product_name}</span>
                             <span className="text-[10px] text-slate-400 block mt-0.5">{item.product_code}</span>
                           </td>
+                          <td className="py-3 px-3 text-slate-600">{item.part_number}</td>
+                          <td className="py-3 px-3 text-slate-600">{item.manufacturer}</td>
+                          <td className="py-3 px-3 text-blue-500">
+                            {item.link ? <a href={item.link} target="_blank" rel="noopener noreferrer" className="hover:underline">Link</a> : '-'}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600">{item.remarks || '-'}</td>
+                          {Array.from(new Set(detailBom.items.flatMap(i => Object.keys(i.custom_fields || {})))).map(col => (
+                            <td key={col} className="py-3 px-3 text-slate-600">
+                              {item.custom_fields?.[col] || '-'}
+                            </td>
+                          ))}
                           <td className="py-3 px-3 text-center font-semibold text-slate-700">
                             {item.quantity_required} {item.product_unit}
                           </td>
                           <td className="py-3 px-3 text-center font-bold text-blue-600">
                             {item.quantity_issued} {item.product_unit}
                           </td>
-                          <td className={`py-3 px-3 text-center font-bold ${hasStock ? 'text-slate-700' : 'text-red-500'}`}>
-                            {item.current_stock} {item.product_unit}
+                          <td className={`py-3 px-3 text-center font-bold ${isManual ? 'text-slate-400' : hasStock ? 'text-slate-700' : 'text-red-500'}`}>
+                            {isManual ? 'N/A' : `${item.current_stock} ${item.product_unit}`}
                           </td>
                           <td className="py-3 px-3">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                              complete 
+                              isManual 
+                                ? complete ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                                : complete 
                                 ? 'bg-green-100 text-green-700' 
                                 : item.current_stock >= (item.quantity_required - item.quantity_issued)
                                 ? 'bg-blue-100 text-blue-700'
                                 : 'bg-red-100 text-red-700'
                             }`}>
-                              {complete ? 'Fulfilled' : item.current_stock >= (item.quantity_required - item.quantity_issued) ? 'Ready' : 'Shortage'}
+                              {isManual ? (complete ? 'Fulfilled' : 'Service/Labour') : (complete ? 'Fulfilled' : item.current_stock >= (item.quantity_required - item.quantity_issued) ? 'Ready' : 'Shortage')}
                             </span>
                           </td>
                           <td className="py-3 px-3">
-                            {!complete && item.current_stock < (item.quantity_required - item.quantity_issued) && (
+                            {!isManual && !complete && item.current_stock < (item.quantity_required - item.quantity_issued) && (
                               <button
                                 onClick={() => handleAutoRaisePR(item)}
                                 className="flex items-center gap-1 text-[10px] text-purple-600 hover:text-purple-800 font-bold"
@@ -413,153 +594,7 @@ export const BOM: React.FC = () => {
         </div>
       </div>
 
-      {/* Creator Modal */}
-      {creatorOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Plus className="h-4 w-4 text-purple-600" />
-                Create new Bill of Materials (BOM)
-              </h3>
-              <button onClick={() => setCreatorOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-4.5 w-4.5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateBOM} className="p-6 overflow-y-auto space-y-4 flex-1">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Project Link *</label>
-                  <select
-                    required
-                    value={selectedProjectId}
-                    onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5"
-                  >
-                    <option value="">Select a Project</option>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">BOM Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={bomName}
-                    onChange={(e) => setBomName(e.target.value)}
-                    placeholder="e.g. Mechanical Assembly Rack 1"
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5"
-                  />
-                </div>
-              </div>
-
-              {/* Add item interface */}
-              <div className="border border-purple-100 rounded-xl p-4 bg-purple-50/10 space-y-3">
-                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">Add Items to BOM</span>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-1">
-                    <label className="block text-[9px] text-slate-400 mb-0.5">Product</label>
-                    <select
-                      value={currentProductId}
-                      onChange={(e) => setCurrentProductId(e.target.value ? Number(e.target.value) : '')}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2"
-                    >
-                      <option value="">Select Product</option>
-                      {products.map(p => (
-                        <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-1">
-                    <label className="block text-[9px] text-slate-400 mb-0.5">Quantity Required</label>
-                    <input
-                      type="number"
-                      value={currentQty}
-                      onChange={(e) => setCurrentQty(Number(e.target.value))}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2"
-                    />
-                  </div>
-                  <div className="col-span-1 flex items-end">
-                    <button
-                      type="button"
-                      onClick={handleAddProductToBOM}
-                      className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
-                    >
-                      Add Item
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Current Items Checklist */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">BOM Assembly Items ({selectedItems.length})</span>
-                <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
-                        <th className="py-2 px-3">Product</th>
-                        <th className="py-2 px-3 text-center">Quantity</th>
-                        <th className="py-2 px-3 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={3} className="py-4 text-center text-slate-400 text-[11px]">No items added yet.</td>
-                        </tr>
-                      ) : (
-                        selectedItems.map((item, index) => {
-                          const prod = products.find(p => p.id === item.product_id);
-                          return (
-                            <tr key={index} className="border-b border-slate-100">
-                              <td className="py-2 px-3">
-                                <span className="font-bold text-slate-800">{prod?.name}</span>
-                                <span className="text-[10px] text-slate-400 block mt-0.5">{prod?.code}</span>
-                              </td>
-                              <td className="py-2 px-3 text-center font-bold text-slate-700">
-                                {item.quantity_required} {prod?.unit}
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveProductFromBOM(item.product_id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  <Trash2 className="h-4 w-4 mx-auto" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setCreatorOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-md"
-                >
-                  Create BOM
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      
 
       {/* Stock Issue Modal */}
       {issueModalOpen && detailBom && (
@@ -605,7 +640,9 @@ export const BOM: React.FC = () => {
                           {remaining} {item.product_unit}
                         </td>
                         <td className="py-3 px-3">
-                          {availableBins.length === 0 ? (
+                          {item.product_code === 'MANUAL' ? (
+                            <span className="text-slate-500 font-medium text-[10px] bg-slate-100 px-2 py-1 rounded">No Location (Service/Labour)</span>
+                          ) : availableBins.length === 0 ? (
                             <span className="text-red-500 font-bold text-[10px]">No Stock Available in Any Bin</span>
                           ) : (
                             <select
@@ -646,7 +683,7 @@ export const BOM: React.FC = () => {
                                 }
                               });
                             }}
-                            disabled={availableBins.length === 0}
+                            disabled={item.product_code !== 'MANUAL' && availableBins.length === 0}
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-center"
                           />
                         </td>

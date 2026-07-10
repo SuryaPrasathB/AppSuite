@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Package, 
@@ -15,7 +15,11 @@ import {
   UploadCloud, 
   X,
   ChevronDown,
-  MapPin
+  MapPin,
+  Database,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
@@ -59,6 +63,15 @@ export const StockIn: React.FC = () => {
 
   // Table items list
   const [items, setItems] = useState<StockInItem[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredProducts = useMemo(() => {
+    return productsList.filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      p.code.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [productsList, searchQuery]);
 
   // Map selector state
   const [mapSelectorIndex, setMapSelectorIndex] = useState<number | null>(null);
@@ -350,396 +363,347 @@ export const StockIn: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 text-left">
-      {/* 1. Page Title Info (Handled by Layout/Header, but page details cards are here) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        
-        {/* KPI: Total Stock In */}
-        <div className="bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md transition-all duration-200">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Stock In (This Month)</span>
-            <span className="text-2xl font-black text-slate-805 block">{totalStockInMonth}</span>
-            <span className="text-[10px] text-slate-400 block font-medium">Consolidated transactions</span>
-          </div>
-          <div className="bg-blue-50 text-blue-655 p-3.5 rounded-xl">
-            <Package className="h-6 w-6" />
-          </div>
-        </div>
-
-        {/* KPI: Total Items Added */}
-        <div className="bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md transition-all duration-200">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Items Added</span>
-            <span className="text-2xl font-black text-slate-805 block">{totalItemsAdded}</span>
-            <span className="text-[10px] text-slate-400 block font-medium">Consolidated quantity intake</span>
-          </div>
-          <div className="bg-emerald-50 text-emerald-650 p-3.5 rounded-xl">
-            <Plus className="h-6 w-6" />
+    <div className="flex h-[calc(100vh-120px)] bg-slate-50 overflow-hidden animate-fade-in -mx-6 -my-6 text-left">
+      
+      {/* Left Pane - Product Catalog */}
+      <div className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-80' : 'w-0 opacity-0 overflow-hidden'}`}>
+        <div className="p-4 border-b border-slate-200">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
+            <Database className="h-4.5 w-4.5 text-blue-600" />
+            Product Catalog
+          </h3>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search products..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            />
           </div>
         </div>
-
-        {/* KPI: Last Stock In */}
-        <div className="bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md transition-all duration-200">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Last Stock In</span>
-            <span className="text-sm font-bold text-slate-805 block">{lastStockInDate}</span>
-            <span className="text-[10px] text-slate-400 block font-medium">Authorized by Storekeeper</span>
-          </div>
-          <div className="bg-purple-50 text-purple-650 p-3.5 rounded-xl">
-            <Calendar className="h-6 w-6" />
-          </div>
-        </div>
-
-        {/* KPI: Total Value */}
-        <div className="bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md transition-all duration-200">
-          <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Value</span>
-            <span className="text-2xl font-black text-slate-805 block">—</span>
-            <span className="text-[10px] text-slate-400 block font-medium">Not tracked at bin level</span>
-          </div>
-          <div className="bg-teal-50 text-teal-655 p-3.5 rounded-xl">
-            <TrendingUp className="h-6 w-6" />
-          </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {filteredProducts.map(p => (
+            <div key={p.id} className="p-3 bg-white hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg group transition-all flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-800">{p.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{p.code}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => handleAddItem(p)}
+                className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-blue-600 hover:text-white"
+                title="Add to Stock In"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {filteredProducts.length === 0 && (
+            <div className="p-8 text-center text-slate-400 text-sm">
+              No products found.
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Form Submission Header Alert */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-xs p-4 rounded-xl flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
-          <span className="font-semibold">{error}</span>
-        </div>
-      )}
-
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-800 text-xs p-4 rounded-xl flex items-center gap-3">
-          <Check className="h-5 w-5 text-green-500 shrink-0" />
-          <span className="font-semibold">{success}</span>
-        </div>
-      )}
-
-      {/* 2. Stock In Details Form Container */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
-        <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Stock In Details</h3>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Form Fields Column */}
-          <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">
-                Reference No. <span className="text-red-550">*</span>
-              </label>
-              <input
-                type="text"
-                value={referenceNo}
-                disabled
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none text-slate-400 cursor-not-allowed"
-              />
-              <span className="text-[9px] text-slate-400 mt-1 block">Auto generated</span>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">
-                Date <span className="text-red-550">*</span>
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">
-                Supplier / Vendor <span className="text-red-550">*</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={supplierId}
-                  onChange={(e) => {
-                    if (e.target.value === 'ADD_NEW') {
-                      setVendorModalOpen(true);
-                      setSupplierId("");
-                    } else {
-                      setSupplierId(e.target.value);
-                    }
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700 appearance-none"
-                >
-                  <option value="" disabled>-- Select Vendor --</option>
-                  <option value="ADD_NEW" className="text-primary-600 font-bold bg-slate-100">+ Add New Supplier / Vendor</option>
-                  {vendorsList.map(vendor => (
-                    <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-2.5 h-4.5 w-4.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">
-                Purchase Reference
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. PO-2025-05-118"
-                value={purchaseReference}
-                onChange={(e) => setPurchaseReference(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700"
-              />
-              <span className="text-[9px] text-slate-400 mt-1 block">PO / Invoice / Challan No.</span>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase mb-1">Notes</label>
-              <textarea
-                rows={2}
-                placeholder="Add general remarks here..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-700"
-              />
-            </div>
+      {/* Right Pane - Transaction Editor */}
+      <div className="flex-1 flex flex-col min-w-0 bg-white">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white z-10 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button 
+              type="button"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 transition-colors"
+              title={isSidebarOpen ? "Collapse Catalog" : "Expand Catalog"}
+            >
+              {isSidebarOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+            </button>
+            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Package className="h-5 w-5 text-blue-600" />
+              Register Stock Intake
+            </h2>
           </div>
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+             <span className="bg-slate-100 px-3 py-1.5 rounded-lg font-bold border border-slate-200">Ref: {referenceNo}</span>
+          </div>
+        </div>
 
-          {/* File Upload Dropzone Column */}
-          <div className="flex flex-col gap-3 justify-center">
-            <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 bg-slate-50/50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition-all relative">
-              <input
-                type="file"
-                id="file-upload"
-                onChange={handleFileUpload}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              />
-              <UploadCloud className="h-8 w-8 text-slate-400 mb-2" />
-              <p className="text-xs font-bold text-slate-700">
-                Drop files here or <span className="text-primary-600 hover:text-primary-700">click to upload</span>
-              </p>
-              <p className="text-[9px] text-slate-400 mt-1">Invoice, Challan, GRN, etc. (PDF, JPG, PNG)</p>
+        {/* Main Editor Area */}
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+          
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 text-xs p-4 rounded-xl flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
+              <span className="font-semibold">{error}</span>
             </div>
+          )}
 
-            {/* Uploaded File Item */}
-            {attachedFile && (
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="bg-red-100 p-1.5 rounded text-red-700 shrink-0">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="truncate text-left">
-                    <span className="font-bold text-slate-700 block truncate">{attachedFile.name}</span>
-                    <span className="text-[9px] text-slate-400 block">{attachedFile.size}</span>
+          {success && (
+            <div className="mb-4 bg-green-50 border border-green-200 text-green-800 text-xs p-4 rounded-xl flex items-center gap-3">
+              <Check className="h-5 w-5 text-green-500 shrink-0" />
+              <span className="font-semibold">{success}</span>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            
+            {/* Top configuration box */}
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date *</label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-700 bg-slate-50"
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Supplier / Vendor *</label>
+                  <div className="relative">
+                    <select
+                      value={supplierId}
+                      onChange={(e) => {
+                        if (e.target.value === 'ADD_NEW') {
+                          setVendorModalOpen(true);
+                          setSupplierId("");
+                        } else {
+                          setSupplierId(e.target.value);
+                        }
+                      }}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-700 bg-slate-50 appearance-none"
+                    >
+                      <option value="" disabled>-- Select Vendor --</option>
+                      <option value="ADD_NEW" className="text-blue-600 font-bold bg-blue-50">+ Add New Supplier</option>
+                      {vendorsList.map(vendor => (
+                        <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setAttachedFile(null)}
-                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded transition-colors"
-                >
-                  <X className="h-4.5 w-4.5" />
-                </button>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Purchase Reference</label>
+                  <input
+                    type="text"
+                    placeholder="PO / Invoice No."
+                    value={purchaseReference}
+                    onChange={(e) => setPurchaseReference(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-700 bg-slate-50"
+                  />
+                </div>
+                
+                <div className="md:col-span-4 grid grid-cols-1 md:grid-cols-4 gap-4 mt-2">
+                    <div className="md:col-span-3">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Remarks / Notes</label>
+                        <textarea
+                            rows={1}
+                            placeholder="Add general remarks here..."
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold text-slate-700 bg-slate-50"
+                        />
+                    </div>
+                    <div>
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Attachment</label>
+                         <div className="relative">
+                            <input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                            <div className="w-full border border-dashed border-slate-300 rounded-lg px-3 py-2 text-sm text-center text-slate-500 font-medium hover:bg-slate-100 transition-colors">
+                                {attachedFile ? (
+                                    <span className="text-blue-600 font-bold truncate block">{attachedFile.name}</span>
+                                ) : (
+                                    <span className="flex items-center justify-center gap-1"><UploadCloud className="h-4 w-4"/> Upload</span>
+                                )}
+                            </div>
+                         </div>
+                    </div>
+                </div>
               </div>
-            )}
+            </div>
+
+            {/* Dynamic Items Table */}
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+              <div className="p-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-slate-800 text-sm">Items Received</h3>
+                  <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{items.length} Items</span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddItem()}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 border border-slate-300 bg-white hover:bg-slate-100 px-3 py-1.5 rounded-lg shadow-sm transition-all"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Blank Row
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alert("Excel/CSV import template triggers here.")}
+                    className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-655 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-white transition-colors shadow-sm"
+                  >
+                    <Download className="h-3.5 w-3.5 text-slate-400" />
+                    Import
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-slate-100/50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200 text-[10px]">
+                      <th className="px-3 py-2.5 w-10 text-center">#</th>
+                      <th className="px-3 py-2.5 w-40">Item Code</th>
+                      <th className="px-3 py-2.5">Item Name</th>
+                      <th className="px-3 py-2.5 w-24">Category</th>
+                      <th className="px-3 py-2.5 w-16">Unit</th>
+                      <th className="px-3 py-2.5 w-32">Batch No.</th>
+                      <th className="px-3 py-2.5 w-24 text-center">Quantity *</th>
+                      <th className="px-3 py-2.5 min-w-[200px]">Storage Location *</th>
+                      <th className="px-3 py-2.5 w-16 text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.length > 0 ? (
+                      items.map((item, idx) => (
+                        <tr key={item.id} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
+                          <td className="px-3 py-2 text-center text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={item.product_id}
+                              onChange={(e) => handleProductChange(idx, e.target.value)}
+                              className="w-full bg-transparent border-0 border-b border-transparent focus:border-blue-500 rounded-none px-1 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-0 font-semibold"
+                            >
+                              <option value="">-Select-</option>
+                              {productsList.map(prod => (
+                                <option key={prod.id} value={prod.id}>{prod.code}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 font-bold text-slate-800">{item.name || '-'}</td>
+                          <td className="px-3 py-2 text-slate-500">{item.category || '-'}</td>
+                          <td className="px-3 py-2 text-slate-500">{item.unit || 'pcs'}</td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              placeholder="Batch/Lot"
+                              value={item.batch_no}
+                              onChange={(e) => handleRowChange(idx, "batch_no", e.target.value)}
+                              className="w-full bg-transparent border-0 border-b border-slate-200 focus:border-blue-500 rounded-none px-1 py-1 text-xs focus:outline-none focus:ring-0"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min="1"
+                              step="any"
+                              value={item.quantity}
+                              onChange={(e) => handleRowChange(idx, "quantity", parseFloat(e.target.value) || 0)}
+                              className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-bold text-blue-700"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={item.location_id}
+                                onChange={(e) => handleRowChange(idx, "location_id", e.target.value)}
+                                className="w-full bg-transparent border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                {locationsList.map(loc => (
+                                  <option key={loc.id} value={loc.id}>
+                                    {loc.rack} - {loc.shelf} ({loc.zone})
+                                  </option>
+                                ))}
+                              </select>
+                              <button 
+                                onClick={() => setMapSelectorIndex(idx)}
+                                className="p-1.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200 transition-colors"
+                                title="Map"
+                                type="button"
+                              >
+                                <MapPin className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center flex items-center justify-center gap-1 mt-1">
+                             <button
+                                type="button"
+                                onClick={() => handleDuplicateItem(idx)}
+                                title="Duplicate item"
+                                className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(idx)}
+                                title="Remove item"
+                                className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-slate-400">
+                           <p className="text-sm mb-2">No items to receive.</p>
+                           <p className="text-xs">Select items from the catalog on the left to add them to this intake batch.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Total Summary info */}
+              <div className="p-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-6 text-xs">
+                  <div className="font-bold text-slate-500">
+                    Total Items: <span className="text-slate-800 ml-1">{totalItemsCount}</span>
+                  </div>
+                  <div className="font-bold text-slate-500">
+                    Total Qty: <span className="text-blue-700 ml-1 text-sm">{totalQuantitySum}</span>
+                  </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* 3. Items Received Table Section */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-          <h3 className="text-sm font-bold text-slate-800">Items Received</h3>
-          <div className="flex gap-2">
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-between gap-3 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <button
+            type="button"
+            onClick={() => navigate('/inventory')}
+            className="px-6 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <div className="flex gap-3">
             <button
               type="button"
-              onClick={handleAddItem}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={handleSaveDraft}
+              disabled={items.length === 0}
+              className="px-6 py-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-50 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-all cursor-pointer"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add Item
+              Save as Draft
             </button>
             <button
               type="button"
-              onClick={() => alert("Excel/CSV import template triggers here.")}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-655 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-white transition-colors cursor-pointer"
+              onClick={handleSubmit}
+              disabled={items.length === 0}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer"
             >
-              <Download className="h-3.5 w-3.5 text-slate-400" />
-              Import Items
+              <Check className="h-4.5 w-4.5" />
+              Submit Stock In
             </button>
           </div>
-        </div>
-
-        {/* Dynamic Items Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs text-slate-600">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                <th className="px-4 py-3 w-10 text-center">#</th>
-                <th className="px-4 py-3 w-48">Item Code</th>
-                <th className="px-4 py-3">Item Name</th>
-                <th className="px-4 py-3 w-28">Category</th>
-                <th className="px-4 py-3 w-20">Unit</th>
-                <th className="px-4 py-3 w-36">Batch / Lot No.</th>
-                <th className="px-4 py-3 w-24">Quantity</th>
-                <th className="px-4 py-3 w-48">Location</th>
-                <th className="px-4 py-3 w-20 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {items.length > 0 ? (
-                items.map((item, idx) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3 text-center text-slate-400 font-mono">{idx + 1}</td>
-                    
-                    {/* Item Code Dropdown */}
-                    <td className="px-4 py-3">
-                      <select
-                        value={item.product_id}
-                        onChange={(e) => handleProductChange(idx, e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
-                        {productsList.map(prod => (
-                          <option key={prod.id} value={prod.id}>{prod.code}</option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* Item Name */}
-                    <td className="px-4 py-3 text-slate-800 font-semibold">{item.name}</td>
-                    
-                    {/* Category */}
-                    <td className="px-4 py-3">
-                      <span className="bg-slate-100 border border-slate-200 text-slate-655 font-bold px-2 py-0.5 rounded text-[10px] whitespace-nowrap">
-                        {item.category}
-                      </span>
-                    </td>
-
-                    {/* Unit */}
-                    <td className="px-4 py-3 text-slate-400 font-semibold">{item.unit}</td>
-
-                    {/* Batch Number Input */}
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        placeholder="Batch No."
-                        value={item.batch_no}
-                        onChange={(e) => handleRowChange(idx, "batch_no", e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                    </td>
-
-                    {/* Quantity Input */}
-                    <td className="px-4 py-3">
-                      <input
-                        type="number"
-                        min="1"
-                        step="any"
-                        placeholder="Qty"
-                        value={item.quantity}
-                        onChange={(e) => handleRowChange(idx, "quantity", parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 text-right font-black"
-                      />
-                    </td>
-
-                    {/* Location Bin Dropdown */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <select
-                            value={item.location_id}
-                            onChange={(e) => handleRowChange(idx, "location_id", e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 text-slate-700 appearance-none pr-8"
-                          >
-                            {locationsList.map(loc => (
-                              <option key={loc.id} value={loc.id}>
-                                {loc.rack} - {loc.shelf} ({loc.zone})
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-2 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                        </div>
-                        <button 
-                          onClick={() => setMapSelectorIndex(idx)}
-                          className="p-1.5 bg-primary-50 text-primary-600 rounded hover:bg-primary-100 transition-colors"
-                          title="Select on Map"
-                        >
-                          <MapPin className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* Actions Column */}
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center space-x-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleDuplicateItem(idx)}
-                          title="Duplicate item"
-                          className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-655 transition-colors cursor-pointer"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(idx)}
-                          title="Remove item"
-                          className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400 italic">
-                    No items received list empty. Click "+ Add Item" to register intake items.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Total Summary info */}
-        {items.length > 0 && (
-          <div className="flex items-center justify-end gap-8 pt-4 border-t border-slate-100 text-xs font-semibold text-slate-500">
-            <div>
-              Total Items: <span className="text-slate-800 font-extrabold text-sm">{totalItemsCount}</span>
-            </div>
-            <div>
-              Total Quantity: <span className="text-green-600 font-black text-sm">{totalQuantitySum}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 4. Action buttons at the page footer */}
-      <div className="flex justify-between items-center bg-slate-50 p-4 border border-slate-200 rounded-xl">
-        <button
-          type="button"
-          onClick={() => navigate('/inventory')}
-          className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-655 transition-colors bg-white cursor-pointer"
-        >
-          Cancel
-        </button>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-655 transition-colors bg-white cursor-pointer"
-          >
-            Save as Draft
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-          >
-            <Check className="h-4 w-4" />
-            Submit Stock In
-          </button>
         </div>
       </div>
 

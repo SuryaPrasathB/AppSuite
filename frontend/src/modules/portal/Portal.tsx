@@ -1,13 +1,95 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Folder, ClipboardList, Warehouse, LogOut, Users } from 'lucide-react';
+import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { apiClient } from '../../api/apiClient';
 
 export const Portal: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout, hasRole } = useAuth();
 
   const modules: any[] = [];
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Time formatter
+  const formatNotificationTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHrs < 24 && date.getDate() === now.getDate()) {
+      if (diffHrs === 0) {
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        return diffMins <= 1 ? 'Just now' : `${diffMins} mins ago`;
+      }
+      return `${diffHrs} hrs ago`;
+    }
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.getDate() === yesterday.getDate() && date.getMonth() === yesterday.getMonth() && date.getFullYear() === yesterday.getFullYear()) {
+      return 'Yesterday';
+    }
+    
+    return date.toLocaleDateString();
+  };
+
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const data = await apiClient.notifications.list();
+      setNotifications(data);
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleNotificationClick = async (notif: any) => {
+    if (!notif.is_read) {
+      try {
+        await apiClient.notifications.markRead(notif.id);
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+      } catch (err) {
+        console.error("Failed to mark read", err);
+      }
+    }
+    setShowNotifications(false);
+    if (notif.link) {
+      navigate(notif.link);
+    }
+  };
+
+  const handleMarkAllRead = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await apiClient.notifications.markAllRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.error("Failed to mark all read", err);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   // Projects: Administrator, Employee
   if (hasRole(['Administrator', 'Employee'])) {
@@ -88,6 +170,67 @@ export const Portal: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
+          
+          <div className="relative" ref={notifDropdownRef}>
+            <button 
+              title="Notifications" 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className={`p-2 transition-colors rounded-full cursor-pointer ${showNotifications ? 'bg-primary-50 text-primary-600' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            
+            {showNotifications && (
+              <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+                  <h3 className="font-bold text-slate-800 text-sm">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button onClick={handleMarkAllRead} className="text-xs text-blue-600 font-medium hover:text-blue-700 cursor-pointer">
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                      No notifications yet.
+                    </div>
+                  ) : (
+                    notifications.map(notif => (
+                      <div 
+                        key={notif.id}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={`px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1 ${!notif.is_read ? 'bg-blue-50/30' : ''}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className={`text-sm font-semibold ${!notif.is_read ? 'text-slate-900' : 'text-slate-700'}`}>
+                            {notif.title}
+                          </div>
+                          {!notif.is_read && (
+                            <div className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 shrink-0 ml-2"></div>
+                          )}
+                        </div>
+                        {notif.message && (
+                          <p className={`text-xs ${!notif.is_read ? 'text-slate-700 font-medium' : 'text-slate-500'}`}>
+                            {notif.message}
+                          </p>
+                        )}
+                        <span className="text-[10px] text-slate-400 font-medium mt-1">
+                          {formatNotificationTime(notif.created_at)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
           <div className="text-right">
             <span className="text-xs text-slate-400 block font-medium">Signed in as</span>
             <span className="text-sm font-bold text-slate-700">{user?.username || 'Operator'}</span>

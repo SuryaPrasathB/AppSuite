@@ -6,6 +6,7 @@ from app.database import DBStore
 from app.modules.store.routers import auth, products, vendors, inventory, layout, purchase, reports, employees
 from app.modules.projects import router as projects
 from app.modules.bom import router as bom
+from app.modules.notifications import router as notifications
 
 app = FastAPI(
     title="Smart Store Management System API",
@@ -33,6 +34,7 @@ app.include_router(reports.router, prefix="/api")
 app.include_router(employees.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(bom.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 
 # Valuation unit prices for dashboard KPI calculation
 UNIT_PRICES = {

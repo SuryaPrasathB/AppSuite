@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000/api/projects';
+const API_BASE = `http://${window.location.hostname}:8000/api/projects`;
 
 function getAuthHeaders(isFileUpload = false): Headers {
   const headers = new Headers();
@@ -34,6 +34,24 @@ export async function fetchProjects(page = 1, limit = 100, search = '', status =
 export async function fetchWorkload() {
   const res = await fetch(`${API_BASE}/workload`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch workload');
+  return res.json();
+}
+
+export async function fetchDashboardStats() {
+  const res = await fetch(`${API_BASE}/dashboard/stats`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch dashboard stats');
+  return res.json();
+}
+
+export async function fetchDashboardTasks() {
+  const res = await fetch(`${API_BASE}/dashboard/tasks`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch dashboard tasks');
+  return res.json();
+}
+
+export async function fetchDashboardActivity() {
+  const res = await fetch(`${API_BASE}/dashboard/activity`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch dashboard activity');
   return res.json();
 }
 
@@ -151,6 +169,12 @@ export async function fetchAllDynamicTasks() {
   return res.json();
 }
 
+export async function fetchAllProjectActivities(limit = 50) {
+  const res = await fetch(`${API_BASE}/activities/all?limit=${limit}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch project activities');
+  return res.json();
+}
+
 export async function createDynamicTask(projectId: number, data: any) {
   const res = await fetch(`${API_BASE}/${projectId}/dynamic-tasks`, {
     method: 'POST',
@@ -187,7 +211,7 @@ export async function deleteDynamicTask(projectId: number, taskId: number) {
 }
 
 export async function fetchEmployees() {
-  const res = await fetch('http://localhost:8000/api/employees', { headers: getAuthHeaders() });
+  const res = await fetch(`http://${window.location.hostname}:8000/api/employees`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch employees');
   return res.json();
 }

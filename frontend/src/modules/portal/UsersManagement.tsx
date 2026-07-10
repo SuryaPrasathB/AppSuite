@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Users, User, Search, Plus, Edit2, Trash2, X, Check, AlertCircle, ArrowLeft, Key, Mail, Phone } from 'lucide-react';
 import { apiClient } from '../../api/apiClient';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 
 export const UsersManagement: React.FC = () => {
   const navigate = useNavigate();
   const { hasRole, user } = useAuth();
+  const { showAlert, showConfirm } = useDialog();
   
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +41,8 @@ export const UsersManagement: React.FC = () => {
     try {
       setLoading(true);
       const data = await apiClient.employees.list();
-      setUsers(data);
+      const sorted = Array.isArray(data) ? [...data].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : data;
+      setUsers(sorted);
       setError(null);
     } catch (err) {
       setError("Failed to fetch users directory.");
@@ -88,12 +91,13 @@ export const UsersManagement: React.FC = () => {
 
   const handleDelete = async (uId: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to delete this user? This will remove their access entirely.")) return;
+    const confirmed = await showConfirm("Are you sure you want to delete this user? This will remove their access entirely.");
+    if (!confirmed) return;
     try {
       await apiClient.employees.delete(uId);
       fetchData();
     } catch (err: any) {
-      alert(err.message || "Failed to delete user.");
+      showAlert(err.message || "Failed to delete user.");
     }
   };
 

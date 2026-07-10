@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS products (
     barcode VARCHAR(100),
     qr_code VARCHAR(100),
     image_url TEXT,
+    standard_cost NUMERIC(12, 2) DEFAULT 0.00,
+    latest_cost NUMERIC(12, 2) DEFAULT 0.00,
+    average_cost NUMERIC(12, 2) DEFAULT 0.00,
+    currency VARCHAR(10) DEFAULT 'INR',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

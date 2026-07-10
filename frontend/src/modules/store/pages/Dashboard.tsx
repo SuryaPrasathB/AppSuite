@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '../../../api/apiClient';
 import { 
   Package, 
@@ -11,6 +11,7 @@ import {
   ArrowLeftRight,
   Plus,
   TrendingUp,
+  MapPin,
   Search,
   ShoppingCart,
   Check,
@@ -444,6 +445,69 @@ export const Dashboard: React.FC = () => {
     };
   });
 
+  const topCategoriesInfo = useMemo(() => {
+    const categoryCounts = productsList.reduce((acc, p) => {
+      let cat = p.category ? (p.category.charAt(0).toUpperCase() + p.category.slice(1).toLowerCase()) : 'Uncategorized';
+      if (!cat.trim()) cat = 'Uncategorized';
+      acc[cat] = (acc[cat] || 0) + (p.current_quantity || 0);
+      return acc;
+    }, {} as Record<string, number>);
+
+    const sortedCats = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]);
+    const top4 = sortedCats.slice(0, 4);
+    const others = sortedCats.slice(4).reduce((sum, [, count]) => sum + count, 0);
+
+    const colors = [
+      { bg: 'bg-blue-500', stroke: '#3b82f6' },
+      { bg: 'bg-emerald-500', stroke: '#10b981' },
+      { bg: 'bg-amber-500', stroke: '#f59e0b' },
+      { bg: 'bg-purple-500', stroke: '#a855f7' }
+    ];
+
+    const legends = top4.map(([name, count], i) => ({
+      name,
+      count,
+      color: colors[i].bg,
+      stroke: colors[i].stroke
+    }));
+
+    if (others > 0 || legends.length === 0) {
+      legends.push({
+        name: 'Others',
+        count: others,
+        color: 'bg-slate-400',
+        stroke: '#94a3b8'
+      });
+    }
+
+    const totalStock = productsList.reduce((sum, p) => sum + (p.current_quantity || 0), 0) || 1; 
+    
+    const svgCircles = [];
+    for (let i = 0; i < legends.length; i++) {
+      let remainingSum = 0;
+      for (let j = i; j < legends.length; j++) {
+        remainingSum += legends[j].count;
+      }
+      const pct = remainingSum / totalStock;
+      const offset = 301.59 * (1 - pct);
+      svgCircles.push(
+        <circle key={i} cx="64" cy="64" r="48" stroke={legends[i].stroke} strokeWidth="12" fill="transparent" strokeDasharray="301.59" strokeDashoffset={offset} strokeLinecap="round" />
+      );
+    }
+
+    return { legends, svgCircles };
+  }, [productsList]);
+
+  const zoneStock = useMemo(() => {
+    const zoneCounts = productsList.reduce((acc, p) => {
+      (p.locations || []).forEach(loc => {
+        acc[loc.zone] = (acc[loc.zone] || 0) + loc.quantity;
+      });
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.entries(zoneCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+  }, [productsList]);
+
   if (loading && !stats) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
@@ -480,6 +544,8 @@ export const Dashboard: React.FC = () => {
 
   const totalStockAll = productsList.reduce((sum, p) => sum + (p.current_quantity || 0), 0);
   const lowStockCount = stats?.kpis?.low_stock_products || 0;
+
+
 
   return (
     <div className="space-y-6 text-left">
@@ -572,29 +638,20 @@ export const Dashboard: React.FC = () => {
           </div>
         </button>
 
-        {/* Active Projects */}
+        {/* Total Storage Locations */}
         <button
-          onClick={() => navigate('/projects')}
+          onClick={() => navigate('/layout')}
           className="text-left bg-white border border-slate-200 p-6 rounded-xl flex items-center justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer md:col-span-2 lg:col-span-1"
         >
           <div className="space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Active Projects</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Storage Locations</span>
             <span className="text-2xl font-black text-slate-800 block">
-              {(() => {
-                try {
-                  const saved = localStorage.getItem('smart_store_projects_v2');
-                  if (saved) {
-                    const parsed = JSON.parse(saved);
-                    return parsed.filter((p: any) => p.status === 'Active').length;
-                  }
-                } catch (e) {}
-                return 0;
-              })()}
+              {uniqueLocations.length}
             </span>
-            <span className="text-[10px] text-slate-400 block font-medium">Currently active</span>
+            <span className="text-[10px] text-slate-400 block font-medium">Configured bins/zones</span>
           </div>
           <div className="bg-cyan-50 text-cyan-600 p-3.5 rounded-xl">
-            <Folder className="h-6 w-6" />
+            <MapPin className="h-6 w-6" />
           </div>
         </button>
       </div>
@@ -720,9 +777,7 @@ export const Dashboard: React.FC = () => {
               <svg className="w-32 h-32 transform -rotate-90">
                 {/* Donut sectors */}
                 <circle cx="64" cy="64" r="48" stroke="#f1f5f9" strokeWidth="12" fill="transparent" />
-                <circle cx="64" cy="64" r="48" stroke="#3b82f6" strokeWidth="12" fill="transparent" strokeDasharray="301.59" strokeDashoffset="150" strokeLinecap="round" />
-                <circle cx="64" cy="64" r="48" stroke="#10b981" strokeWidth="12" fill="transparent" strokeDasharray="301.59" strokeDashoffset="240" strokeLinecap="round" />
-                <circle cx="64" cy="64" r="48" stroke="#f59e0b" strokeWidth="12" fill="transparent" strokeDasharray="301.59" strokeDashoffset="280" strokeLinecap="round" />
+                {topCategoriesInfo.svgCircles}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-xl font-black text-slate-850">{totalStockAll}</span>
@@ -732,19 +787,13 @@ export const Dashboard: React.FC = () => {
 
             {/* Category legends */}
             <div className="flex-1 pl-6 space-y-1.5">
-              {[
-                { name: 'Electrical', color: 'bg-blue-500', count: productsList.filter(p => p.category?.toLowerCase() === 'electrical').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
-                { name: 'Relay', color: 'bg-emerald-500', count: productsList.filter(p => p.category?.toLowerCase() === 'relay' || p.category?.toLowerCase() === 'relays').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
-                { name: 'Cable', color: 'bg-amber-500', count: productsList.filter(p => p.category?.toLowerCase() === 'cable' || p.category?.toLowerCase() === 'cables').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
-                { name: 'PLC', color: 'bg-purple-500', count: productsList.filter(p => p.category?.toLowerCase() === 'plc').reduce((sum, p) => sum + (p.current_quantity || 0), 0) },
-                { name: 'Others', color: 'bg-slate-400', count: productsList.filter(p => !['electrical', 'relay', 'relays', 'cable', 'cables', 'plc'].includes(p.category?.toLowerCase() || '')).reduce((sum, p) => sum + (p.current_quantity || 0), 0) }
-              ].map((cat) => {
+              {topCategoriesInfo.legends.map((cat) => {
                 const pct = totalStockAll > 0 ? ((cat.count / totalStockAll) * 100).toFixed(1) : '0.0';
                 return (
                   <div key={cat.name} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <span className={`h-2 w-2 rounded-full ${cat.color} shrink-0`}></span>
-                      <span className="font-medium text-slate-600">{cat.name}</span>
+                      <span className="font-medium text-slate-600 truncate max-w-[80px]" title={cat.name}>{cat.name}</span>
                     </div>
                     <span className="font-bold text-slate-700">{cat.count.toLocaleString()} ({pct}%)</span>
                   </div>
@@ -754,30 +803,32 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Top Active Projects */}
+        {/* Stock By Zone */}
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-slate-850 text-sm">Top Active Projects</h3>
+            <h3 className="font-bold text-slate-850 text-sm">Stock By Zone</h3>
             <button
               onClick={() => navigate('/layout')}
               className="text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
             >
-              View All
+              View Layout
             </button>
           </div>
 
           <div className="flex-1 space-y-3">
-            {([] as any[]).map((proj, idx) => (
+            {zoneStock.length > 0 ? zoneStock.map(([zone, count], idx) => (
               <div key={idx} className="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0 last:pb-0">
                 <div className="flex items-center gap-3">
                   <div className="bg-slate-50 p-2 border border-slate-100 rounded-lg text-slate-500">
-                    <Folder className="h-4.5 w-4.5" />
+                    <MapPin className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-800">{proj.name}</span>
+                  <span className="text-xs font-bold text-slate-800">{zone}</span>
                 </div>
-                <span className="text-[11px] font-semibold text-slate-500">{proj.count} items issued</span>
+                <span className="text-[11px] font-semibold text-slate-500">{count.toLocaleString()} items</span>
               </div>
-            ))}
+            )) : (
+              <div className="text-center py-8 text-xs text-slate-400">No stock allocated to zones yet.</div>
+            )}
           </div>
         </div>
 

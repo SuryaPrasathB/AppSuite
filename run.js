@@ -20,7 +20,7 @@ if (fs.existsSync(venvPythonPath)) {
 
 // 1. Start Backend
 console.log('Launching backend server...');
-const backendProcess = spawn(`"${pythonCmd}"`, ['-m', 'uvicorn', 'app.main:app', '--reload'], {
+const backendProcess = spawn(`"${pythonCmd}"`, ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--reload'], {
   cwd: backendDir,
   stdio: 'inherit',
   shell: true

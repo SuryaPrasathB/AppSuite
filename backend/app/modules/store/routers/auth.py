@@ -16,9 +16,12 @@ def login(request: LoginRequest):
     if user:
         return {
             "token": f"mock-jwt-token-for-{username}",
+            "id": user["id"],
             "username": user["username"],
             "name": user["name"],
-            "role": user["role"]
+            "role": user["role"],
+            "email": user.get("email"),
+            "department": user.get("department")
         }
     else:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
