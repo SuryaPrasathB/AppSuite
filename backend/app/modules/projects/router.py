@@ -10,6 +10,8 @@ import json
 from app.database import DBStore
 from app.config import settings
 from app.dependencies import get_current_user
+from app.modules.projects.ai_planning import AIPlanningService
+from app.modules.projects.scheduling import SchedulingEngine
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -645,3 +647,94 @@ def get_project_activities(project_id: int):
 @router.post("/{project_id}/activities")
 def create_project_activity(project_id: int, activity: ProjectActivityCreate):
     return DBStore.add_project_activity(project_id, activity.action, activity.description, activity.user_id)
+
+
+class ProjectPlanRequest(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+    objectives: Optional[str] = None
+    scope: Optional[str] = None
+    technologies: Optional[str] = None
+    teamMembers: Optional[str] = None
+    startDate: Optional[str] = None
+    deadline: Optional[str] = None
+    workingDays: Optional[str] = "MON,TUE,WED,THU,FRI"
+    workingHoursPerDay: Optional[float] = 8.0
+    priority: Optional[str] = "MEDIUM"
+    constraints: Optional[str] = None
+    budget: Optional[float] = None
+    projectType: Optional[str] = "generic"
+    provider: Optional[str] = "Ollama"
+
+@router.post("/generate-plan")
+def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        # 1. AI Planning step
+        raw_plan = AIPlanningService.generate_plan(request.model_dump(), request.provider)
+        
+        # 2. Scheduling calculations
+        scheduled_plan = SchedulingEngine.calculate_schedule(raw_plan, request.model_dump())
+        
+        # 3. Save to database
+        project_data = {
+            "code": request.code,
+            "name": request.name,
+            "description": request.description,
+            "start_date": request.startDate,
+            "end_date": request.deadline,
+            "constraints": request.constraints,
+            "budget": request.budget,
+            "priority": request.priority,
+            "project_incharge": current_user["name"],
+            "has_software": request.projectType.lower() == "software"
+        }
+        project_id = DBStore.save_ai_project_plan(project_data, scheduled_plan)
+        
+        return {
+            "message": "AI Project execution plan generated and scheduled successfully",
+            "project_id": project_id,
+            "plan": scheduled_plan
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate plan: {str(e)}")
+
+# SERVICE TICKETS ENDPOINTS
+class TicketCreate(BaseModel):
+    project_id: int
+    employee_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+
+class TicketUpdate(BaseModel):
+    status: Optional[str] = None
+    employee_id: Optional[int] = None
+    resolution_notes: Optional[str] = None
+
+@router.get("/{project_id}/tickets")
+def get_project_tickets(project_id: int):
+    return DBStore.get_service_tickets(project_id=project_id)
+
+@router.get("/service-tickets/all")
+def get_all_service_tickets(status: Optional[str] = None):
+    return DBStore.get_service_tickets(status=status)
+
+@router.post("/service-tickets")
+def create_service_ticket(ticket: TicketCreate):
+    ticket_id = DBStore.create_service_ticket(ticket.model_dump())
+    return {"id": ticket_id, "message": "Service ticket created successfully"}
+
+@router.put("/service-tickets/{ticket_id}")
+def update_service_ticket(ticket_id: int, ticket: TicketUpdate):
+    updated = DBStore.update_service_ticket(ticket_id, ticket.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return updated
+
+@router.put("/{project_id}/close")
+def close_project(project_id: int):
+    updated = DBStore.update_project(project_id, {"status": "CLOSED"})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return updated
+

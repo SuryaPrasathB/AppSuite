@@ -21,7 +21,8 @@ import {
   ClipboardList,
   Plus,
   Minus,
-  Bookmark
+  Bookmark,
+  AlertCircle
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -67,7 +68,8 @@ export const Sidebar: React.FC = () => {
       { name: 'Dashboard', path: '/projects/dashboard', icon: LayoutDashboard },
       { name: 'Projects', path: '/projects', icon: Folder },
       { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList },
-      { name: 'Global Timeline', path: '/projects/timeline', icon: Folder }
+      { name: 'Global Timeline', path: '/projects/timeline', icon: Folder },
+      { name: 'Service Desk', path: '/projects/service-tickets', icon: AlertCircle }
     ];
   } else if (activeModule === 'bom') {
     moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };

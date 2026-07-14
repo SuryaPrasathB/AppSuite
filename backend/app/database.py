@@ -1591,6 +1591,10 @@ class DBStore:
             notif['is_read'] = bool(notif.get('is_read'))
         return notif
 
+        if notif:
+            notif['is_read'] = bool(notif.get('is_read'))
+        return notif
+
     @staticmethod
     def mark_notification_read(notification_id: int, user_id: int) -> bool:
         conn = get_db_connection()
@@ -1618,3 +1622,291 @@ class DBStore:
         cursor.close()
         conn.close()
         return success
+
+    @staticmethod
+    def save_ai_project_plan(project_data: Dict[str, Any], plan_json: Dict[str, Any]) -> int:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # 1. Insert Project
+            query_proj = """
+                INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
+                                      project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, 
+                                      date_of_delivery, constraints, budget, priority)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            proj_values = (
+                project_data.get("code"),
+                project_data.get("name"),
+                project_data.get("po_number"),
+                project_data.get("client_name"),
+                project_data.get("description"),
+                "PLANNING",
+                project_data.get("start_date") or None,
+                project_data.get("end_date") or None,
+                project_data.get("project_incharge"),
+                1 if project_data.get("has_software") else 0,
+                1 if project_data.get("has_firmware") else 0,
+                1 if project_data.get("has_transformer") else 0,
+                project_data.get("no_of_panels", 1),
+                project_data.get("folder_path"),
+                project_data.get("date_of_delivery") or None,
+                project_data.get("constraints"),
+                project_data.get("budget"),
+                project_data.get("priority", "MEDIUM")
+            )
+            cursor.execute(query_proj, proj_values)
+            project_id = cursor.lastrowid
+
+            # Maps to keep track of generated IDs to database IDs
+            phase_id_map = {}
+            task_id_map = {}
+
+            # 2. Insert Phases (as parent tasks in dynamic_tasks)
+            for phase in plan_json.get("phases", []):
+                query_phase = """
+                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority)
+                    VALUES (%s, NULL, %s, %s, 'TODO', 'MEDIUM')
+                """
+                cursor.execute(query_phase, (project_id, phase["name"], phase.get("description") or ""))
+                db_phase_id = cursor.lastrowid
+                phase_id_map[phase["id"]] = db_phase_id
+
+            # 3. Insert Tasks (as child tasks in dynamic_tasks pointing to phase task ID)
+            for t in plan_json.get("tasks", []):
+                db_phase_id = phase_id_map.get(t["phaseId"])
+                query_task = """
+                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, start_date, due_date)
+                    VALUES (%s, %s, %s, %s, 'TODO', %s, %s, %s)
+                """
+                cursor.execute(query_task, (
+                    project_id,
+                    db_phase_id,
+                    t["name"],
+                    t.get("description") or "",
+                    t.get("priority", "MEDIUM"),
+                    t.get("earliestStartDate") or None,
+                    t.get("earliestFinishDate") or None
+                ))
+                db_task_id = cursor.lastrowid
+                task_id_map[t["id"]] = db_task_id
+
+            # 4. Insert Subtasks (as child tasks in dynamic_tasks pointing to task task ID)
+            for sub in plan_json.get("subtasks", []):
+                db_task_id = task_id_map.get(sub["taskId"])
+                if db_task_id:
+                    query_sub = """
+                        INSERT INTO dynamic_tasks (project_id, parent_id, title, status, priority)
+                        VALUES (%s, %s, %s, 'TODO', 'MEDIUM')
+                    """
+                    cursor.execute(query_sub, (project_id, db_task_id, sub["name"]))
+
+            # 5. Insert Dependencies
+            for dep in plan_json.get("dependencies", []):
+                db_task_id = task_id_map.get(dep["taskId"])
+                db_dep_id = task_id_map.get(dep["dependsOnTaskId"])
+                if db_task_id and db_dep_id:
+                    query_dep = """
+                        INSERT INTO task_dependencies (task_id, depends_on_task_id, dependency_type, lag_days)
+                        VALUES (%s, %s, %s, %s)
+                    """
+                    cursor.execute(query_dep, (db_task_id, db_dep_id, dep.get("dependencyType", "FS"), dep.get("lagDays", 0)))
+
+            # 6. Insert Resource Suggestions
+            for sug in plan_json.get("resourceSuggestions", []):
+                db_task_id = task_id_map.get(sug["taskId"])
+                if db_task_id:
+                    query_sug = """
+                        INSERT INTO resource_suggestions (task_id, suggested_role, required_skills)
+                        VALUES (%s, %s, %s)
+                    """
+                    skills_str = ",".join(sug.get("requiredSkills", []))
+                    cursor.execute(query_sug, (db_task_id, sug.get("suggestedRole"), skills_str))
+
+            # 7. Insert Milestones
+            for ms in plan_json.get("milestones", []):
+                db_task_id = task_id_map.get(ms["associatedTaskId"])
+                query_ms = """
+                    INSERT INTO project_milestones (project_id, name, description, associated_task_id)
+                    VALUES (%s, %s, %s, %s)
+                """
+                cursor.execute(query_ms, (project_id, ms["name"], ms.get("description") or "", db_task_id))
+
+            # 8. Insert Risks
+            for risk in plan_json.get("risks", []):
+                query_risk = """
+                    INSERT INTO project_risks (project_id, risk_description, impact_level, probability_level, mitigation_strategy)
+                    VALUES (%s, %s, %s, %s, %s)
+                """
+                cursor.execute(query_risk, (
+                    project_id,
+                    risk["riskDescription"],
+                    risk.get("impactLevel", "MEDIUM"),
+                    risk.get("probabilityLevel", "MEDIUM"),
+                    risk.get("mitigationStrategy")
+                ))
+
+            conn.commit()
+            return project_id
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_service_tickets(project_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT st.*, p.name as project_name, p.code as project_code, e.name as employee_name FROM service_tickets st LEFT JOIN projects p ON st.project_id = p.id LEFT JOIN employees e ON st.employee_id = e.id WHERE 1=1"
+        params = []
+        if project_id:
+            query += " AND st.project_id = %s"
+            params.append(project_id)
+        if status:
+            query += " AND st.status = %s"
+            params.append(status)
+        query += " ORDER BY st.created_at DESC"
+        cursor.execute(query, tuple(params))
+        tickets = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for t in tickets:
+            if t.get('created_at'):
+                t['created_at'] = t['created_at'].isoformat()
+            if t.get('closed_at'):
+                t['closed_at'] = t['closed_at'].isoformat()
+        return tickets
+
+    @staticmethod
+    def create_service_ticket(data: Dict[str, Any]) -> int:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # Auto-reopen project if closed
+            cursor.execute("SELECT status FROM projects WHERE id = %s", (data["project_id"],))
+            proj = cursor.fetchone()
+            if proj and proj["status"] == "CLOSED":
+                cursor.execute("UPDATE projects SET status = 'IN_PROGRESS' WHERE id = %s", (data["project_id"],))
+
+            query = """
+                INSERT INTO service_tickets (project_id, employee_id, title, description, status, history_logs)
+                VALUES (%s, %s, %s, %s, 'OPEN', %s)
+            """
+            history = [{"action": "Ticket Created", "timestamp": datetime.now().isoformat()}]
+            cursor.execute(query, (
+                data["project_id"],
+                data.get("employee_id"),
+                data["title"],
+                data.get("description", ""),
+                json.dumps(history)
+            ))
+            ticket_id = cursor.lastrowid
+            conn.commit()
+            return ticket_id
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def update_service_ticket(ticket_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT * FROM service_tickets WHERE id = %s", (ticket_id,))
+            ticket = cursor.fetchone()
+            if not ticket:
+                return None
+            
+            history = json.loads(ticket.get("history_logs") or "[]")
+            updates = []
+            values = []
+            
+            if "status" in data and data["status"] != ticket["status"]:
+                updates.append("status = %s")
+                values.append(data["status"])
+                history.append({"action": f"Status changed to {data['status']}", "timestamp": datetime.now().isoformat()})
+                
+                if data["status"] == "CLOSED":
+                    updates.append("closed_at = %s")
+                    closed_time = datetime.now()
+                    values.append(closed_time)
+                    
+                    created_time = ticket["created_at"]
+                    # Calculate diff in minutes
+                    diff = closed_time - created_time
+                    diff_mins = int(diff.total_seconds() / 60)
+                    updates.append("resolution_time_mins = %s")
+                    values.append(diff_mins)
+            
+            if "employee_id" in data and data["employee_id"] != ticket["employee_id"]:
+                updates.append("employee_id = %s")
+                values.append(data["employee_id"])
+                history.append({"action": f"Assigned to employee {data['employee_id']}", "timestamp": datetime.now().isoformat()})
+                
+            if "resolution_notes" in data:
+                updates.append("resolution_notes = %s")
+                values.append(data["resolution_notes"])
+                
+            if updates:
+                updates.append("history_logs = %s")
+                values.append(json.dumps(history))
+                
+                values.append(ticket_id)
+                query = f"UPDATE service_tickets SET {', '.join(updates)} WHERE id = %s"
+                cursor.execute(query, tuple(values))
+                conn.commit()
+            
+            cursor.execute("SELECT * FROM service_tickets WHERE id = %s", (ticket_id,))
+            updated_ticket = cursor.fetchone()
+            
+            if updated_ticket:
+                if updated_ticket.get('created_at'):
+                    updated_ticket['created_at'] = updated_ticket['created_at'].isoformat()
+                if updated_ticket.get('closed_at'):
+                    updated_ticket['closed_at'] = updated_ticket['closed_at'].isoformat()
+                    
+            return updated_ticket
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def update_project(project_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            updates = []
+            values = []
+            for k, v in data.items():
+                updates.append(f"{k} = %s")
+                values.append(v)
+            if not updates:
+                return None
+            values.append(project_id)
+            query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s"
+            cursor.execute(query, tuple(values))
+            conn.commit()
+            
+            cursor.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
+            updated_proj = cursor.fetchone()
+            if updated_proj and updated_proj.get('created_at'):
+                updated_proj['created_at'] = updated_proj['created_at'].isoformat()
+            if updated_proj and updated_proj.get('start_date'):
+                updated_proj['start_date'] = updated_proj['start_date'].isoformat()
+            if updated_proj and updated_proj.get('end_date'):
+                updated_proj['end_date'] = updated_proj['end_date'].isoformat()
+            return updated_proj
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()

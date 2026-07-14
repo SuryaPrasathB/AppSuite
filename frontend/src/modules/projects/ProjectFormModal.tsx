@@ -18,6 +18,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
 }) => {
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [useAiPlanning, setUseAiPlanning] = useState(false);
   const [form, setForm] = useState({
     code: '',
     name: '',
@@ -32,7 +33,15 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     has_transformer: false,
     no_of_panels: 1,
     budget_estimated: 0,
-    budget_actual: 0
+    budget_actual: 0,
+    // AI fields
+    objectives: '',
+    scope: '',
+    technologies: '',
+    constraints: '',
+    budget: 0,
+    projectType: 'software',
+    provider: 'Ollama'
   });
 
   useEffect(() => {
@@ -57,10 +66,18 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           has_transformer: project.has_transformer || false,
           no_of_panels: project.no_of_panels || 1,
           budget_estimated: project.budget_estimated || 0,
-          budget_actual: project.budget_actual || 0
+          budget_actual: project.budget_actual || 0,
+          objectives: '',
+          scope: '',
+          technologies: '',
+          constraints: '',
+          budget: 0,
+          projectType: 'software',
+          provider: 'Ollama'
         });
       } else {
         setIsCodeManualOverride(false);
+        setUseAiPlanning(false);
         const today = new Date().toISOString().split('T')[0];
         setForm({
           code: nextCode || '',
@@ -76,7 +93,14 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           has_transformer: false,
           no_of_panels: 1,
           budget_estimated: 0,
-          budget_actual: 0
+          budget_actual: 0,
+          objectives: '',
+          scope: '',
+          technologies: '',
+          constraints: '',
+          budget: 0,
+          projectType: 'software',
+          provider: 'Ollama'
         });
       }
     }
@@ -86,7 +110,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSave(form);
+    await onSave({ ...form, isAiPlanning: useAiPlanning });
   };
 
   return (
@@ -369,6 +393,124 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 </label>
               </div>
             </section>
+
+            {/* Section 5: AI Assisted Project Planning */}
+            {!project && (
+              <>
+                <div className="h-px w-full bg-slate-100"></div>
+                <section className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="h-5 w-5 text-indigo-600 animate-pulse" />
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">AI-Powered Project Planning</h4>
+                        <p className="text-xs text-slate-500">Auto-generate phases, tasks, milestones, and scheduling dates using LLMs.</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={useAiPlanning}
+                        onChange={(e) => setUseAiPlanning(e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {useAiPlanning && (
+                    <div className="space-y-4 pt-2 animate-in fade-in-50 duration-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Type</label>
+                          <select
+                            value={form.projectType}
+                            onChange={(e) => setForm({...form, projectType: e.target.value})}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          >
+                            <option value="software">Software Development</option>
+                            <option value="hardware">Hardware / IoT</option>
+                            <option value="research">Scientific Research</option>
+                            <option value="manufacturing">Manufacturing Setup</option>
+                            <option value="construction">Civil Construction</option>
+                            <option value="generic">Generic Project</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">AI Provider</label>
+                          <select
+                            value={form.provider}
+                            onChange={(e) => setForm({...form, provider: e.target.value})}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          >
+                            <option value="Ollama">Local AI (Ollama - Qwen 3 8B)</option>
+                            <option value="OpenAI">OpenAI (GPT-4o)</option>
+                            <option value="Gemini">Google Gemini (Gemini Pro)</option>
+                            <option value="Claude">Anthropic Claude</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Objectives</label>
+                        <textarea
+                          rows={2}
+                          value={form.objectives}
+                          onChange={(e) => setForm({...form, objectives: e.target.value})}
+                          placeholder="What are the key goals of this project?"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Scope</label>
+                        <textarea
+                          rows={2}
+                          value={form.scope}
+                          onChange={(e) => setForm({...form, scope: e.target.value})}
+                          placeholder="What is in scope and what is out of scope?"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Technologies / Tools</label>
+                          <input
+                            type="text"
+                            value={form.technologies}
+                            onChange={(e) => setForm({...form, technologies: e.target.value})}
+                            placeholder="e.g. React, Python, Docker"
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Constraints / Limits</label>
+                          <input
+                            type="text"
+                            value={form.constraints}
+                            onChange={(e) => setForm({...form, constraints: e.target.value})}
+                            placeholder="e.g. Hard deadline, No remote access"
+                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Budget (USD/INR - Optional)</label>
+                        <input
+                          type="number"
+                          value={form.budget || ''}
+                          onChange={(e) => setForm({...form, budget: parseFloat(e.target.value) || 0})}
+                          placeholder="Estimated Budget"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
           </div>
 
           {/* Modal Footer */}

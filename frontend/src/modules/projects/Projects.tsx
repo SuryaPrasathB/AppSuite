@@ -4,7 +4,7 @@ import {
   Search, Calendar, Users, MoreVertical, X, Eye,
   Briefcase, User, CalendarDays, Layers, Cpu, Zap, Building2, Hash, FileCode2, Edit2, Trash2, Edit
 } from 'lucide-react';
-import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject } from './api';
+import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject, generateProjectPlan } from './api';
 import { useNavigate } from 'react-router-dom';
 import { ProjectFormModal } from './ProjectFormModal';
 
@@ -28,6 +28,7 @@ export const Projects: React.FC = () => {
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [editProjectId, setEditProjectId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Code logic for new project
   const [nextProjectCode, setNextProjectCode] = useState<string>('');
@@ -89,13 +90,20 @@ export const Projects: React.FC = () => {
       if (editProjectId) {
         await updateProject(editProjectId, formData);
       } else {
-        await createProject(formData);
+        if (formData.isAiPlanning) {
+          setIsGenerating(true);
+          await generateProjectPlan(formData);
+        } else {
+          await createProject(formData);
+        }
       }
       setIsNewProjectOpen(false);
       setEditProjectId(null);
       loadProjects();
     } catch (err: any) {
       alert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -357,6 +365,31 @@ export const Projects: React.FC = () => {
                   Delete
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* AI Planning Generating Overlay */}
+      {isGenerating && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full border border-slate-200 text-center space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-center">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+                <Cpu className="h-6 w-6 text-indigo-600 absolute inset-0 m-auto animate-pulse" />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-800">AI Planning Engine Active</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Please wait while the AI breaks down objectives into phases, generates tasks & subtasks, mapping dependencies, and calculations for the Critical Path.
+              </p>
+            </div>
+            
+            <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs text-indigo-700 font-bold flex items-center justify-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+              Generating execution plan... (this can take 30-90s)
             </div>
           </div>
         </div>

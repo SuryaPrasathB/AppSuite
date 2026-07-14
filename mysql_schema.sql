@@ -160,3 +160,22 @@ CREATE TABLE IF NOT EXISTS bom_items (
 CREATE INDEX idx_boms_project ON boms(project_id);
 CREATE INDEX idx_bom_items_bom ON bom_items(bom_id);
 
+-- 12. SERVICE TICKETS TABLE
+CREATE TABLE IF NOT EXISTS service_tickets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    project_id INT,
+    employee_id INT,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'OPEN',
+    resolution_notes TEXT,
+    resolution_time_mins INT,
+    history_logs TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_service_tickets_project ON service_tickets(project_id);
+CREATE INDEX idx_service_tickets_status ON service_tickets(status);
+

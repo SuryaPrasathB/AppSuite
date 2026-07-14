@@ -247,3 +247,17 @@ export async function createProjectActivity(projectId: number, data: any) {
   if (!res.ok) throw new Error('Failed to create activity');
   return res.json();
 }
+
+export async function generateProjectPlan(data: any) {
+  const res = await fetch(`${API_BASE}/generate-plan`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to generate project plan via AI');
+  }
+  return res.json();
+}
+

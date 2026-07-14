@@ -182,3 +182,20 @@ INSERT INTO inventory_transactions (user_name, user_role, product_id, quantity, 
 INSERT INTO purchase_requests (requester, product_id, quantity, status, remarks) VALUES
 ('Adarsh (Store Manager)', 2, 30.00, 'PENDING', 'Stock level critically low (8 left, min is 15)'),
 ('Vikram (Purchase Team)', 3, 50.00, 'APPROVED', 'Order being placed with SKF Bearings India Co');
+
+-- 12. SERVICE TICKETS TABLE
+CREATE TABLE IF NOT EXISTS service_tickets (
+    id SERIAL PRIMARY KEY,
+    project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+    employee_id INT REFERENCES employees(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'OPEN',
+    resolution_notes TEXT,
+    resolution_time_mins INT,
+    history_logs TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP WITH TIME ZONE NULL
+);
+CREATE INDEX IF NOT EXISTS idx_service_tickets_project ON service_tickets(project_id);
+CREATE INDEX IF NOT EXISTS idx_service_tickets_status ON service_tickets(status);
