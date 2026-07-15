@@ -112,6 +112,8 @@ CREATE INDEX idx_product_locations_product ON product_locations(product_id);
 CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    username VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
     role VARCHAR(100),
     phone VARCHAR(50),
     email VARCHAR(255),
@@ -179,3 +181,9 @@ CREATE TABLE IF NOT EXISTS service_tickets (
 CREATE INDEX idx_service_tickets_project ON service_tickets(project_id);
 CREATE INDEX idx_service_tickets_status ON service_tickets(status);
 
+-- 13. SEED DEFAULT USERS (Password for all is their username)
+INSERT INTO employees (name, role, username, password_hash) VALUES 
+('Surya (Admin)', 'Administrator', 'admin', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
+('Adarsh (Store Manager)', 'Store Manager', 'manager', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
+('Rahul (Operator)', 'Store Operator', 'operator', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
+('Vikram (Purchase Team)', 'Purchase Team', 'purchaser', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u');

@@ -185,9 +185,9 @@ export const StockIn: React.FC = () => {
     }));
   };
 
-  const handleAddItem = () => {
-    if (productsList.length === 0) return;
-    const defaultProd = productsList[0];
+  const handleAddItem = (prod?: any) => {
+    if (productsList.length === 0 && !prod) return;
+    const defaultProd = prod || productsList[0];
     const defaultLoc = locationsList.find(l => l.zone === (defaultProd.category === 'Electrical' ? 'Zone A' : 'Zone B')) || locationsList[0];
 
     setItems(prev => [

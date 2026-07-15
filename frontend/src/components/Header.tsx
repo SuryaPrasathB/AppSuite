@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown, X, LogOut, Settings } from 'lucide-react';
+import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown, X, LogOut, Settings, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/apiClient';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -20,7 +20,15 @@ export const Header: React.FC = () => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifDropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const overdueDropdownRef = useRef<HTMLDivElement>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  
+  const [overdueTasks, setOverdueTasks] = useState<any[]>([]);
+  const [showOverdueDropdown, setShowOverdueDropdown] = useState(false);
+  
+  const [assignedTickets, setAssignedTickets] = useState<any[]>([]);
+  const [showAssignedDropdown, setShowAssignedDropdown] = useState(false);
+  const assignedDropdownRef = useRef<HTMLDivElement>(null);
 
   // Time formatter
   const formatNotificationTime = (dateString: string) => {
@@ -120,11 +128,48 @@ export const Header: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+    useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // Polling every minute
-    return () => clearInterval(interval);
+    fetchOverdueTasks();
+    fetchAssignedTickets();
+    const interval = setInterval(() => {
+      fetchNotifications();
+      fetchOverdueTasks();
+      fetchAssignedTickets();
+    }, 60000); // Polling every minute
+
+    const handleTicketsUpdated = () => fetchAssignedTickets();
+    const handleTasksUpdated = () => fetchOverdueTasks();
+
+    window.addEventListener('ticketsUpdated', handleTicketsUpdated);
+    window.addEventListener('tasksUpdated', handleTasksUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('ticketsUpdated', handleTicketsUpdated);
+      window.removeEventListener('tasksUpdated', handleTasksUpdated);
+    };
   }, [user]);
+
+  const fetchOverdueTasks = async () => {
+    if (!user) return;
+    try {
+      const data = await apiClient.projects.myOverdue();
+      setOverdueTasks(data.tasks || []);
+    } catch (err) {
+      console.error("Failed to load overdue tasks", err);
+    }
+  };
+
+  const fetchAssignedTickets = async () => {
+    if (!user) return;
+    try {
+      const data = await apiClient.projects.myAssignedTickets();
+      setAssignedTickets(data || []);
+    } catch (err) {
+      console.error("Failed to load assigned tickets", err);
+    }
+  };
 
   // Filter products based on search input
   useEffect(() => {
@@ -154,6 +199,12 @@ export const Header: React.FC = () => {
       }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+      }
+      if (overdueDropdownRef.current && !overdueDropdownRef.current.contains(event.target as Node)) {
+        setShowOverdueDropdown(false);
+      }
+      if (assignedDropdownRef.current && !assignedDropdownRef.current.contains(event.target as Node)) {
+        setShowAssignedDropdown(false);
       }
     };
     
@@ -218,7 +269,22 @@ export const Header: React.FC = () => {
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <header className="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 z-30 sticky top-0 shrink-0">
+    <div className="sticky top-0 z-30 flex flex-col w-full shadow-sm">
+      <div className="flex flex-col">
+        {overdueTasks.length > 0 && (
+          <div className="bg-rose-500 text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md">
+            <AlertTriangle className="h-4.5 w-4.5 animate-pulse" />
+            <span>You have {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''}</span>
+          </div>
+        )}
+        {assignedTickets.length > 0 && (
+          <div className="bg-indigo-600 text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md">
+            <Package className="h-4.5 w-4.5 animate-pulse" />
+            <span>You have {assignedTickets.length} assigned service ticket{assignedTickets.length > 1 ? 's' : ''}</span>
+          </div>
+        )}
+      </div>
+    <header className="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 relative shrink-0">
       {/* Dynamic Title and Description */}
       <div className="flex flex-col text-left shrink-0">
         <h1 className="text-xl font-bold text-slate-800">{title}</h1>
@@ -298,6 +364,126 @@ export const Header: React.FC = () => {
         >
           <Sun className="h-5 w-5" />
         </button>
+
+        {/* Assigned Tickets Alert Badge */}
+        <div className="relative" ref={assignedDropdownRef}>
+          <button 
+            title="Assigned Service Tickets" 
+            onClick={() => setShowAssignedDropdown(!showAssignedDropdown)}
+            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showAssignedDropdown || assignedTickets.length > 0 ? 'text-indigo-500 hover:bg-indigo-50' : 'text-slate-450 hover:text-slate-700 hover:bg-slate-100'}`}
+          >
+            <Package className={`h-5 w-5 ${assignedTickets.length > 0 ? 'animate-pulse text-indigo-500' : ''}`} />
+            {assignedTickets.length > 0 && (
+              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-indigo-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+                {assignedTickets.length > 9 ? '9+' : assignedTickets.length}
+              </span>
+            )}
+          </button>
+          
+          {/* Assigned Tickets Dropdown */}
+          {showAssignedDropdown && (
+            <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-indigo-50">
+                <h3 className="font-bold text-indigo-800 text-sm flex items-center gap-2">
+                  <Package className="h-4 w-4" /> 
+                  Assigned Tickets
+                </h3>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {assignedTickets.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                    No assigned tickets.
+                  </div>
+                ) : (
+                  assignedTickets.map(ticket => (
+                    <div 
+                      key={ticket.id}
+                      onClick={() => {
+                        setShowAssignedDropdown(false);
+                        navigate(`/projects/service-desk`);
+                      }}
+                      className="px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="text-sm font-semibold text-slate-900 line-clamp-2">
+                          {ticket.title}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] font-bold text-white bg-indigo-500 px-1.5 py-0.5 rounded">
+                          {ticket.status}
+                        </span>
+                        <span className="text-xs text-indigo-600 font-medium truncate ml-2">
+                          {ticket.project_name || ticket.custom_project_name}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Overdue Alert Badge */}
+        <div className="relative" ref={overdueDropdownRef}>
+          <button 
+            title="Overdue Items" 
+            onClick={() => setShowOverdueDropdown(!showOverdueDropdown)}
+            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showOverdueDropdown || overdueTasks.length > 0 ? 'text-rose-500 hover:bg-rose-50' : 'text-slate-450 hover:text-slate-700 hover:bg-slate-100'}`}
+          >
+            <AlertTriangle className={`h-5 w-5 ${overdueTasks.length > 0 ? 'animate-pulse text-rose-500' : ''}`} />
+            {overdueTasks.length > 0 && (
+              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-rose-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+                {overdueTasks.length > 9 ? '9+' : overdueTasks.length}
+              </span>
+            )}
+          </button>
+          
+          {/* Overdue Dropdown */}
+          {showOverdueDropdown && (
+            <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-rose-50">
+                <h3 className="font-bold text-rose-800 text-sm flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" /> 
+                  Overdue Tasks
+                </h3>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {overdueTasks.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                    No overdue tasks.
+                  </div>
+                ) : (
+                  overdueTasks.map(task => (
+                    <div 
+                      key={task.id}
+                      onClick={() => {
+                        setShowOverdueDropdown(false);
+                        navigate(`/projects/my-tasks`);
+                      }}
+                      className="px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="text-sm font-semibold text-slate-900">
+                          {task.title}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] font-bold text-white bg-rose-500 px-1.5 py-0.5 rounded">
+                          OVERDUE
+                        </span>
+                        <span className="text-xs text-rose-600 font-medium">
+                          Due: {task.due_date ? task.due_date.split('T')[0] : 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Notification Bell Badge */}
         <div className="relative" ref={notifDropdownRef}>
@@ -409,5 +595,6 @@ export const Header: React.FC = () => {
         )}
       </div>
     </header>
+    </div>
   );
 };

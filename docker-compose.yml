@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8
+    container_name: smart_store_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: lscontrols
+      MYSQL_DATABASE: smart_store
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      # This will automatically initialize the database on first run
+      - ./mysql_schema.sql:/docker-entrypoint-initdb.d/mysql_schema.sql
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_store_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=lscontrols
+      - MYSQL_DATABASE=smart_store
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart_store_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

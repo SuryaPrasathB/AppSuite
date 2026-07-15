@@ -12,10 +12,11 @@ def update_db():
     print(f"Connecting to MySQL at {settings.MYSQL_HOST} to update schema...")
     try:
         conn = mysql.connector.connect(
-            host=settings.MYSQL_HOST,
+            host="127.0.0.1",
             user=settings.MYSQL_USER,
             password=settings.MYSQL_PASSWORD,
-            database=settings.MYSQL_DATABASE
+            database=settings.MYSQL_DATABASE,
+            port=3307
         )
         cursor = conn.cursor()
         

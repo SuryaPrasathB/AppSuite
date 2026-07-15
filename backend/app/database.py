@@ -1759,7 +1759,7 @@ class DBStore:
     def get_service_tickets(project_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        query = "SELECT st.*, p.name as project_name, p.code as project_code, e.name as employee_name FROM service_tickets st LEFT JOIN projects p ON st.project_id = p.id LEFT JOIN employees e ON st.employee_id = e.id WHERE 1=1"
+        query = "SELECT st.*, COALESCE(p.name, st.custom_project_name) as project_name, COALESCE(p.code, 'MANUAL') as project_code, cr.name as creator_name, asn.name as assignee_name, res.name as resolver_name FROM service_tickets st LEFT JOIN projects p ON st.project_id = p.id LEFT JOIN employees cr ON st.creator_id = cr.id LEFT JOIN employees asn ON st.assignee_id = asn.id LEFT JOIN employees res ON st.resolved_by = res.id WHERE 1=1"
         params = []
         if project_id:
             query += " AND st.project_id = %s"
@@ -1785,19 +1785,26 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         try:
             # Auto-reopen project if closed
-            cursor.execute("SELECT status FROM projects WHERE id = %s", (data["project_id"],))
-            proj = cursor.fetchone()
-            if proj and proj["status"] == "CLOSED":
-                cursor.execute("UPDATE projects SET status = 'IN_PROGRESS' WHERE id = %s", (data["project_id"],))
+            if data.get("project_id") and str(data.get("project_id")).strip() != "":
+                cursor.execute("SELECT status FROM projects WHERE id = %s", (data["project_id"],))
+                proj = cursor.fetchone()
+                if proj and proj["status"] == "CLOSED":
+                    cursor.execute("UPDATE projects SET status = 'IN_PROGRESS' WHERE id = %s", (data["project_id"],))
 
             query = """
-                INSERT INTO service_tickets (project_id, employee_id, title, description, status, history_logs)
-                VALUES (%s, %s, %s, %s, 'OPEN', %s)
+                INSERT INTO service_tickets (project_id, custom_project_name, creator_id, assignee_id, title, description, status, history_logs)
+                VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s)
             """
             history = [{"action": "Ticket Created", "timestamp": datetime.now().isoformat()}]
+            p_id = data.get("project_id")
+            if p_id == "":
+                p_id = None
+                
             cursor.execute(query, (
-                data["project_id"],
-                data.get("employee_id"),
+                p_id,
+                data.get("custom_project_name"),
+                data.get("creator_id"),
+                data.get("assignee_id"),
                 data["title"],
                 data.get("description", ""),
                 json.dumps(history)
@@ -1843,14 +1850,23 @@ class DBStore:
                     updates.append("resolution_time_mins = %s")
                     values.append(diff_mins)
             
-            if "employee_id" in data and data["employee_id"] != ticket["employee_id"]:
-                updates.append("employee_id = %s")
-                values.append(data["employee_id"])
-                history.append({"action": f"Assigned to employee {data['employee_id']}", "timestamp": datetime.now().isoformat()})
+            if "assignee_id" in data and data["assignee_id"] != ticket.get("assignee_id"):
+                updates.append("assignee_id = %s")
+                values.append(data["assignee_id"])
+                history.append({"action": f"Assigned to employee {data['assignee_id']}", "timestamp": datetime.now().isoformat()})
                 
             if "resolution_notes" in data:
                 updates.append("resolution_notes = %s")
                 values.append(data["resolution_notes"])
+                
+            if "resolution_images" in data:
+                updates.append("resolution_images = %s")
+                values.append(data["resolution_images"])
+                
+            if "resolved_by" in data:
+                updates.append("resolved_by = %s")
+                values.append(data["resolved_by"])
+                history.append({"action": f"Resolved by employee {data['resolved_by']}", "timestamp": datetime.now().isoformat()})
                 
             if updates:
                 updates.append("history_logs = %s")

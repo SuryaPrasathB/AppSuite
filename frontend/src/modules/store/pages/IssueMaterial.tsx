@@ -118,8 +118,7 @@ export const IssueMaterial: React.FC = () => {
         const sortedEmps = [...emps].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
         setEmployeesList(sortedEmps.map((e: any) => `${e.name} (${e.department || 'Employee'})`));
       }
-      
-      const projsArray = Array.isArray(projs) ? projs : (projs?.data || []);
+      const projsArray = Array.isArray(projs) ? projs : ((projs as any)?.data || []);
       setProjectsList(projsArray.map((p: any) => `${p.name} (${p.code})`));
       setError(null);
     } catch (err) {
@@ -169,9 +168,9 @@ export const IssueMaterial: React.FC = () => {
     }));
   };
 
-  const handleAddItem = () => {
-    if (productsList.length === 0) return;
-    const defaultProd = productsList[0];
+  const handleAddItem = (prod?: any) => {
+    if (productsList.length === 0 && !prod) return;
+    const defaultProd = prod || productsList[0];
     const defaultAlloc = defaultProd.locations && defaultProd.locations.length > 0 ? defaultProd.locations[0] : null;
     const defaultLocId = defaultAlloc ? String(defaultAlloc.location_id) : "1";
 

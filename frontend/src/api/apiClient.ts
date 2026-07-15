@@ -105,6 +105,25 @@ export const apiClient = {
     create: (body: any) => request<any>('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number | string) => request<any>(`/projects/${id}`, { method: 'DELETE' }),
+    myOverdue: () => request<any>('/projects/tasks/my-overdue'),
+    myAssignedTickets: () => request<any[]>('/projects/service-tickets/my-assigned'),
+    updateServiceTicket: (id: number | string, body: any) => request<any>(`/projects/service-tickets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    resolveServiceTicket: (id: number | string, formData: FormData) => {
+      // Create a custom fetch for FormData to avoid Content-Type being set to application/json by default
+      const token = localStorage.getItem('smart_store_user') 
+        ? JSON.parse(localStorage.getItem('smart_store_user') || '{}').token 
+        : '';
+      return fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/projects/service-tickets/${id}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      }).then(res => {
+        if (!res.ok) throw new Error('Failed to resolve ticket');
+        return res.json();
+      });
+    },
   },
   boms: {
     list: (projectId?: number) => request<any[]>(`/boms${projectId ? `?project_id=${projectId}` : ''}`),

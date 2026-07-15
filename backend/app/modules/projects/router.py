@@ -4,10 +4,10 @@ import shutil
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 import json
-from app.database import DBStore
+from app.database import DBStore, get_db_connection
 from app.config import settings
 from app.dependencies import get_current_user
 from app.modules.projects.ai_planning import AIPlanningService
@@ -202,6 +202,41 @@ def get_dashboard_tasks():
     return {
         "completed_this_week": completed_this_week[:10],
         "due_or_overdue": due_or_overdue
+    }
+
+@router.get("/tasks/my-overdue")
+def get_my_overdue_tasks(current_user: Dict[str, Any] = Depends(get_current_user)):
+    all_tasks = DBStore.get_all_dynamic_tasks()
+    
+    now = datetime.now()
+    today_date = now.date()
+    
+    overdue_tasks = []
+    
+    for task in all_tasks:
+        # Check if task is assigned to current user
+        if str(task.get("assignee_id")) != str(current_user["id"]):
+            continue
+            
+        status = task.get("status", "TODO")
+        if status == "COMPLETED":
+            continue
+            
+        due_date_str = task.get("due_date")
+        if due_date_str:
+            try:
+                # due_date might be isoformat, we just need YYYY-MM-DD
+                # Sometimes it's stored as datetime string
+                due_date_str_short = str(due_date_str).split('T')[0]
+                due_date = datetime.strptime(due_date_str_short, "%Y-%m-%d").date()
+                if due_date < today_date:
+                    overdue_tasks.append(task)
+            except:
+                pass
+                
+    return {
+        "count": len(overdue_tasks),
+        "tasks": overdue_tasks
     }
 
 @router.get("/dashboard/activity")
@@ -701,15 +736,18 @@ def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, A
 
 # SERVICE TICKETS ENDPOINTS
 class TicketCreate(BaseModel):
-    project_id: int
-    employee_id: Optional[int] = None
+    project_id: Optional[Union[int, str]] = None
+    custom_project_name: Optional[str] = None
+    creator_id: Optional[int] = None
+    assignee_id: Optional[int] = None
     title: str
     description: Optional[str] = None
 
 class TicketUpdate(BaseModel):
     status: Optional[str] = None
-    employee_id: Optional[int] = None
+    assignee_id: Optional[int] = None
     resolution_notes: Optional[str] = None
+    resolution_images: Optional[str] = None
 
 @router.get("/{project_id}/tickets")
 def get_project_tickets(project_id: int):
@@ -719,14 +757,81 @@ def get_project_tickets(project_id: int):
 def get_all_service_tickets(status: Optional[str] = None):
     return DBStore.get_service_tickets(status=status)
 
+@router.get("/service-tickets/my-assigned")
+def get_my_assigned_tickets(current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = current_user.get("id")
+    if not user_id:
+        return []
+    tickets = DBStore.get_service_tickets(status="OPEN")
+    # Filter tickets where assignee_id == user_id
+    assigned_tickets = [t for t in tickets if t.get("assignee_id") == user_id]
+    return assigned_tickets
+
 @router.post("/service-tickets")
-def create_service_ticket(ticket: TicketCreate):
-    ticket_id = DBStore.create_service_ticket(ticket.model_dump())
+def create_service_ticket(ticket: TicketCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    ticket_data = ticket.model_dump()
+    ticket_data["creator_id"] = current_user.get("id")
+    ticket_id = DBStore.create_service_ticket(ticket_data)
     return {"id": ticket_id, "message": "Service ticket created successfully"}
 
 @router.put("/service-tickets/{ticket_id}")
 def update_service_ticket(ticket_id: int, ticket: TicketUpdate):
     updated = DBStore.update_service_ticket(ticket_id, ticket.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return updated
+
+@router.post("/service-tickets/{ticket_id}/resolve")
+async def resolve_service_ticket(
+    ticket_id: int,
+    notes: str = Form(...),
+    images: List[UploadFile] = File(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    image_paths = []
+    if images:
+        upload_dir = os.path.join(settings.UPLOAD_DIR, "tickets", str(ticket_id))
+        os.makedirs(upload_dir, exist_ok=True)
+        for img in images:
+            if getattr(img, "filename", None):
+                safe_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', img.filename)
+                file_path = os.path.join(upload_dir, safe_filename)
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(img.file, buffer)
+                # Store relative path for frontend access
+                image_paths.append(f"/uploads/tickets/{ticket_id}/{safe_filename}")
+                
+    update_data = {
+        "status": "CLOSED",
+        "resolved_by": current_user.get("id")
+    }
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT resolution_notes, resolution_images FROM service_tickets WHERE id = %s", (ticket_id,))
+    existing = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    final_notes = notes
+    final_images = image_paths
+    
+    if existing:
+        if existing.get("resolution_notes"):
+            final_notes = existing["resolution_notes"] + "\n\n--- Update ---\n" + notes
+        if existing.get("resolution_images") and image_paths:
+            try:
+                existing_imgs = json.loads(existing["resolution_images"])
+                existing_imgs.extend(image_paths)
+                final_images = existing_imgs
+            except:
+                pass
+
+    update_data["resolution_notes"] = final_notes
+    if final_images:
+        update_data["resolution_images"] = json.dumps(final_images)
+        
+    updated = DBStore.update_service_ticket(ticket_id, update_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return updated
