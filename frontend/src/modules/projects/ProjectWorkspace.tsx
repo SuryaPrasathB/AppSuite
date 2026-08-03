@@ -18,6 +18,7 @@ import { DocumentsTab } from './workspace-tabs/DocumentsTab';
 import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
+import { TaskCommentsModal } from './TaskCommentsModal';
 import { useDialog } from '../../context/DialogContext';
 
 export const ProjectWorkspace: React.FC = () => {
@@ -34,6 +35,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [activeCommentTask, setActiveCommentTask] = useState<any | null>(null);
 
   // Upload state
   const [uploadingTask, setUploadingTask] = useState<string | null>(null);
@@ -516,6 +518,7 @@ export const ProjectWorkspace: React.FC = () => {
             onCreateQuickTask={handleCreateQuickTask}
             onUpdateTaskField={handleUpdateTaskField}
             onReorderTasks={handleReorderTasks}
+            onOpenComments={(task) => setActiveCommentTask(task)}
           />
         )}
 
@@ -534,6 +537,7 @@ export const ProjectWorkspace: React.FC = () => {
                onUpdateTaskField={handleUpdateTaskField}
                onReorderTasks={handleReorderTasks}
                employees={employees}
+               onOpenComments={(task) => setActiveCommentTask(task)}
              />
           </div>
         )}
@@ -595,6 +599,13 @@ export const ProjectWorkspace: React.FC = () => {
         editingTask={editingTask}
         employees={employees}
         dynamicTasks={dynamicTasks}
+      />
+
+      <TaskCommentsModal
+        task={activeCommentTask}
+        isOpen={!!activeCommentTask}
+        onClose={() => setActiveCommentTask(null)}
+        onCommentsUpdated={() => loadData(project.id, true)}
       />
     </div>
   );

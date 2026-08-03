@@ -12,10 +12,11 @@ interface TasksTabProps {
   onCreateQuickTask?: (taskData: any) => Promise<void>;
   onUpdateTaskField?: (taskId: number, field: string, value: any) => Promise<void>;
   onReorderTasks?: (newTasks: any[]) => void;
+  onOpenComments?: (task: any) => void;
 }
 
 export const TasksTab: React.FC<TasksTabProps> = ({ 
-  dynamicTasks, handleOpenEditTask, handleDeleteTask, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks 
+  dynamicTasks, handleOpenEditTask, handleDeleteTask, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks, onOpenComments 
 }) => {
   const { user } = useAuth();
   const isAdminOrManager = user?.role === 'Administrator' || user?.role === 'Store Manager';
@@ -359,9 +360,20 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
           <td className="py-2.5 px-4">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                <MessageSquare className="h-3.5 w-3.5" />
-              </div>
+              <button 
+                onClick={() => onOpenComments?.(task)}
+                className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-600 transition-colors group/comment"
+                title="View & add comments"
+              >
+                <MessageSquare className="h-3.5 w-3.5 group-hover/comment:scale-110 transition-transform" />
+                <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full ${
+                  (task.comment_count || 0) > 0 
+                    ? 'bg-indigo-100 text-indigo-700 font-extrabold' 
+                    : 'text-slate-400 group-hover/comment:text-indigo-600'
+                }`}>
+                  {task.comment_count || 0}
+                </span>
+              </button>
               <div className="flex items-center gap-1">
                 {canEditAny && (
                   <button onClick={() => handleQuickAddSubtask(task.id)} title="Add Subtask" className="p-1 text-slate-300 hover:text-emerald-600">

@@ -210,6 +210,31 @@ export async function deleteDynamicTask(projectId: number, taskId: number) {
   return res.json();
 }
 
+export async function fetchTaskComments(projectId: number, taskId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/tasks/${taskId}/comments`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch task comments');
+  return res.json();
+}
+
+export async function createTaskComment(projectId: number, taskId: number, content: string) {
+  const res = await fetch(`${API_BASE}/${projectId}/tasks/${taskId}/comments`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error('Failed to add task comment');
+  return res.json();
+}
+
+export async function deleteTaskComment(projectId: number, taskId: number, commentId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/tasks/${taskId}/comments/${commentId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to delete task comment');
+  return res.json();
+}
+
 export async function fetchEmployees() {
   const res = await fetch(`http://${window.location.hostname}:8000/api/employees`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch employees');

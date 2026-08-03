@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search } from 'lucide-react';
+import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search, MessageSquare } from 'lucide-react';
 
 interface KanbanTabProps {
   dynamicTasks: any[];
@@ -9,10 +9,11 @@ interface KanbanTabProps {
   onUpdateTaskField?: (taskId: number, field: string, value: any) => Promise<void>;
   onReorderTasks?: (newTasks: any[]) => void;
   employees?: any[];
+  onOpenComments?: (task: any) => void;
 }
 
 export const KanbanTab: React.FC<KanbanTabProps> = ({ 
-  dynamicTasks, handleOpenEditTask, handleDeleteTask, handleUpdateTaskStatus, onUpdateTaskField, onReorderTasks, employees = [] 
+  dynamicTasks, handleOpenEditTask, handleDeleteTask, handleUpdateTaskStatus, onUpdateTaskField, onReorderTasks, employees = [], onOpenComments 
 }) => {
   const [expandedParents, setExpandedParents] = useState<Record<number, boolean>>({});
   const [openAssigneeTaskId, setOpenAssigneeTaskId] = useState<number | null>(null);
@@ -182,6 +183,14 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
               </span>
             </div>
             <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+              <button 
+                onClick={() => onOpenComments?.(task)} 
+                className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded flex items-center gap-1"
+                title="Comments"
+              >
+                <MessageSquare className="h-3 w-3" />
+                <span className="text-[10px] font-bold">{(task.comment_count || 0)}</span>
+              </button>
               <button onClick={() => handleOpenEditTask(task)} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded">
                 <Edit2 className="h-3 w-3" />
               </button>

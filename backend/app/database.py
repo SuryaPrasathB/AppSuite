@@ -1181,7 +1181,8 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role,
+                   (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) as comment_count
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
             WHERE t.project_id = %s
@@ -1207,7 +1208,8 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            SELECT dt.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name
+            SELECT dt.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
+                   (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = dt.id) as comment_count
             FROM dynamic_tasks dt
             LEFT JOIN employees e ON dt.assignee_id = e.id
             LEFT JOIN projects p ON dt.project_id = p.id
@@ -1228,6 +1230,67 @@ class DBStore:
             if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
                 t['due_date'] = t['due_date'].isoformat()
         return tasks
+
+    @staticmethod
+    def get_task_comments(task_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT c.*, e.name as user_name, e.role as user_role, e.email as user_email
+            FROM task_comments c
+            LEFT JOIN employees e ON c.user_id = e.id
+            WHERE c.task_id = %s
+            ORDER BY c.created_at ASC
+        """, (task_id,))
+        comments = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for c in comments:
+            if c.get('created_at'):
+                c['created_at'] = c['created_at'].isoformat()
+            if c.get('updated_at'):
+                c['updated_at'] = c['updated_at'].isoformat()
+        return comments
+
+    @staticmethod
+    def add_task_comment(task_id: int, user_id: Optional[int], content: str) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "INSERT INTO task_comments (task_id, user_id, content) VALUES (%s, %s, %s)",
+            (task_id, user_id, content)
+        )
+        conn.commit()
+        comment_id = cursor.lastrowid
+        cursor.execute("""
+            SELECT c.*, e.name as user_name, e.role as user_role, e.email as user_email
+            FROM task_comments c
+            LEFT JOIN employees e ON c.user_id = e.id
+            WHERE c.id = %s
+        """, (comment_id,))
+        comment = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if comment:
+            if comment.get('created_at'):
+                comment['created_at'] = comment['created_at'].isoformat()
+            if comment.get('updated_at'):
+                comment['updated_at'] = comment['updated_at'].isoformat()
+        return comment
+
+    @staticmethod
+    def delete_task_comment(comment_id: int, user_id: Optional[int] = None) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if user_id:
+            cursor.execute("DELETE FROM task_comments WHERE id = %s AND user_id = %s", (comment_id, user_id))
+        else:
+            cursor.execute("DELETE FROM task_comments WHERE id = %s", (comment_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        cursor.close()
+        conn.close()
+        return affected > 0
 
     @staticmethod
     def add_dynamic_task(project_id: int, task: Dict[str, Any]) -> Dict[str, Any]:

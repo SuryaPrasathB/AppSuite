@@ -695,6 +695,27 @@ def delete_dynamic_task(project_id: int, task_id: int, current_user: Dict[str, A
 
     return {"message": "Task deleted successfully"}
 
+# TASK COMMENTS ENDPOINTS
+class TaskCommentCreate(BaseModel):
+    content: str
+
+@router.get("/{project_id}/tasks/{task_id}/comments")
+def get_task_comments(project_id: int, task_id: int):
+    return DBStore.get_task_comments(task_id)
+
+@router.post("/{project_id}/tasks/{task_id}/comments")
+def create_task_comment(project_id: int, task_id: int, comment: TaskCommentCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not comment.content.strip():
+        raise HTTPException(status_code=400, detail="Comment content cannot be empty")
+    return DBStore.add_task_comment(task_id, current_user["id"], comment.content.strip())
+
+@router.delete("/{project_id}/tasks/{task_id}/comments/{comment_id}")
+def delete_task_comment(project_id: int, task_id: int, comment_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    success = DBStore.delete_task_comment(comment_id, current_user["id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Comment not found or permission denied")
+    return {"message": "Comment deleted successfully"}
+
 # PROJECT NOTES & ACTIVITIES ENDPOINTS
 class ProjectNoteCreate(BaseModel):
     content: str
