@@ -81,7 +81,7 @@ export const GlobalDashboard: React.FC = () => {
   // Calculate KPIs
   const activeProjectsCount = projects.length;
   const tasksInProgress = stats.counters.in_progress || 0;
-  const pendingTasks = stats.counters.unassigned || 0;
+  const pendingTasks = stats.counters.pending || 0;
   const overallProgress = projects.length > 0 ? Math.round(projects.reduce((acc, p) => acc + (p.completion_percentage || 0), 0) / projects.length) : 0;
 
   // Pie chart data
@@ -117,20 +117,16 @@ export const GlobalDashboard: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">COMPANY DASHBOARD – AT A GLANCE</h1>
           <CurrentDateAndTime />
         </div>
-        <div className="text-right w-[300px]">
-           <p className="text-sm italic font-bold text-slate-600">"Excellence in Control.</p>
-           <p className="text-sm italic font-bold text-slate-600">Commitment in Every Project."</p>
-        </div>
       </header>
 
       {/* Main Content Grid */}
-      <main className="flex-1 p-6 overflow-y-auto w-full max-w-[1920px] mx-auto flex flex-col gap-6">
+      <main className="flex-1 p-4 overflow-hidden w-full max-w-[1920px] mx-auto flex flex-col gap-4">
         
         {/* Top Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[300px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[35%] min-h-[220px]">
           
           {/* Overview */}
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-5">
+          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
             <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-4">OVERVIEW</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
@@ -153,35 +149,37 @@ export const GlobalDashboard: React.FC = () => {
           </div>
 
           {/* Task Status */}
-          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-5">
+          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
             <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-2">TASK STATUS</h3>
-            <div className="flex-1 flex items-center justify-center relative">
-               <ResponsiveContainer width="100%" height="100%">
-                 <PieChart>
-                   <Pie 
-                     data={pieData} 
-                     cx="50%" 
-                     cy="50%" 
-                     innerRadius={40} 
-                     outerRadius={70} 
-                     dataKey="value" 
-                     paddingAngle={2}
-                     isAnimationActive={true}
-                     animationBegin={0}
-                     animationDuration={1500}
-                     animationEasing="ease-out"
-                   >
-                     {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                   </Pie>
-                   <Tooltip />
-                 </PieChart>
-               </ResponsiveContainer>
-               <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+            <div className="flex-1 flex items-center justify-between min-h-0">
+               <div className="flex-1 h-full min-w-0">
+                 <ResponsiveContainer width="100%" height="100%">
+                   <PieChart>
+                     <Pie 
+                       data={pieData} 
+                       cx="50%" 
+                       cy="50%" 
+                       innerRadius={40} 
+                       outerRadius={70} 
+                       dataKey="value" 
+                       paddingAngle={2}
+                       isAnimationActive={true}
+                       animationBegin={0}
+                       animationDuration={1500}
+                       animationEasing="ease-out"
+                     >
+                       {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                     </Pie>
+                     <Tooltip />
+                   </PieChart>
+                 </ResponsiveContainer>
+               </div>
+               <div className="flex flex-col gap-2 shrink-0 justify-center">
                  {pieData.map(d => (
                    <div key={d.name} className="flex items-center gap-2 text-[10px] font-bold text-slate-600">
                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }}></span>
-                     <span>{d.name}</span>
-                     <span className="ml-2 text-slate-800">{d.value}</span>
+                     <span className="w-16">{d.name}</span>
+                     <span className="ml-1 text-slate-800">{d.value}</span>
                    </div>
                  ))}
                </div>
@@ -189,9 +187,9 @@ export const GlobalDashboard: React.FC = () => {
           </div>
 
           {/* Project Progress */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-5">
-             <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-4">PROJECT PROGRESS</h3>
-             <div className="flex-1 flex flex-col gap-3 justify-center">
+          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
+             <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-2">PROJECT PROGRESS</h3>
+             <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-2">
                <div className="flex text-[10px] font-bold text-slate-400 mb-1">
                  <div className="flex-1">Project</div>
                  <div>Progress</div>
@@ -212,11 +210,11 @@ export const GlobalDashboard: React.FC = () => {
         </div>
 
         {/* Bottom Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-[400px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
           
           {/* Active Projects Table */}
           <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="p-5 border-b border-slate-100">
+            <div className="p-4 border-b border-slate-100">
               <h3 className="text-xs font-bold text-slate-500 tracking-wider">ACTIVE PROJECTS</h3>
             </div>
             <div className="flex-1 overflow-auto">
@@ -237,13 +235,27 @@ export const GlobalDashboard: React.FC = () => {
                     const prog = p.completion_percentage || 0;
                     let statusColor = "text-emerald-500";
                     let statusText = "On Track";
-                    if (prog < 50 && p.status !== 'COMPLETED') {
-                      statusColor = "text-amber-500";
-                      statusText = "At Risk";
-                    }
-                    if (new Date(p.date_of_delivery) < new Date() && p.status !== 'COMPLETED') {
-                      statusColor = "text-red-500";
-                      statusText = "Delayed";
+                    
+                    if (p.status !== 'COMPLETED') {
+                      if (p.date_of_delivery && new Date(p.date_of_delivery) < new Date()) {
+                        statusColor = "text-red-500";
+                        statusText = "Delayed";
+                      } else if (p.start_date && p.date_of_delivery) {
+                        const start = new Date(p.start_date).getTime();
+                        const end = new Date(p.date_of_delivery).getTime();
+                        const now = new Date().getTime();
+                        const totalDuration = end - start;
+                        const elapsedDuration = now - start;
+                        
+                        if (totalDuration > 0 && elapsedDuration > 0) {
+                          const expectedProgress = (elapsedDuration / totalDuration) * 100;
+                          // If progress is lagging more than 20% behind expected time progress, it's at risk
+                          if (prog < expectedProgress - 20) {
+                            statusColor = "text-amber-500";
+                            statusText = "At Risk";
+                          }
+                        }
+                      }
                     }
 
                     return (
@@ -274,38 +286,40 @@ export const GlobalDashboard: React.FC = () => {
           </div>
 
           {/* Overdue Tasks & Announcements */}
-          <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="lg:col-span-4 flex flex-col gap-4 min-h-0">
             
             {/* Overdue Tasks */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-1/2 overflow-hidden">
-              <div className="p-5 border-b border-slate-100 flex items-center gap-2">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center gap-2">
                 <h3 className="text-xs font-bold text-slate-500 tracking-wider">OVERDUE TASKS</h3>
               </div>
-              <div className="flex-1 overflow-auto p-5 pt-2">
-                <div className="grid grid-cols-3 text-[10px] font-bold text-slate-400 mb-3 border-b border-slate-100 pb-2">
+              <div className="flex-1 overflow-auto p-4 pt-2">
+                <div className="grid grid-cols-3 text-[10px] font-bold text-slate-400 mb-3 border-b border-slate-100 pb-2 sticky top-0 bg-white">
                   <div className="col-span-1">TASK</div>
                   <div className="col-span-1">PROJECT</div>
                   <div className="col-span-1 text-right">DUE DATE</div>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {overdueTasks.slice(0, 5).map((t: any) => (
+                  {overdueTasks.slice(0, 5).map((t: any) => {
+                    const projectName = projects.find(p => p.id === t.project_id)?.name || `Project ${t.project_id}`;
+                    return (
                     <div key={t.id} className="grid grid-cols-3 text-xs font-bold items-center">
                       <div className="col-span-1 text-red-500 flex items-center gap-1 truncate pr-2">
                         <AlertTriangle className="h-3 w-3 shrink-0" />
                         <span className="truncate" title={t.title}>{t.title}</span>
                       </div>
-                      <div className="col-span-1 text-slate-600 truncate pr-2" title={`Project ${t.project_id}`}>Project {t.project_id}</div>
+                      <div className="col-span-1 text-slate-600 truncate pr-2" title={projectName}>{projectName}</div>
                       <div className="col-span-1 text-red-500 text-right">{new Date(t.due_date).toLocaleDateString('en-GB')}</div>
                     </div>
-                  ))}
+                  )})}
                   {overdueTasks.length === 0 && <div className="text-xs text-slate-400 mt-2">No overdue tasks!</div>}
                 </div>
               </div>
             </div>
 
             {/* Announcements */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-1/2 overflow-hidden relative group">
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden relative group">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
                 <div className="flex items-center gap-2">
                   <Megaphone className="h-4 w-4 text-blue-600" />
                   <h3 className="text-xs font-bold text-blue-800 tracking-wider">ANNOUNCEMENTS</h3>
@@ -318,7 +332,7 @@ export const GlobalDashboard: React.FC = () => {
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex-1 overflow-auto p-5 text-sm text-slate-700 font-medium">
+              <div className="flex-1 overflow-auto p-4 text-sm text-slate-700 font-medium">
                 <ul className="list-disc pl-5 space-y-3">
                   {announcements.map((a: any) => (
                     <li key={a.id} className="leading-snug">
@@ -338,8 +352,8 @@ export const GlobalDashboard: React.FC = () => {
           </div>
         </div>
       </main>
-
-      {/* Footer */}
+      
+      {/* Footer
       <footer className="px-8 py-3 bg-white border-t border-slate-200 flex justify-between items-center text-[10px] font-bold text-slate-400 shrink-0">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> SAFETY FIRST</span>
@@ -347,7 +361,7 @@ export const GlobalDashboard: React.FC = () => {
         </div>
         <div className="text-slate-500">Let's build a smarter, safer and better tomorrow together.</div>
         <div className="tracking-widest">INNOVATE | INTEGRATE | AUTOMATE</div>
-      </footer>
+      </footer> */}
 
       {/* Post Announcement Modal */}
       {isAnnouncementModalOpen && (

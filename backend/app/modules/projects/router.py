@@ -127,6 +127,7 @@ def get_dashboard_stats():
     all_tasks = DBStore.get_all_dynamic_tasks()
     
     unassigned = 0
+    pending = 0
     in_progress = 0
     completed = 0
     
@@ -145,6 +146,8 @@ def get_dashboard_stats():
             in_progress += 1
         elif status == "COMPLETED":
             completed += 1
+        elif status in ["TODO", "PENDING"]:
+            pending += 1
             
         workload_by_status[status] = workload_by_status.get(status, 0) + 1
         
@@ -163,6 +166,7 @@ def get_dashboard_stats():
     return {
         "counters": {
             "unassigned": unassigned,
+            "pending": pending,
             "in_progress": in_progress,
             "completed": completed
         },

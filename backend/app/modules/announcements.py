@@ -20,7 +20,7 @@ def get_active_announcements(limit: int = 5, current_user: dict = Depends(get_cu
 def create_announcement(data: AnnouncementCreate, current_user: dict = Depends(get_current_user)):
     try:
         # Require admin privileges to create announcement
-        if current_user.get("role") != "admin":
+        if current_user.get("role") not in ["Administrator", "Store Manager"]:
             raise HTTPException(status_code=403, detail="Only admins can post announcements")
         return DBStore.create_announcement({"message": data.message}, current_user.get("id"))
     except HTTPException as he:
@@ -31,7 +31,7 @@ def create_announcement(data: AnnouncementCreate, current_user: dict = Depends(g
 @router.delete("/{announcement_id}")
 def deactivate_announcement(announcement_id: int, current_user: dict = Depends(get_current_user)):
     try:
-        if current_user.get("role") != "admin":
+        if current_user.get("role") not in ["Administrator", "Store Manager"]:
             raise HTTPException(status_code=403, detail="Only admins can deactivate announcements")
         DBStore.deactivate_announcement(announcement_id)
         return {"message": "Announcement deactivated successfully"}
