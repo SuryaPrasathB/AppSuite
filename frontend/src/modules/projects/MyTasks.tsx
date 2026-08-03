@@ -64,7 +64,11 @@ export const MyTasks: React.FC = () => {
   const getUniqueAssignees = () => {
     const assignees = new Set<string>();
     tasks.forEach(t => {
-      if (t.assignee_name) assignees.add(t.assignee_name);
+      if (t.assignees && t.assignees.length > 0) {
+        t.assignees.forEach((a: any) => assignees.add(a.name));
+      } else if (t.assignee_name) {
+        assignees.add(t.assignee_name);
+      }
     });
     return Array.from(assignees);
   };
@@ -72,7 +76,10 @@ export const MyTasks: React.FC = () => {
   // Filtered tasks
   const filteredTasks = tasks.filter(t => {
     if (selectedAssignee === 'All') return true;
-    if (selectedAssignee === 'Unassigned') return !t.assignee_name;
+    if (selectedAssignee === 'Unassigned') return !t.assignee_name && (!t.assignees || t.assignees.length === 0);
+    if (t.assignees && t.assignees.length > 0) {
+      return t.assignees.some((a: any) => a.name.toLowerCase() === selectedAssignee.toLowerCase());
+    }
     return t.assignee_name?.toLowerCase() === selectedAssignee.toLowerCase();
   });
 

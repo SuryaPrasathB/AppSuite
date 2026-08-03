@@ -94,24 +94,71 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           </td>
 
           <td className="py-2.5 px-4">
-            <div className="flex items-center gap-1.5 w-fit hover:bg-slate-100 rounded px-1.5 py-0.5 -ml-1.5 transition-colors">
-              <div className="h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center overflow-hidden shrink-0">
-                {task.assignee_id ? (
-                  <img src={`https://ui-avatars.com/api/?name=${task.assignee_name}&background=random`} alt="Avatar" className="h-full w-full object-cover" />
-                ) : (
-                  <User className="h-3 w-3 text-indigo-500" />
-                )}
-              </div>
-              <select
-                value={task.assignee_id || ''}
-                onChange={(e) => onUpdateTaskField?.(task.id, 'assignee_id', e.target.value ? parseInt(e.target.value, 10) : null)}
-                className="bg-transparent text-slate-600 text-xs font-medium focus:outline-none cursor-pointer pr-4 appearance-none"
+            <div className="group relative inline-block">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 w-fit hover:bg-slate-100 rounded px-1.5 py-0.5 -ml-1.5 transition-colors cursor-pointer"
               >
-                <option value="">Unassigned</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
-                ))}
-              </select>
+                <div className="flex -space-x-1.5 overflow-hidden shrink-0">
+                  {task.assignees && task.assignees.length > 0 ? (
+                    task.assignees.slice(0, 3).map((a: any) => (
+                      <div key={a.id} className="h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center border border-white overflow-hidden shrink-0" title={a.name}>
+                        <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(a.name)}&background=random`} alt={a.name} className="h-full w-full object-cover" />
+                      </div>
+                    ))
+                  ) : task.assignee_id ? (
+                    <div className="h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center overflow-hidden shrink-0">
+                      <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee_name || 'Assignee')}&background=random`} alt="Avatar" className="h-full w-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-5 w-5 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                      <User className="h-3 w-3 text-slate-400" />
+                    </div>
+                  )}
+                  {task.assignees && task.assignees.length > 3 && (
+                    <div className="h-5 w-5 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
+                      +{task.assignees.length - 3}
+                    </div>
+                  )}
+                </div>
+                <span className="text-slate-600 text-xs font-medium truncate max-w-[120px]">
+                  {task.assignees && task.assignees.length > 0
+                    ? task.assignees.map((a: any) => a.name).join(', ')
+                    : (task.assignee_name || 'Unassigned')}
+                </span>
+              </button>
+
+              <div className="hidden group-hover:block group-focus-within:block absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto custom-scrollbar">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2.5 py-1">
+                  Assignees
+                </div>
+                {employees.map(emp => {
+                  const currentIds = (task.assignees && task.assignees.length > 0)
+                    ? task.assignees.map((a: any) => a.id)
+                    : (task.assignee_id ? [task.assignee_id] : []);
+                  const isChecked = currentIds.includes(emp.id);
+
+                  return (
+                    <label key={emp.id} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-50 rounded-xl cursor-pointer select-none text-xs font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={async (e) => {
+                          let updated: number[];
+                          if (e.target.checked) {
+                            updated = Array.from(new Set([...currentIds, emp.id]));
+                          } else {
+                            updated = currentIds.filter((id: number) => id !== emp.id);
+                          }
+                          await onUpdateTaskField?.(task.id, 'assignee_ids', updated);
+                        }}
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="truncate">{emp.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </td>
 

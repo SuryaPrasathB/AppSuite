@@ -91,22 +91,58 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               </select>
             </div>
 
-            {/* Assignee Selector Chip */}
+            {/* Assignees Selector Chip */}
             <div className="relative">
-              <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
-                <User className="h-3.5 w-3.5 text-slate-400" />
-                {taskForm.assignee_id ? (employees.find(e => e.id.toString() === taskForm.assignee_id.toString())?.name || 'Assignee') : 'Assignee'}
-                <select
-                  value={taskForm.assignee_id}
-                  onChange={(e) => setTaskForm((prev: any) => ({ ...prev, assignee_id: e.target.value }))}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+              <div className="group relative inline-block">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm"
                 >
-                  <option value="">Unassigned</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                  ))}
-                </select>
-              </label>
+                  <User className="h-3.5 w-3.5 text-slate-400" />
+                  {(() => {
+                    const selectedIds = taskForm.assignee_ids || (taskForm.assignee_id ? [parseInt(taskForm.assignee_id.toString(), 10)] : []);
+                    if (selectedIds.length === 0) return 'Assignees';
+                    if (selectedIds.length === 1) {
+                      const emp = employees.find(e => e.id.toString() === selectedIds[0].toString());
+                      return emp ? emp.name : '1 Assignee';
+                    }
+                    return `${selectedIds.length} Assignees`;
+                  })()}
+                </button>
+
+                <div className="hidden group-hover:block group-focus-within:block absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto custom-scrollbar">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2.5 py-1">
+                    Select Assignees
+                  </div>
+                  {employees.map(emp => {
+                    const selectedIds = taskForm.assignee_ids || (taskForm.assignee_id ? [parseInt(taskForm.assignee_id.toString(), 10)] : []);
+                    const isChecked = selectedIds.some((id: any) => id.toString() === emp.id.toString());
+                    return (
+                      <label key={emp.id} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-50 rounded-xl cursor-pointer select-none text-xs font-medium text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            let updated: number[];
+                            if (e.target.checked) {
+                              updated = Array.from(new Set([...selectedIds.map((id: any) => parseInt(id.toString(), 10)), emp.id]));
+                            } else {
+                              updated = selectedIds.map((id: any) => parseInt(id.toString(), 10)).filter((id: number) => id !== emp.id);
+                            }
+                            setTaskForm((prev: any) => ({
+                              ...prev,
+                              assignee_ids: updated,
+                              assignee_id: updated.length > 0 ? updated[0] : ''
+                            }));
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="truncate">{emp.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* Start & Due Date Range Picker */}

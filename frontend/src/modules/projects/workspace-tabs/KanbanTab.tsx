@@ -116,37 +116,77 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
           </span>
 
           <div className="flex items-center gap-2">
-            {/* Assignee Circular Dropdown */}
-            <div className="relative h-6 w-6">
-              {task.assignee_id ? (
-                <div 
-                  className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-sm cursor-pointer"
-                  style={{ backgroundColor: getAvatarColor(task.assignee_name || '') }}
-                  title={task.assignee_name}
-                >
-                  {(task.assignee_name || 'U').charAt(0).toUpperCase()}
-                </div>
-              ) : (
-                <div 
-                  className="h-6 w-6 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-colors bg-white shadow-sm cursor-pointer"
-                  title="Unassigned"
-                >
-                  <User className="h-3 w-3" />
-                </div>
-              )}
-              <select
-                value={task.assignee_id || ''}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  onUpdateTaskField?.(task.id, 'assignee_id', e.target.value ? parseInt(e.target.value, 10) : null);
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-slate-800 bg-white"
+            {/* Multiple Assignees Avatar Stack Popover */}
+            <div className="group relative inline-block">
+              <button
+                type="button"
+                className="flex -space-x-1.5 overflow-hidden shrink-0 cursor-pointer"
               >
-                <option value="" className="text-slate-800 bg-white">Unassigned</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id} className="text-slate-800 bg-white">{emp.name}</option>
-                ))}
-              </select>
+                {task.assignees && task.assignees.length > 0 ? (
+                  task.assignees.slice(0, 3).map((a: any) => (
+                    <div
+                      key={a.id}
+                      className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white border border-white shadow-sm shrink-0"
+                      style={{ backgroundColor: getAvatarColor(a.name || '') }}
+                      title={a.name}
+                    >
+                      {(a.name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  ))
+                ) : task.assignee_id ? (
+                  <div 
+                    className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-sm shrink-0"
+                    style={{ backgroundColor: getAvatarColor(task.assignee_name || '') }}
+                    title={task.assignee_name}
+                  >
+                    {(task.assignee_name || 'U').charAt(0).toUpperCase()}
+                  </div>
+                ) : (
+                  <div 
+                    className="h-6 w-6 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 bg-white shadow-sm shrink-0"
+                    title="Unassigned"
+                  >
+                    <User className="h-3 w-3" />
+                  </div>
+                )}
+                {task.assignees && task.assignees.length > 3 && (
+                  <div className="h-6 w-6 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
+                    +{task.assignees.length - 3}
+                  </div>
+                )}
+              </button>
+
+              <div className="hidden group-hover:block group-focus-within:block absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto custom-scrollbar">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2.5 py-1">
+                  Assignees
+                </div>
+                {employees.map(emp => {
+                  const currentIds = (task.assignees && task.assignees.length > 0)
+                    ? task.assignees.map((a: any) => a.id)
+                    : (task.assignee_id ? [task.assignee_id] : []);
+                  const isChecked = currentIds.includes(emp.id);
+
+                  return (
+                    <label key={emp.id} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-50 rounded-xl cursor-pointer select-none text-xs font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={async (e) => {
+                          let updated: number[];
+                          if (e.target.checked) {
+                            updated = Array.from(new Set([...currentIds, emp.id]));
+                          } else {
+                            updated = currentIds.filter((id: number) => id !== emp.id);
+                          }
+                          await onUpdateTaskField?.(task.id, 'assignee_ids', updated);
+                        }}
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="truncate">{emp.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Status select */}

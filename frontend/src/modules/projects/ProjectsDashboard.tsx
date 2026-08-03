@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { fetchDashboardStats, fetchDashboardTasks, fetchDashboardActivity } from './api';
 import { 
-  Briefcase, 
-  Clock, 
   CheckCircle2, 
   AlertCircle, 
-  TrendingUp,
-  Activity as ActivityIcon,
-  Users,
   Plus
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Sector } from 'recharts';
 import { TaskStatusModal } from './TaskStatusModal';
 

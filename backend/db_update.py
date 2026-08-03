@@ -174,6 +174,23 @@ def update_db():
             )
         """)
 
+        print("Creating task_assignees table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS task_assignees (
+                task_id INT NOT NULL,
+                employee_id INT NOT NULL,
+                PRIMARY KEY (task_id, employee_id),
+                FOREIGN KEY (task_id) REFERENCES dynamic_tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )
+        """)
+
+        print("Migrating single assignee_id values into task_assignees...")
+        cursor.execute("""
+            INSERT IGNORE INTO task_assignees (task_id, employee_id)
+            SELECT id, assignee_id FROM dynamic_tasks WHERE assignee_id IS NOT NULL
+        """)
+
         conn.commit()
         cursor.close()
         conn.close()

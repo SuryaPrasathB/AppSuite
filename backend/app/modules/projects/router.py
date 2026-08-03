@@ -93,22 +93,28 @@ def get_workload():
         if task["status"] in ["COMPLETED", "CANCELLED"]:
             continue
 
-        emp_id = task.get("assignee_id")
-        if not emp_id:
-            continue
+        assignees = task.get("assignees") or []
+        if not assignees and task.get("assignee_id"):
+            assignees = [{
+                "id": task["assignee_id"],
+                "name": task.get("assignee_name", "Unknown"),
+                "role": task.get("assignee_role", "Employee")
+            }]
 
-        if emp_id not in workload:
-            workload[emp_id] = {
-                "employee_name": task.get("assignee_name", "Unknown"),
-                "employee_role": task.get("assignee_role", "Employee"),
-                "tasks": [],
-                "total_estimated_hours": 0,
-                "total_actual_hours": 0
-            }
+        for emp in assignees:
+            emp_id = emp["id"]
+            if emp_id not in workload:
+                workload[emp_id] = {
+                    "employee_name": emp["name"],
+                    "employee_role": emp.get("role", "Employee"),
+                    "tasks": [],
+                    "total_estimated_hours": 0,
+                    "total_actual_hours": 0
+                }
 
-        workload[emp_id]["tasks"].append(task)
-        workload[emp_id]["total_estimated_hours"] += task.get("estimated_hours") or 0
-        workload[emp_id]["total_actual_hours"] += task.get("actual_hours") or 0
+            workload[emp_id]["tasks"].append(task)
+            workload[emp_id]["total_estimated_hours"] += task.get("estimated_hours") or 0
+            workload[emp_id]["total_actual_hours"] += task.get("actual_hours") or 0
 
     return list(workload.values())
 
@@ -126,10 +132,11 @@ def get_dashboard_stats():
 
     for task in all_tasks:
         status = task.get("status", "TODO")
-        assignee = task.get("assignee_name", "Unassigned") or "Unassigned"
+        assignees = task.get("assignees") or []
         
-        if not task.get("assignee_id"):
+        if not task.get("assignee_ids") and not task.get("assignee_id"):
             unassigned += 1
+
         if status == "IN_PROGRESS":
             in_progress += 1
         elif status == "COMPLETED":
@@ -137,9 +144,17 @@ def get_dashboard_stats():
             
         workload_by_status[status] = workload_by_status.get(status, 0) + 1
         
-        total_by_assignee[assignee] = total_by_assignee.get(assignee, 0) + 1
-        if status not in ["COMPLETED", "CANCELLED"]:
-            open_by_assignee[assignee] = open_by_assignee.get(assignee, 0) + 1
+        if assignees:
+            for a in assignees:
+                name = a["name"]
+                total_by_assignee[name] = total_by_assignee.get(name, 0) + 1
+                if status not in ["COMPLETED", "CANCELLED"]:
+                    open_by_assignee[name] = open_by_assignee.get(name, 0) + 1
+        else:
+            name = "Unassigned"
+            total_by_assignee[name] = total_by_assignee.get(name, 0) + 1
+            if status not in ["COMPLETED", "CANCELLED"]:
+                open_by_assignee[name] = open_by_assignee.get(name, 0) + 1
 
     return {
         "counters": {
@@ -159,9 +174,6 @@ def get_dashboard_tasks():
     now = datetime.now()
     today_date = now.date()
     
-    # Calculate start of this week (Monday) and end of week (Sunday)
-    start_of_week = today_date - type(today_date).resolution * today_date.weekday()
-    
     completed_this_week = []
     due_or_overdue = {
         "Today": [],
@@ -173,9 +185,6 @@ def get_dashboard_tasks():
     for task in all_tasks:
         status = task.get("status", "TODO")
         
-        # We don't have a specific completed_at date in dynamic tasks model, 
-        # but for demonstration we'll just put recently completed ones or randomly.
-        # Ideally, we should check `project_activities` to see when it was marked COMPLETED.
         if status == "COMPLETED":
             completed_this_week.append(task)
             due_or_overdue["Done"].append(task)
@@ -196,7 +205,6 @@ def get_dashboard_tasks():
         else:
             due_or_overdue["Upcoming"].append(task)
             
-    # Sort completed_this_week by id desc for latest
     completed_this_week.sort(key=lambda x: x.get("id", 0), reverse=True)
             
     return {
@@ -212,10 +220,14 @@ def get_my_overdue_tasks(current_user: Dict[str, Any] = Depends(get_current_user
     today_date = now.date()
     
     overdue_tasks = []
+    user_id_str = str(current_user["id"])
     
     for task in all_tasks:
-        # Check if task is assigned to current user
-        if str(task.get("assignee_id")) != str(current_user["id"]):
+        assignee_ids = [str(aid) for aid in (task.get("assignee_ids") or [])]
+        if not assignee_ids and task.get("assignee_id"):
+            assignee_ids = [str(task.get("assignee_id"))]
+
+        if user_id_str not in assignee_ids:
             continue
             
         status = task.get("status", "TODO")
@@ -225,14 +237,17 @@ def get_my_overdue_tasks(current_user: Dict[str, Any] = Depends(get_current_user
         due_date_str = task.get("due_date")
         if due_date_str:
             try:
-                # due_date might be isoformat, we just need YYYY-MM-DD
-                # Sometimes it's stored as datetime string
                 due_date_str_short = str(due_date_str).split('T')[0]
                 due_date = datetime.strptime(due_date_str_short, "%Y-%m-%d").date()
                 if due_date < today_date:
                     overdue_tasks.append(task)
             except:
                 pass
+                
+    return {
+        "count": len(overdue_tasks),
+        "tasks": overdue_tasks
+    }
                 
     return {
         "count": len(overdue_tasks),
@@ -487,6 +502,7 @@ class TaskCreate(BaseModel):
     status: str = "TODO"
     priority: str = "MEDIUM"
     assignee_id: Optional[int] = None
+    assignee_ids: Optional[List[int]] = None
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
@@ -500,6 +516,7 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     assignee_id: Optional[int] = None
+    assignee_ids: Optional[List[int]] = None
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
@@ -539,7 +556,6 @@ def check_circular_dependencies(project_id: int, task_id: Optional[int], new_dep
     all_tasks = DBStore.get_dynamic_tasks(project_id)
     task_dict = {t["id"]: t for t in all_tasks}
 
-    # Build adjacency list (directed graph: task -> depends_on)
     adj = {}
     for t in all_tasks:
         adj[t["id"]] = []
@@ -550,11 +566,9 @@ def check_circular_dependencies(project_id: int, task_id: Optional[int], new_dep
             except Exception:
                 adj[t["id"]] = [int(d) for d in t["dependencies"].split(",") if d.strip().isdigit()]
 
-    # Update graph with the proposed change
     if task_id:
         adj[task_id] = new_dep_ids
 
-    # DFS to detect cycles
     def has_cycle(node, visited, path):
         visited.add(node)
         path.add(node)
@@ -580,15 +594,17 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
     
-    if task.assignee_id and task.assignee_id != current_user["id"]:
-        proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
-        proj_name = proj["name"] if proj else f"Project {project_id}"
-        DBStore.add_notification(
-            user_id=task.assignee_id,
-            title="New Task Assigned",
-            message=f"You have been assigned the task '{task.title}' in {proj_name}.",
-            link=f"/projects/{project_id}"
-        )
+    notify_user_ids = new_task.get("assignee_ids") or ([] if not new_task.get("assignee_id") else [new_task["assignee_id"]])
+    proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+    proj_name = proj["name"] if proj else f"Project {project_id}"
+    for uid in notify_user_ids:
+        if uid and uid != current_user["id"]:
+            DBStore.add_notification(
+                user_id=uid,
+                title="New Task Assigned",
+                message=f"You have been assigned the task '{task.title}' in {proj_name}.",
+                link=f"/projects/{project_id}"
+            )
         
     return new_task
 
@@ -598,7 +614,6 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     if task.dependencies is not None:
         check_circular_dependencies(project_id, task_id, task.dependencies)
 
-    # Check permissions for regular users
     all_tasks = DBStore.get_dynamic_tasks(project_id)
     existing_task = next((t for t in all_tasks if t["id"] == task_id), None)
     if not existing_task:
@@ -610,11 +625,14 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     if proj and current_user["name"] == proj.get("project_incharge"):
         is_admin_or_pm = True
 
+    existing_assignee_ids = [str(aid) for aid in (existing_task.get("assignee_ids") or [])]
+    if not existing_assignee_ids and existing_task.get("assignee_id"):
+        existing_assignee_ids = [str(existing_task["assignee_id"])]
+
     if not is_admin_or_pm:
-        if existing_task.get("assignee_id") != current_user["id"]:
+        if str(current_user["id"]) not in existing_assignee_ids:
             raise HTTPException(status_code=403, detail="Not authorized to edit this task")
 
-        # Ensure they are only updating status
         task_dump = task.model_dump(exclude_unset=True)
         allowed_keys = ["status", "actual_hours"]
         for key in list(task_dump.keys()):
@@ -630,16 +648,18 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     if task.status and task.status != existing_task.get("status"):
         DBStore.add_project_activity(project_id, "TASK_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
 
-    if task.assignee_id is not None and task.assignee_id != existing_task.get("assignee_id") and task.assignee_id != current_user["id"]:
-        proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
-        proj_name = proj["name"] if proj else f"Project {project_id}"
-        title = existing_task.get("title", "Task")
-        DBStore.add_notification(
-            user_id=task.assignee_id,
-            title="Task Assigned",
-            message=f"You have been assigned the task '{title}' in {proj_name}.",
-            link=f"/projects/{project_id}"
-        )
+    updated_assignee_ids = updated.get("assignee_ids") or []
+    for uid in updated_assignee_ids:
+        if uid and str(uid) not in existing_assignee_ids and uid != current_user["id"]:
+            proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+            proj_name = proj["name"] if proj else f"Project {project_id}"
+            title = existing_task.get("title", "Task")
+            DBStore.add_notification(
+                user_id=uid,
+                title="Task Assigned",
+                message=f"You have been assigned the task '{title}' in {proj_name}.",
+                link=f"/projects/{project_id}"
+            )
 
     return updated
 

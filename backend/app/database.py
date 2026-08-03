@@ -1120,6 +1120,52 @@ class DBStore:
         return True
 
     @staticmethod
+    def _enrich_task_assignees(cursor, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not tasks:
+            return tasks
+        task_ids = [t['id'] for t in tasks]
+        format_strings = ','.join(['%s'] * len(task_ids))
+        cursor.execute(f"""
+            SELECT ta.task_id, ta.employee_id, e.name as employee_name, e.role as employee_role
+            FROM task_assignees ta
+            JOIN employees e ON ta.employee_id = e.id
+            WHERE ta.task_id IN ({format_strings})
+        """, tuple(task_ids))
+        assignee_rows = cursor.fetchall()
+        
+        assignees_map = {}
+        for row in assignee_rows:
+            tid = row['task_id']
+            if tid not in assignees_map:
+                assignees_map[tid] = []
+            assignees_map[tid].append({
+                "id": row['employee_id'],
+                "name": row['employee_name'],
+                "role": row['employee_role']
+            })
+
+        for t in tasks:
+            tid = t['id']
+            assigned_list = assignees_map.get(tid, [])
+            if not assigned_list and t.get('assignee_id'):
+                if t.get('assignee_name'):
+                    assigned_list = [{
+                        "id": t['assignee_id'],
+                        "name": t['assignee_name'],
+                        "role": t.get('assignee_role', 'Employee')
+                    }]
+            t['assignees'] = assigned_list
+            t['assignee_ids'] = [a['id'] for a in assigned_list]
+            if assigned_list:
+                t['assignee_id'] = assigned_list[0]['id']
+                t['assignee_name'] = ", ".join([a['name'] for a in assigned_list])
+                t['assignee_role'] = assigned_list[0]['role']
+            else:
+                t['assignee_name'] = t.get('assignee_name') or 'Unassigned'
+
+        return tasks
+
+    @staticmethod
     def get_dynamic_tasks(project_id: int) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1131,6 +1177,7 @@ class DBStore:
             ORDER BY t.id ASC
         """, (project_id,))
         tasks = cursor.fetchall()
+        DBStore._enrich_task_assignees(cursor, tasks)
         cursor.close()
         conn.close()
         for t in tasks:
@@ -1149,7 +1196,7 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
-            SELECT dt.*, e.name as assignee_name, p.name as project_name
+            SELECT dt.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name
             FROM dynamic_tasks dt
             LEFT JOIN employees e ON dt.assignee_id = e.id
             LEFT JOIN projects p ON dt.project_id = p.id
@@ -1157,6 +1204,7 @@ class DBStore:
         """
         cursor.execute(query)
         tasks = cursor.fetchall()
+        DBStore._enrich_task_assignees(cursor, tasks)
         cursor.close()
         conn.close()
         for t in tasks:
@@ -1174,6 +1222,14 @@ class DBStore:
     def add_dynamic_task(project_id: int, task: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        
+        assignee_ids = task.get("assignee_ids") or []
+        primary_assignee_id = task.get("assignee_id")
+        if not primary_assignee_id and assignee_ids:
+            primary_assignee_id = assignee_ids[0]
+        elif primary_assignee_id and primary_assignee_id not in assignee_ids:
+            assignee_ids.append(primary_assignee_id)
+
         query = """
             INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, assignee_id, start_date, due_date, dependencies)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -1185,25 +1241,46 @@ class DBStore:
             task.get("description") or None,
             task.get("status", "TODO"),
             task.get("priority", "MEDIUM"),
-            task.get("assignee_id") or None,
+            primary_assignee_id or None,
             task.get("start_date") or None,
             task.get("due_date") or None,
             task.get("dependencies") or None
         )
         cursor.execute(query, values)
-        conn.commit()
         task_id = cursor.lastrowid
+
+        for emp_id in assignee_ids:
+            if emp_id:
+                cursor.execute("INSERT IGNORE INTO task_assignees (task_id, employee_id) VALUES (%s, %s)", (task_id, emp_id))
+
+        conn.commit()
+        
+        cursor.execute("""
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            FROM dynamic_tasks t
+            LEFT JOIN employees e ON t.assignee_id = e.id
+            WHERE t.id = %s
+        """, (task_id,))
+        created_task_list = cursor.fetchall()
+        DBStore._enrich_task_assignees(cursor, created_task_list)
         cursor.close()
         conn.close()
-        task["id"] = task_id
-        task["project_id"] = project_id
-        return task
+        return created_task_list[0] if created_task_list else task
 
     @staticmethod
     def update_dynamic_task(task_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        assignee_ids = data.get("assignee_ids")
+        if assignee_ids is not None:
+            primary_assignee_id = assignee_ids[0] if len(assignee_ids) > 0 else None
+            data["assignee_id"] = primary_assignee_id
+            cursor.execute("DELETE FROM task_assignees WHERE task_id = %s", (task_id,))
+            for emp_id in assignee_ids:
+                if emp_id:
+                    cursor.execute("INSERT IGNORE INTO task_assignees (task_id, employee_id) VALUES (%s, %s)", (task_id, emp_id))
+
         updates = []
         values = []
         fields = ["parent_id", "title", "description", "status", "priority", "assignee_id", "start_date", "due_date", "dependencies"]
@@ -1215,21 +1292,25 @@ class DBStore:
                 else:
                     values.append(data[key])
                     
-        if not updates:
-            cursor.close()
-            conn.close()
-            return data
+        if updates:
+            values.append(task_id)
+            query = f"UPDATE dynamic_tasks SET {', '.join(updates)} WHERE id = %s"
+            cursor.execute(query, values)
             
-        values.append(task_id)
-        query = f"UPDATE dynamic_tasks SET {', '.join(updates)} WHERE id = %s"
-        cursor.execute(query, values)
         conn.commit()
         
-        cursor.execute("SELECT * FROM dynamic_tasks WHERE id = %s", (task_id,))
-        t = cursor.fetchone()
+        cursor.execute("""
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            FROM dynamic_tasks t
+            LEFT JOIN employees e ON t.assignee_id = e.id
+            WHERE t.id = %s
+        """, (task_id,))
+        updated_task_list = cursor.fetchall()
+        DBStore._enrich_task_assignees(cursor, updated_task_list)
         cursor.close()
         conn.close()
         
+        t = updated_task_list[0] if updated_task_list else None
         if t:
             if t.get('created_at'):
                 t['created_at'] = t['created_at'].isoformat()
