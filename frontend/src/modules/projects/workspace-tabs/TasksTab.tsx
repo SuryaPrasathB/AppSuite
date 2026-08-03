@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
+import { CustomDropdown } from '../../../components/CustomDropdown';
 
 interface TasksTabProps {
   dynamicTasks: any[];
@@ -313,49 +314,65 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
           <td className="py-2.5 px-4">
             <div className="flex items-center gap-1.5 hover:bg-slate-100 rounded px-1.5 py-0.5 w-fit cursor-pointer -ml-1.5 transition-colors">
-              <Flag className={`h-3 w-3 ${
-                task.priority === 'CRITICAL' ? 'text-rose-500 fill-rose-500' :
-                task.priority === 'HIGH' ? 'text-amber-500 fill-amber-500' :
-                task.priority === 'MEDIUM' ? 'text-blue-500 fill-blue-500' :
-                'text-slate-400 fill-slate-400'
-              }`} />
-              <select
+              <CustomDropdown
                 value={task.priority}
-                onChange={(e) => onUpdateTaskField?.(task.id, 'priority', e.target.value)}
-                className="bg-transparent text-slate-600 text-[11px] font-medium focus:outline-none cursor-pointer appearance-none pr-3"
-              >
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-                <option value="CRITICAL">Critical</option>
-              </select>
+                onChange={(val) => onUpdateTaskField?.(task.id, 'priority', val)}
+                options={[
+                  { value: 'LOW', label: 'Low' },
+                  { value: 'MEDIUM', label: 'Medium' },
+                  { value: 'HIGH', label: 'High' },
+                  { value: 'CRITICAL', label: 'Critical' },
+                ]}
+                triggerElement={
+                  <div className="flex items-center gap-1.5">
+                    <Flag className={`h-3 w-3 ${
+                      task.priority === 'CRITICAL' ? 'text-rose-500 fill-rose-500' :
+                      task.priority === 'HIGH' ? 'text-amber-500 fill-amber-500' :
+                      task.priority === 'MEDIUM' ? 'text-blue-500 fill-blue-500' :
+                      'text-slate-400 fill-slate-400'
+                    }`} />
+                    <span className="text-slate-600 text-[11px] font-medium pr-1">
+                      {task.priority === 'LOW' ? 'Low' : 
+                       task.priority === 'MEDIUM' ? 'Medium' : 
+                       task.priority === 'HIGH' ? 'High' : 'Critical'}
+                    </span>
+                  </div>
+                }
+              />
             </div>
           </td>
 
           <td className="py-2.5 px-4">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold w-fit cursor-pointer border shadow-sm ${
-              task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-              task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-200' :
-              task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-              'bg-slate-50 text-slate-500 border-slate-200'
-            }`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${
-                task.status === 'COMPLETED' ? 'bg-emerald-500' :
-                task.status === 'REVIEW' ? 'bg-rose-500' :
-                task.status === 'IN_PROGRESS' ? 'bg-blue-500' :
-                'bg-slate-400'
-              }`} />
-              <select
-                value={task.status}
-                onChange={(e) => onUpdateTaskField?.(task.id, 'status', e.target.value)}
-                className="bg-transparent focus:outline-none cursor-pointer appearance-none font-bold pr-2"
-              >
-                <option value="TODO">TO DO</option>
-                <option value="IN_PROGRESS">IN PROGRESS</option>
-                <option value="REVIEW">REVIEW</option>
-                <option value="COMPLETED">COMPLETED</option>
-              </select>
-            </div>
+            <CustomDropdown
+              value={task.status}
+              onChange={(val) => onUpdateTaskField?.(task.id, 'status', val)}
+              options={[
+                { value: 'TODO', label: 'TO DO' },
+                { value: 'IN_PROGRESS', label: 'IN PROGRESS' },
+                { value: 'REVIEW', label: 'REVIEW' },
+                { value: 'COMPLETED', label: 'COMPLETED' },
+              ]}
+              triggerElement={
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold w-fit cursor-pointer border shadow-sm ${
+                  task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                  task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                  task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                  'bg-slate-50 text-slate-500 border-slate-200'
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    task.status === 'COMPLETED' ? 'bg-emerald-500' :
+                    task.status === 'REVIEW' ? 'bg-rose-500' :
+                    task.status === 'IN_PROGRESS' ? 'bg-blue-500' :
+                    'bg-slate-400'
+                  }`} />
+                  <span className="font-bold pr-1">
+                    {task.status === 'TODO' ? 'TO DO' :
+                     task.status === 'IN_PROGRESS' ? 'IN PROGRESS' :
+                     task.status === 'REVIEW' ? 'REVIEW' : 'COMPLETED'}
+                  </span>
+                </div>
+              }
+            />
           </td>
 
           <td className="py-2.5 px-4">
@@ -468,38 +485,49 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                     <option key={emp.id} value={emp.id}>{emp.name}</option>
                   ))}
                 </select>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 shadow-sm text-xs">
-                <span className={`w-2.5 h-2.5 rounded-full ${
+              </div>              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 shadow-sm text-xs">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                   quickPriority === 'CRITICAL' ? 'bg-rose-500' :
                   quickPriority === 'HIGH' ? 'bg-amber-500' :
                   quickPriority === 'MEDIUM' ? 'bg-blue-500' :
                   'bg-slate-400'
                 }`} />
-                <select
+                <CustomDropdown
                   value={quickPriority}
-                  onChange={(e) => setQuickPriority(e.target.value)}
-                  className="bg-transparent text-slate-700 font-bold focus:outline-none cursor-pointer pr-6"
-                  disabled={isSubmitting}
-                >
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="CRITICAL">Critical</option>
-                </select>
+                  onChange={(val) => setQuickPriority(val)}
+                  options={[
+                    { value: 'LOW', label: 'Low' },
+                    { value: 'MEDIUM', label: 'Medium' },
+                    { value: 'HIGH', label: 'High' },
+                    { value: 'CRITICAL', label: 'Critical' },
+                  ]}
+                  triggerElement={
+                    <span className="text-slate-700 font-bold cursor-pointer pr-1">
+                      {quickPriority === 'LOW' ? 'Low' : 
+                       quickPriority === 'MEDIUM' ? 'Medium' : 
+                       quickPriority === 'HIGH' ? 'High' : 'Critical'}
+                    </span>
+                  }
+                />
               </div>
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 shadow-sm text-xs">
-                <select
+                <CustomDropdown
                   value={quickStatus}
-                  onChange={(e) => setQuickStatus(e.target.value)}
-                  className="bg-transparent text-slate-700 font-bold focus:outline-none cursor-pointer pr-6 uppercase tracking-wider text-[10px]"
-                  disabled={isSubmitting}
-                >
-                  <option value="TODO">To Do</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="REVIEW">Review</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
+                  onChange={(val) => setQuickStatus(val)}
+                  options={[
+                    { value: 'TODO', label: 'TO DO' },
+                    { value: 'IN_PROGRESS', label: 'IN PROGRESS' },
+                    { value: 'REVIEW', label: 'REVIEW' },
+                    { value: 'COMPLETED', label: 'COMPLETED' },
+                  ]}
+                  triggerElement={
+                    <span className="text-slate-700 font-bold cursor-pointer pr-1">
+                      {quickStatus === 'TODO' ? 'TO DO' :
+                       quickStatus === 'IN_PROGRESS' ? 'IN PROGRESS' :
+                       quickStatus === 'REVIEW' ? 'REVIEW' : 'COMPLETED'}
+                    </span>
+                  }
+                />
               </div>
               {quickParentId && (
                 <button

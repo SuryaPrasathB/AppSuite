@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, User, Calendar, Flag, GitBranch, AlignLeft } from 'lucide-react';
 import { DateRangePicker } from './DateRangePicker';
+import { CustomDropdown } from '../../../components/CustomDropdown';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -74,21 +75,31 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
             
             {/* Status Selector Pill */}
             <div className="relative">
-              <select
+              <CustomDropdown
                 value={taskForm.status}
-                onChange={(e) => setTaskForm((prev: any) => ({ ...prev, status: e.target.value }))}
-                className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm ${
-                  taskForm.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
-                  taskForm.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
-                  taskForm.status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-600 border-amber-500/20' :
-                  'bg-sky-50 text-sky-600 border-sky-500/20'
-                }`}
-              >
-                <option value="TODO">Not Started</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="REVIEW">Pending Review</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
+                onChange={(val) => setTaskForm((prev: any) => ({ ...prev, status: val }))}
+                options={[
+                  { value: 'TODO', label: 'Not Started' },
+                  { value: 'IN_PROGRESS', label: 'In Progress' },
+                  { value: 'REVIEW', label: 'Pending Review' },
+                  { value: 'COMPLETED', label: 'Completed' },
+                ]}
+                triggerElement={
+                  <button
+                    type="button"
+                    className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm ${
+                      taskForm.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
+                      taskForm.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
+                      taskForm.status === 'IN_PROGRESS' ? 'bg-amber-50 text-amber-600 border-amber-500/20' :
+                      'bg-sky-50 text-sky-600 border-sky-500/20'
+                    }`}
+                  >
+                    {taskForm.status === 'TODO' ? 'Not Started' :
+                     taskForm.status === 'IN_PROGRESS' ? 'In Progress' :
+                     taskForm.status === 'REVIEW' ? 'Pending Review' : 'Completed'}
+                  </button>
+                }
+              />
             </div>
 
             {/* Assignees Selector Chip */}
@@ -172,20 +183,30 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
             {/* Priority Selector Chip */}
             <div className="relative">
-              <label className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm">
-                <Flag className="h-3.5 w-3.5 text-slate-400" />
-                Priority: {taskForm.priority}
-                <select
-                  value={taskForm.priority}
-                  onChange={(e) => setTaskForm((prev: any) => ({ ...prev, priority: e.target.value }))}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                >
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="CRITICAL">Critical</option>
-                </select>
-              </label>
+              <CustomDropdown
+                value={taskForm.priority}
+                onChange={(val) => setTaskForm((prev: any) => ({ ...prev, priority: val }))}
+                options={[
+                  { value: 'LOW', label: 'Low', icon: <Flag className="h-3.5 w-3.5" />, colorClass: 'text-slate-400' },
+                  { value: 'MEDIUM', label: 'Medium', icon: <Flag className="h-3.5 w-3.5" />, colorClass: 'text-blue-500' },
+                  { value: 'HIGH', label: 'High', icon: <Flag className="h-3.5 w-3.5" />, colorClass: 'text-amber-500' },
+                  { value: 'CRITICAL', label: 'Critical', icon: <Flag className="h-3.5 w-3.5" />, colorClass: 'text-rose-500' },
+                ]}
+                triggerElement={
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm"
+                  >
+                    <Flag className={`h-3.5 w-3.5 ${
+                      taskForm.priority === 'CRITICAL' ? 'text-rose-500' :
+                      taskForm.priority === 'HIGH' ? 'text-amber-500' :
+                      taskForm.priority === 'MEDIUM' ? 'text-blue-500' :
+                      'text-slate-400'
+                    }`} />
+                    Priority: {taskForm.priority}
+                  </button>
+                }
+              />
             </div>
 
             {/* Parent Task Selector Chip */}

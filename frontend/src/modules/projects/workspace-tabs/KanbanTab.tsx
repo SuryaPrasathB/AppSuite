@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search, MessageSquare } from 'lucide-react';
+import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search, MessageSquare, AlignLeft, GitBranch, Flag, Plus, Paperclip, AlertCircle } from 'lucide-react';
+import { CustomDropdown } from '../../../components/CustomDropdown';
 
 interface KanbanTabProps {
   dynamicTasks: any[];
@@ -345,24 +346,34 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
               </div>
 
               {/* Status select */}
-              <select
+              <CustomDropdown
                 value={task.status}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  onUpdateTaskField?.(task.id, 'status', e.target.value);
+                onChange={(val) => {
+                  onUpdateTaskField?.(task.id, 'status', val);
                 }}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white border border-slate-200 focus:outline-none cursor-pointer shadow-sm text-slate-800 ${
-                  task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
-                  task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
-                  task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-500/20' :
-                  'bg-slate-50 text-slate-500 border-slate-300'
-                }`}
-              >
-                <option value="TODO" className="text-slate-800 bg-white">Not Started</option>
-                <option value="IN_PROGRESS" className="text-slate-800 bg-white">In Progress</option>
-                <option value="REVIEW" className="text-slate-800 bg-white">Pending Review</option>
-                <option value="COMPLETED" className="text-slate-800 bg-white">Completed</option>
-              </select>
+                options={[
+                  { value: 'TODO', label: 'Not Started' },
+                  { value: 'IN_PROGRESS', label: 'In Progress' },
+                  { value: 'REVIEW', label: 'Pending Review' },
+                  { value: 'COMPLETED', label: 'Completed' },
+                ]}
+                triggerElement={
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white border border-slate-200 focus:outline-none cursor-pointer shadow-sm text-slate-800 ${
+                      task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
+                      task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
+                      task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-500/20' :
+                      'bg-slate-50 text-slate-500 border-slate-300'
+                    }`}
+                  >
+                    {task.status === 'TODO' ? 'Not Started' :
+                     task.status === 'IN_PROGRESS' ? 'In Progress' :
+                     task.status === 'REVIEW' ? 'Pending Review' : 'Completed'}
+                  </button>
+                }
+              />
             </div>
           </div>
 

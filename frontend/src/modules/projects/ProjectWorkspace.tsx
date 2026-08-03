@@ -169,8 +169,8 @@ export const ProjectWorkspace: React.FC = () => {
       setTaskForm({
         parent_id: null,
         title: '', description: '', status: 'TODO', priority: 'MEDIUM', assignee_id: '',
-        start_date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        start_date: '',
+        due_date: '',
         dependencies: [],
         estimated_hours: 0, actual_hours: 0,
       });
@@ -214,8 +214,8 @@ export const ProjectWorkspace: React.FC = () => {
     try {
       const payload = {
         ...taskData,
-        start_date: taskData.start_date || new Date().toISOString().split('T')[0],
-        due_date: taskData.due_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        start_date: taskData.start_date || null,
+        due_date: taskData.due_date || null,
       };
       await createDynamicTask(project.id, payload);
       await loadData(project.id, true);
