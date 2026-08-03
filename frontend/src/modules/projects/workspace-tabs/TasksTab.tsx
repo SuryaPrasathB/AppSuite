@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus } from 'lucide-react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 
@@ -11,10 +11,11 @@ interface TasksTabProps {
   employees?: any[];
   onCreateQuickTask?: (taskData: any) => Promise<void>;
   onUpdateTaskField?: (taskId: number, field: string, value: any) => Promise<void>;
+  onReorderTasks?: (newTasks: any[]) => void;
 }
 
 export const TasksTab: React.FC<TasksTabProps> = ({ 
-  dynamicTasks, handleOpenEditTask, handleDeleteTask, project, employees = [], onCreateQuickTask, onUpdateTaskField 
+  dynamicTasks, handleOpenEditTask, handleDeleteTask, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks 
 }) => {
   const { user } = useAuth();
   const isAdminOrManager = user?.role === 'Administrator' || user?.role === 'Store Manager';
@@ -35,8 +36,61 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<{ taskId: number; position: 'above' | 'below' } | null>(null);
+
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleRowDragStart = (e: React.DragEvent, taskId: number) => {
+    e.dataTransfer.setData('text/plain', taskId.toString());
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedTaskId(taskId);
+  };
+
+  const handleRowDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverTarget(null);
+  };
+
+  const handleRowDragOver = (e: React.DragEvent, targetTask: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedTaskId || draggedTaskId === targetTask.id) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const position = offsetY < rect.height / 2 ? 'above' : 'below';
+
+    setDragOverTarget({ taskId: targetTask.id, position });
+  };
+
+  const handleRowDrop = (e: React.DragEvent, targetTask: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedTaskId || draggedTaskId === targetTask.id) return;
+
+    const draggedTask = dynamicTasks.find(t => t.id === draggedTaskId);
+    if (!draggedTask) return;
+
+    // Keep parent relationship aligned if dropped within same level or move
+    const updatedTask = { ...draggedTask };
+    const remainingTasks = dynamicTasks.filter(t => t.id !== draggedTaskId);
+
+    const targetIndex = remainingTasks.findIndex(t => t.id === targetTask.id);
+    if (targetIndex !== -1) {
+      const position = dragOverTarget?.position || 'below';
+      const insertIndex = position === 'above' ? targetIndex : targetIndex + 1;
+      remainingTasks.splice(insertIndex, 0, updatedTask);
+    } else {
+      remainingTasks.push(updatedTask);
+    }
+
+    if (onReorderTasks) {
+      onReorderTasks(remainingTasks);
+    }
+    handleRowDragEnd();
   };
 
   const handleQuickSubmit = async (e: React.FormEvent) => {
@@ -76,12 +130,38 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const renderTaskRow = (task: any, level: number = 0) => {
     const subTasks = getSubTasks(task.id);
     const isSubtask = level > 0;
+    const isBeingDragged = draggedTaskId === task.id;
+    const isTarget = dragOverTarget?.taskId === task.id;
+    const isAboveTarget = isTarget && dragOverTarget?.position === 'above';
+    const isBelowTarget = isTarget && dragOverTarget?.position === 'below';
 
     return (
       <React.Fragment key={task.id}>
-        <tr className="hover:bg-slate-50/50 transition-all text-sm group border-b border-slate-100 last:border-0">
+        {isAboveTarget && (
+          <tr>
+            <td colSpan={7} className="p-0 border-0">
+              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125" />
+            </td>
+          </tr>
+        )}
+        <tr 
+          draggable
+          onDragStart={(e) => handleRowDragStart(e, task.id)}
+          onDragEnd={handleRowDragEnd}
+          onDragOver={(e) => handleRowDragOver(e, task)}
+          onDrop={(e) => handleRowDrop(e, task)}
+          className={`hover:bg-indigo-50/30 transition-all text-sm group border-b border-slate-100 last:border-0 ${
+            isBeingDragged ? 'opacity-30 bg-indigo-50/50 border-dashed border-indigo-300' : ''
+          }`}
+        >
           <td className="py-2.5 pl-4 pr-4">
             <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 1.5}rem` }}>
+              <div 
+                className="cursor-grab active:cursor-grabbing p-0.5 text-slate-300 hover:text-indigo-600 transition-colors rounded hover:bg-slate-100 shrink-0"
+                title="Drag row to reorder"
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </div>
               {isSubtask ? (
                 <Circle className="h-3.5 w-3.5 text-slate-300 shrink-0" />
               ) : (
@@ -247,6 +327,13 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             </div>
           </td>
         </tr>
+        {isBelowTarget && (
+          <tr>
+            <td colSpan={7} className="p-0 border-0">
+              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125" />
+            </td>
+          </tr>
+        )}
         {subTasks.map(st => renderTaskRow(st, level + 1))}
       </React.Fragment>
     );

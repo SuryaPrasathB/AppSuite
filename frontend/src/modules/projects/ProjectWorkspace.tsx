@@ -243,6 +243,10 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
+  const handleReorderTasks = (newTasks: any[]) => {
+    setDynamicTasks(newTasks);
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50 -m-6">
       {/* Workspace Header */}
@@ -301,20 +305,12 @@ export const ProjectWorkspace: React.FC = () => {
               >
                 + Add Task
               </button>
-            ) : (
-              <button 
-                onClick={() => setIsSubProjectModalOpen(true)}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Add Sub-Project
-              </button>
-            )}
+            ) : null}
             <button 
               onClick={() => setIsEditModalOpen(true)}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors border border-slate-200 cursor-pointer"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors"
             >
-              {project.is_parent ? 'Edit Major Project' : 'Edit Project'}
+              Edit Project
             </button>
           </div>
         </div>
@@ -388,20 +384,25 @@ export const ProjectWorkspace: React.FC = () => {
                         <span className="text-[10px] font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-600">
                           {sp.code}
                         </span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                           sp.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
-                          sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
+                          sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                          'bg-slate-100 text-slate-700'
                         }`}>
                           {sp.status.replace('_', ' ')}
                         </span>
                       </div>
-                      <h3 className="font-bold text-slate-800 text-base mb-1 group-hover:text-purple-700 transition-colors">{sp.name}</h3>
-                      <p className="text-xs text-slate-500 line-clamp-2">{sp.description || 'Sub-project module.'}</p>
+                      <h3 className="font-bold text-slate-800 text-base mb-1 group-hover:text-purple-600 transition-colors flex items-center gap-1.5">
+                        <Folder className="h-4 w-4 text-purple-500 shrink-0" />
+                        {sp.name}
+                      </h3>
+                      {sp.description && (
+                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">{sp.description}</p>
+                      )}
                     </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-600">
-                      <span>Completion</span>
-                      <span className="font-bold text-slate-800">{sp.completion_percentage ?? 0}%</span>
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                      <span>In-charge: <strong className="text-slate-700">{sp.project_incharge || 'Unassigned'}</strong></span>
+                      <span className="font-bold text-purple-600 group-hover:translate-x-1 transition-transform">View →</span>
                     </div>
                   </Link>
                 ))}
@@ -412,18 +413,10 @@ export const ProjectWorkspace: React.FC = () => {
 
         {activeTab === 'sub_analytics' && (
           <div className="max-w-7xl mx-auto space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sub-Projects</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Sub-Projects</span>
                 <div className="text-2xl font-black text-slate-800 mt-1">{subProjects.length}</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Avg Completion</span>
-                <div className="text-2xl font-black text-purple-600 mt-1">
-                  {subProjects.length > 0 
-                    ? Math.round(subProjects.reduce((acc, curr) => acc + (curr.completion_percentage || 0), 0) / subProjects.length)
-                    : 0}%
-                </div>
               </div>
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Completed Modules</span>
@@ -432,9 +425,11 @@ export const ProjectWorkspace: React.FC = () => {
                 </div>
               </div>
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Modules</span>
-                <div className="text-2xl font-black text-blue-600 mt-1">
-                  {subProjects.filter(sp => sp.status !== 'COMPLETED' && sp.status !== 'CANCELLED').length}
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Avg Completion</span>
+                <div className="text-2xl font-black text-purple-600 mt-1">
+                  {subProjects.length > 0 
+                    ? Math.round(subProjects.reduce((acc, curr) => acc + (curr.completion_percentage || 0), 0) / subProjects.length)
+                    : 0}%
                 </div>
               </div>
             </div>
@@ -520,6 +515,7 @@ export const ProjectWorkspace: React.FC = () => {
             employees={employees}
             onCreateQuickTask={handleCreateQuickTask}
             onUpdateTaskField={handleUpdateTaskField}
+            onReorderTasks={handleReorderTasks}
           />
         )}
 
@@ -536,6 +532,7 @@ export const ProjectWorkspace: React.FC = () => {
                handleDeleteTask={handleDeleteTask}
                handleUpdateTaskStatus={handleUpdateTaskStatus}
                onUpdateTaskField={handleUpdateTaskField}
+               onReorderTasks={handleReorderTasks}
                employees={employees}
              />
           </div>
