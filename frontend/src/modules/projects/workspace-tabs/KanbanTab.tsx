@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical } from 'lucide-react';
+import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search } from 'lucide-react';
 
 interface KanbanTabProps {
   dynamicTasks: any[];
@@ -15,6 +15,21 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
   dynamicTasks, handleOpenEditTask, handleDeleteTask, handleUpdateTaskStatus, onUpdateTaskField, onReorderTasks, employees = [] 
 }) => {
   const [expandedParents, setExpandedParents] = useState<Record<number, boolean>>({});
+  const [openAssigneeTaskId, setOpenAssigneeTaskId] = useState<number | null>(null);
+  const [assigneeSearch, setAssigneeSearch] = useState('');
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpenAssigneeTaskId(null);
+        setAssigneeSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<{ taskId: number; position: 'above' | 'below' } | null>(null);
   const [activeOverColumn, setActiveOverColumn] = useState<string | null>(null);
@@ -206,9 +221,13 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
 
             <div className="flex items-center gap-2">
               {/* Multiple Assignees Avatar Stack Popover */}
-              <div className="group relative inline-block">
+              <div className="relative inline-block" ref={openAssigneeTaskId === task.id ? dropdownRef : undefined}>
                 <button
                   type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenAssigneeTaskId(openAssigneeTaskId === task.id ? null : task.id);
+                  }}
                   className="flex -space-x-1.5 overflow-hidden shrink-0 cursor-pointer"
                 >
                   {task.assignees && task.assignees.length > 0 ? (
@@ -245,37 +264,75 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                   )}
                 </button>
 
-                <div className="hidden group-hover:block group-focus-within:block absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 max-h-56 overflow-y-auto custom-scrollbar">
-                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2.5 py-1">
-                    Assignees
-                  </div>
-                  {employees.map(emp => {
-                    const currentIds = (task.assignees && task.assignees.length > 0)
-                      ? task.assignees.map((a: any) => a.id)
-                      : (task.assignee_id ? [task.assignee_id] : []);
-                    const isChecked = currentIds.includes(emp.id);
+                {openAssigneeTaskId === task.id && (
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2.5 max-h-64 overflow-y-auto custom-scrollbar">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
+                      <span>Assignees</span>
+                      <span className="text-[9px] font-semibold text-slate-400">
+                        {employees.filter(e => e.name?.toLowerCase().includes(assigneeSearch.toLowerCase())).length} found
+                      </span>
+                    </div>
+                    <div className="relative my-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search assignee..."
+                        value={assigneeSearch}
+                        onChange={(e) => setAssigneeSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full pl-8 pr-2.5 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white text-slate-700 placeholder:text-slate-400"
+                      />
+                    </div>
+                    <div className="space-y-0.5 mt-1">
+                      {(() => {
+                        const currentIds = (task.assignees && task.assignees.length > 0)
+                          ? task.assignees.map((a: any) => a.id)
+                          : (task.assignee_id ? [task.assignee_id] : []);
 
-                    return (
-                      <label key={emp.id} className="flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-50 rounded-xl cursor-pointer select-none text-xs font-medium text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={async (e) => {
-                            let updated: number[];
-                            if (e.target.checked) {
-                              updated = Array.from(new Set([...currentIds, emp.id]));
-                            } else {
-                              updated = currentIds.filter((id: number) => id !== emp.id);
-                            }
-                            await onUpdateTaskField?.(task.id, 'assignee_ids', updated);
-                          }}
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="truncate">{emp.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                        const filtered = employees.filter(emp => emp.name?.toLowerCase().includes(assigneeSearch.toLowerCase()));
+                        const sorted = [...filtered].sort((a, b) => {
+                          const aChecked = currentIds.includes(a.id);
+                          const bChecked = currentIds.includes(b.id);
+                          if (aChecked && !bChecked) return -1;
+                          if (!aChecked && bChecked) return 1;
+                          return 0;
+                        });
+
+                        if (sorted.length === 0) {
+                          return (
+                            <div className="text-center py-3 text-xs text-slate-400 font-medium">
+                              No assignees found
+                            </div>
+                          );
+                        }
+
+                        return sorted.map(emp => {
+                          const isChecked = currentIds.includes(emp.id);
+
+                          return (
+                            <label key={emp.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-slate-50 rounded-xl cursor-pointer select-none text-xs font-medium ${isChecked ? 'bg-indigo-50/60 text-indigo-900 font-semibold' : 'text-slate-700'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={async (e) => {
+                                  let updated: number[];
+                                  if (e.target.checked) {
+                                    updated = Array.from(new Set([...currentIds, emp.id]));
+                                  } else {
+                                    updated = currentIds.filter((id: number) => id !== emp.id);
+                                  }
+                                  await onUpdateTaskField?.(task.id, 'assignee_ids', updated);
+                                }}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <span className="truncate">{emp.name}</span>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Status select */}
