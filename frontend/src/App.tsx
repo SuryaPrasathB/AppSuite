@@ -30,6 +30,7 @@ import { UsersManagement } from './modules/portal/UsersManagement';
 import { BOM } from './modules/bom/BOM';
 import { CreateBOMPage } from './modules/bom/CreateBOMPage';
 import { Profile } from './modules/profile/Profile';
+import { GlobalDashboard } from './modules/dashboard/GlobalDashboard';
 
 
 const Footer: React.FC = () => {
@@ -108,6 +109,10 @@ const AppContent: React.FC = () => {
 
   if (location.pathname === '/users') {
     return <UsersManagement />;
+  }
+
+  if (location.pathname === '/global-dashboard') {
+    return <ProtectedRoute allowedRoles={['Administrator']}><GlobalDashboard /></ProtectedRoute>;
   }
 
   // If logged in, render the main layout with sidebar and header

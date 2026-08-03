@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell } from 'lucide-react';
+import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/apiClient';
 
@@ -147,6 +147,18 @@ export const Portal: React.FC = () => {
       border: 'border-slate-200/80 hover:border-slate-500/40',
       textHover: 'group-hover:text-slate-800',
       path: '/users',
+    });
+
+    modules.push({
+      id: 'global-dashboard',
+      title: 'Company Performance',
+      description: 'Big-screen dashboard showing global trends, real-time tasks tracking, and live ongoing projects.',
+      icon: Activity,
+      color: 'from-pink-600 to-rose-500',
+      shadow: 'shadow-sm hover:shadow-xl hover:shadow-pink-500/10',
+      border: 'border-slate-200/80 hover:border-pink-500/40',
+      textHover: 'group-hover:text-pink-600',
+      path: '/global-dashboard',
     });
   }
 

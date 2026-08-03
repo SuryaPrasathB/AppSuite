@@ -137,5 +137,10 @@ export const apiClient = {
     list: (limit = 50) => request<any[]>(`/notifications?limit=${limit}`),
     markRead: (id: number | string) => request<any>(`/notifications/${id}/read`, { method: 'PUT' }),
     markAllRead: () => request<any>('/notifications/read-all', { method: 'PUT' }),
+  },
+  announcements: {
+    listActive: (limit = 5) => request<any[]>(`/announcements/active?limit=${limit}`),
+    create: (body: any) => request<any>('/announcements', { method: 'POST', body: JSON.stringify(body) }),
+    deactivate: (id: number | string) => request<any>(`/announcements/${id}`, { method: 'DELETE' }),
   }
 };

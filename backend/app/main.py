@@ -7,6 +7,7 @@ from app.modules.store.routers import auth, products, vendors, inventory, layout
 from app.modules.projects import router as projects
 from app.modules.bom import router as bom
 from app.modules.notifications import router as notifications
+from app.modules.announcements import router as announcements
 
 app = FastAPI(
     title="Smart Store Management System API",
@@ -35,6 +36,7 @@ app.include_router(employees.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(bom.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+app.include_router(announcements, prefix="/api/announcements", tags=["Announcements"])
 
 # Valuation unit prices for dashboard KPI calculation
 UNIT_PRICES = {

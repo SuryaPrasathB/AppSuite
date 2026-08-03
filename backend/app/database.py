@@ -1756,6 +1756,65 @@ class DBStore:
             conn.close()
 
     @staticmethod
+    def log_activity(user_id: int, action: str, entity_type: str, entity_id: int, details: Dict[str, Any] = None) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        query = """
+            INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        values = (user_id, action, entity_type, entity_id, json.dumps(details) if details else None)
+        try:
+            cursor.execute(query, values)
+            conn.commit()
+            return True
+        except:
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+
+    # Announcements
+    @staticmethod
+    def get_active_announcements(limit=5) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE ORDER BY created_at DESC LIMIT %s", (limit,))
+        announcements = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for a in announcements:
+            if a.get('created_at'):
+                a['created_at'] = a['created_at'].isoformat()
+        return announcements
+
+    @staticmethod
+    def create_announcement(data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = "INSERT INTO announcements (message, created_by) VALUES (%s, %s)"
+        cursor.execute(query, (data.get("message"), user_id))
+        conn.commit()
+        announcement_id = cursor.lastrowid
+        cursor.execute("SELECT * FROM announcements WHERE id = %s", (announcement_id,))
+        announcement = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if announcement and announcement.get('created_at'):
+            announcement['created_at'] = announcement['created_at'].isoformat()
+        return announcement
+
+    @staticmethod
+    def deactivate_announcement(announcement_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE announcements SET is_active = FALSE WHERE id = %s", (announcement_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
     def get_service_tickets(project_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
