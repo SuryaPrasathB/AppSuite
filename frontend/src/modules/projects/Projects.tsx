@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Folder, CheckCircle2, Package, ClipboardCheck, TrendingUp, Plus, 
   Search, Calendar, Users, MoreVertical, X, Eye,
-  Briefcase, User, CalendarDays, Layers, Cpu, Zap, Building2, Hash, FileCode2, Edit2, Trash2, Edit
+  Briefcase, User, CalendarDays, Layers, Cpu, Zap, Building2, Hash, FileCode2, Edit2, Trash2, Edit,
+  CornerDownRight, ChevronRight, ChevronDown
 } from 'lucide-react';
 import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject, generateProjectPlan } from './api';
 import { useNavigate } from 'react-router-dom';
@@ -109,6 +110,43 @@ export const Projects: React.FC = () => {
 
   const filteredProjects = projects;
 
+  const getHierarchicalList = (list: any[]) => {
+    const rootProjects = list.filter(p => !p.parent_id);
+    const subMap = new Map<number, any[]>();
+    
+    list.forEach(p => {
+      if (p.parent_id) {
+        if (!subMap.has(p.parent_id)) subMap.set(p.parent_id, []);
+        subMap.get(p.parent_id)!.push(p);
+      }
+    });
+
+    const ordered: { item: any; isSub: boolean }[] = [];
+    const processedIds = new Set<number>();
+
+    rootProjects.forEach(root => {
+      ordered.push({ item: root, isSub: false });
+      processedIds.add(root.id);
+
+      const subs = subMap.get(root.id) || [];
+      subs.forEach(sub => {
+        ordered.push({ item: sub, isSub: true });
+        processedIds.add(sub.id);
+      });
+    });
+
+    // Handle any sub-projects whose parent isn't in current list
+    list.forEach(p => {
+      if (!processedIds.has(p.id)) {
+        ordered.push({ item: p, isSub: !!p.parent_id });
+      }
+    });
+
+    return ordered;
+  };
+
+  const hierarchicalProjects = getHierarchicalList(filteredProjects);
+
   const totalPages = Math.ceil(totalProjects / limit);
 
   return (
@@ -192,15 +230,42 @@ export const Projects: React.FC = () => {
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
+                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
                 </tr>
-              ) : filteredProjects.length > 0 ? (
-                filteredProjects.map((p) => (
-                  <tr key={p.id} onClick={() => navigate(`/projects/${p.id}`)} className="cursor-pointer hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
+              ) : hierarchicalProjects.length > 0 ? (
+                hierarchicalProjects.map(({ item: p, isSub }) => (
+                  <tr 
+                    key={p.id} 
+                    onClick={() => navigate(`/projects/${p.id}`)} 
+                    className={`cursor-pointer transition-colors ${
+                      isSub 
+                        ? 'bg-blue-50/30 hover:bg-blue-100/50 border-l-4 border-l-blue-400' 
+                        : p.is_parent 
+                          ? 'bg-purple-50/20 hover:bg-purple-50/50 border-l-4 border-l-purple-600'
+                          : 'hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <td className={`py-4 ${isSub ? 'pl-10 pr-6' : 'px-6'}`}>
                       <div>
-                        <div className="font-bold text-slate-800 text-sm">{p.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{p.code}</div>
+                        <div className="flex items-center gap-2">
+                          {isSub && (
+                            <CornerDownRight className="h-4 w-4 text-blue-500 shrink-0" />
+                          )}
+                          <span className={`font-bold text-sm ${isSub ? 'text-blue-900 font-semibold' : 'text-slate-800'}`}>{p.name}</span>
+                          {p.is_parent && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 shadow-2xs">
+                              Major Project {p.sub_projects_count > 0 && `(${p.sub_projects_count})`}
+                            </span>
+                          )}
+                          {p.parent_id && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200 shadow-2xs">
+                              Sub-Project
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                          <span className={isSub ? 'pl-6' : ''}>{p.code}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 font-bold text-slate-800">
@@ -298,7 +363,7 @@ export const Projects: React.FC = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
                     No projects found matching the criteria.
                   </td>
                 </tr>
@@ -338,6 +403,7 @@ export const Projects: React.FC = () => {
           project={editProjectId ? projects.find(p => p.id === editProjectId) : null}
           onSave={handleSaveProject}
           nextCode={nextProjectCode}
+          allProjects={projects}
         />
       </div>
 

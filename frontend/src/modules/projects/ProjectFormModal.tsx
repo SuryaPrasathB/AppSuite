@@ -11,14 +11,16 @@ interface ProjectFormModalProps {
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
   nextCode?: string;
+  allProjects?: any[];
 }
 
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
-  project, isOpen, onClose, onSave, nextCode 
+  project, isOpen, onClose, onSave, nextCode, allProjects = []
 }) => {
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [useAiPlanning, setUseAiPlanning] = useState(false);
+  const [projectTypeOption, setProjectTypeOption] = useState<'standalone' | 'major' | 'sub'>('standalone');
   const [form, setForm] = useState({
     code: '',
     name: '',
@@ -34,6 +36,8 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     no_of_panels: 1,
     budget_estimated: 0,
     budget_actual: 0,
+    parent_id: null as number | null,
+    is_parent: false,
     // AI fields
     objectives: '',
     scope: '',
@@ -52,6 +56,13 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     if (isOpen) {
       if (project) {
         setIsCodeManualOverride(true);
+        const isParent = project.is_parent || false;
+        const parentId = project.parent_id || null;
+        let pOption: 'standalone' | 'major' | 'sub' = 'standalone';
+        if (isParent) pOption = 'major';
+        else if (parentId) pOption = 'sub';
+        setProjectTypeOption(pOption);
+
         setForm({
           code: project.code || '',
           name: project.name || '',
@@ -67,6 +78,8 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           no_of_panels: project.no_of_panels || 1,
           budget_estimated: project.budget_estimated || 0,
           budget_actual: project.budget_actual || 0,
+          parent_id: parentId,
+          is_parent: isParent,
           objectives: '',
           scope: '',
           technologies: '',
@@ -78,6 +91,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       } else {
         setIsCodeManualOverride(false);
         setUseAiPlanning(false);
+        setProjectTypeOption('standalone');
         const today = new Date().toISOString().split('T')[0];
         setForm({
           code: nextCode || '',
@@ -94,6 +108,8 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           no_of_panels: 1,
           budget_estimated: 0,
           budget_actual: 0,
+          parent_id: null,
+          is_parent: false,
           objectives: '',
           scope: '',
           technologies: '',
@@ -105,6 +121,18 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       }
     }
   }, [isOpen, project, nextCode]);
+
+  const handleProjectTypeChange = (type: 'standalone' | 'major' | 'sub') => {
+    setProjectTypeOption(type);
+    if (type === 'major') {
+      setForm(prev => ({ ...prev, is_parent: true, parent_id: null }));
+    } else if (type === 'sub') {
+      const firstParent = allProjects.find(p => p.is_parent || !p.parent_id);
+      setForm(prev => ({ ...prev, is_parent: false, parent_id: firstParent ? firstParent.id : null }));
+    } else {
+      setForm(prev => ({ ...prev, is_parent: false, parent_id: null }));
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -142,6 +170,94 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
         <form onSubmit={handleSubmit} className="flex flex-col max-h-[80vh]">
           <div className="p-6 overflow-y-auto space-y-8 custom-scrollbar">
             
+            {/* Section 0: Hierarchy / Structure */}
+            <section>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                Project Hierarchy & Structure
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => handleProjectTypeChange('standalone')}
+                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    projectTypeOption === 'standalone'
+                      ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20'
+                      : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-600'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-slate-800">Single Project</span>
+                  <span className="text-[10px] text-slate-500 mt-1">Standard standalone project with default template folders.</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleProjectTypeChange('major')}
+                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    projectTypeOption === 'major'
+                      ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-500/20'
+                      : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-600'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    Major Project Container
+                  </span>
+                  <span className="text-[10px] text-slate-500 mt-1">Parent container for multiple sub-projects. No template subfolders.</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleProjectTypeChange('sub')}
+                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    projectTypeOption === 'sub'
+                      ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-600'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-slate-800">Sub-Project</span>
+                  <span className="text-[10px] text-slate-500 mt-1">Nested inside a major project folder on the server.</span>
+                </button>
+              </div>
+
+              {projectTypeOption === 'sub' && (
+                <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4">
+                  <label className="block text-[11px] font-bold text-blue-900 uppercase tracking-wide mb-1.5">
+                    Select Major Parent Project *
+                  </label>
+                  <select
+                    required
+                    value={form.parent_id || ''}
+                    onChange={(e) => setForm({ ...form, parent_id: parseInt(e.target.value) || null })}
+                    className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="" disabled>-- Select Major Parent Project --</option>
+                    {allProjects
+                      .filter(p => (p.is_parent || !p.parent_id) && p.id !== project?.id)
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} - {p.name} ({p.client_name || 'Client'})
+                        </option>
+                      ))
+                    }
+                  </select>
+                  <p className="text-[11px] text-blue-700 mt-2">
+                    📁 Server folder will be created at: <code className="bg-blue-100 px-1 py-0.5 rounded text-blue-900 font-mono text-[10px]">uploads/projects/MajorFolder/Sub No {form.code.split('/')[0] || 'Y'}_{form.name || 'Name'}</code>
+                  </p>
+                </div>
+              )}
+
+              {projectTypeOption === 'major' && (
+                <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 text-[11px] text-purple-800 flex items-center gap-2">
+                  <Folder className="h-4 w-4 text-purple-600 shrink-0" />
+                  <span>
+                    Major project folders contain sub-project directories. Standard template folders (BOM, Schematic, etc.) are disabled for major project containers.
+                  </span>
+                </div>
+              )}
+            </section>
+
+            <div className="h-px w-full bg-slate-100"></div>
+
             {/* Section 1: Core Details */}
             <section>
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
@@ -329,12 +445,13 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
             <div className="h-px w-full bg-slate-100"></div>
 
             {/* Section 4: Module Requirements */}
-            <section>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-                <Cpu className="h-4 w-4" />
-                Additional Requirements
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {!form.is_parent ? (
+              <section>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+                  <Cpu className="h-4 w-4" />
+                  Additional Template Requirements
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Software Card */}
                 <label className={`cursor-pointer relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
                   form.has_software 
@@ -393,6 +510,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 </label>
               </div>
             </section>
+            ) : null}
 
             {/* Section 5: AI Assisted Project Planning */}
             {!project && (

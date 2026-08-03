@@ -32,6 +32,8 @@ class ProjectCreate(BaseModel):
     no_of_panels: int = 1
     budget_estimated: Optional[float] = 0.00
     budget_actual: Optional[float] = 0.00
+    parent_id: Optional[int] = None
+    is_parent: bool = False
 
 class ProjectUpdate(BaseModel):
     code: Optional[str] = None
@@ -50,6 +52,8 @@ class ProjectUpdate(BaseModel):
     no_of_panels: Optional[int] = None
     budget_estimated: Optional[float] = None
     budget_actual: Optional[float] = None
+    parent_id: Optional[int] = None
+    is_parent: Optional[bool] = None
 
 def get_next_project_num():
     base_dir = settings.PROJECTS_BASE_DIR
@@ -67,8 +71,8 @@ def get_next_project_num():
     return max_num + 1 if max_num > 0 else 1
 
 @router.get("")
-def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None):
-    return DBStore.get_projects(page, limit, search, status)
+def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None):
+    return DBStore.get_projects(page, limit, search, status, parent_id)
 
 @router.get("/next-code")
 def get_next_code():
@@ -248,15 +252,9 @@ def get_my_overdue_tasks(current_user: Dict[str, Any] = Depends(get_current_user
         "count": len(overdue_tasks),
         "tasks": overdue_tasks
     }
-                
-    return {
-        "count": len(overdue_tasks),
-        "tasks": overdue_tasks
-    }
 
 @router.get("/dashboard/activity")
 def get_dashboard_activity():
-    # Use existing activities, fetching more
     activities = DBStore.get_all_project_activities(20)
     return activities
 
@@ -269,11 +267,13 @@ def get_project(project_id: int):
     
     tasks = DBStore.get_project_tasks(project_id)
     files = DBStore.get_project_files(project_id)
+    sub_projects = [p for p in projects if p.get("parent_id") == project_id]
     
     return {
         "project": proj,
         "tasks": tasks,
-        "files": files
+        "files": files,
+        "sub_projects": sub_projects
     }
 
 @router.post("")
@@ -282,7 +282,7 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
     if existing:
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
     
-    # 1. Determine folder name
+    # 1. Determine folder name and parent path
     match = re.search(r"(\d+)", project.code)
     if match:
         proj_num = match.group(1)
@@ -290,38 +290,55 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         proj_num = get_next_project_num()
 
     customer = project.client_name or "Unknown_Customer"
-    # clean invalid chars
     customer = re.sub(r'[\\/*?:"<>|]', "", customer)
     proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
-    folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
-    
+
     base_dir = settings.PROJECTS_BASE_DIR
-    full_path = os.path.join(base_dir, folder_name)
+
+    parent_project = None
+    if project.parent_id:
+        all_projects = DBStore.get_all_projects_unpaginated()
+        parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
+        if not parent_project:
+            raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
+
+    if parent_project:
+        # Sub-Project: Nest directly inside parent project folder
+        parent_folder = parent_project.get("folder_path")
+        if not parent_folder or not os.path.exists(parent_folder):
+            parent_folder = base_dir
+        folder_name = f"Sub No {proj_num}_{proj_name}"
+        full_path = os.path.join(parent_folder, folder_name)
+    else:
+        # Standalone or Major Project container
+        folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
+        full_path = os.path.join(base_dir, folder_name)
     
-    # Check if a folder for this project number already exists
-    if os.path.exists(base_dir):
-        for existing_folder in os.listdir(base_dir):
-            if existing_folder.startswith(f"Project No {proj_num}_") or existing_folder == folder_name:
-                raise HTTPException(status_code=400, detail=f"Project folder for project code {proj_num} already exists.")
+    # Check if a folder for this project already exists at full_path
+    if os.path.exists(full_path):
+        raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
     
     # 2. Create physical directories
     try:
         os.makedirs(full_path, exist_ok=False)
         
-        subfolders = [
-            "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-            "Test Report", "Service Report", "Installation Report",
-            "User Manual", "Photos", "Technical Specification"
-        ]
-        if project.has_software:
-            subfolders.append("Software")
-        if project.has_firmware:
-            subfolders.append("Firmware")
-        if project.has_transformer:
-            subfolders.append("Transformer Design")
-            
-        for sf in subfolders:
-            os.makedirs(os.path.join(full_path, sf), exist_ok=True)
+        subfolders = []
+        if not project.is_parent:
+            # Template subfolders are ONLY created for sub-projects or standalone projects (NOT for Major Projects)
+            subfolders = [
+                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+                "Test Report", "Service Report", "Installation Report",
+                "User Manual", "Photos", "Technical Specification"
+            ]
+            if project.has_software:
+                subfolders.append("Software")
+            if project.has_firmware:
+                subfolders.append("Firmware")
+            if project.has_transformer:
+                subfolders.append("Transformer Design")
+                
+            for sf in subfolders:
+                os.makedirs(os.path.join(full_path, sf), exist_ok=True)
             
     except FileExistsError:
         raise HTTPException(status_code=400, detail=f"Project folder already exists.")
@@ -333,9 +350,10 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
     proj_dict["folder_path"] = full_path
     saved_project = DBStore.add_project(proj_dict)
     
-    # 4. Create initial pending tasks in DB
-    for sf in subfolders:
-        DBStore.add_project_task(saved_project["id"], sf, "PENDING")
+    # 4. Create initial pending tasks in DB only if NOT a major parent project container
+    if not project.is_parent:
+        for sf in subfolders:
+            DBStore.add_project_task(saved_project["id"], sf, "PENDING")
         
     DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
 

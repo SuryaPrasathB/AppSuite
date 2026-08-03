@@ -132,7 +132,10 @@ CREATE TABLE IF NOT EXISTS projects (
     status VARCHAR(50) DEFAULT 'PLANNING',
     start_date DATE,
     end_date DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    parent_id INT NULL,
+    is_parent BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
 -- 10. BILL OF MATERIALS (BOMs) TABLE

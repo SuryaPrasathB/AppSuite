@@ -3,10 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import { 
   ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, 
   Clock, Package, FileText, StickyNote, Activity,
-  Briefcase
+  Briefcase, Layers, CornerDownRight, Folder, BarChart2,
+  TrendingUp, Plus, CheckCircle2, FolderPlus
 } from 'lucide-react';
 import { 
-  fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject,
+  fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
   uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask
 } from './api';
 import { ProjectFormModal } from './ProjectFormModal';
@@ -28,6 +29,8 @@ export const ProjectWorkspace: React.FC = () => {
   const [dynamicTasks, setDynamicTasks] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   
+  const [subProjects, setSubProjects] = useState<any[]>([]);
+  
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -46,6 +49,9 @@ export const ProjectWorkspace: React.FC = () => {
     estimated_hours: 0, actual_hours: 0,
   });
 
+  const [isSubProjectModalOpen, setIsSubProjectModalOpen] = useState(false);
+  const [allProjectsList, setAllProjectsList] = useState<any[]>([]);
+
   const loadData = async (projectId: number, silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -57,9 +63,14 @@ export const ProjectWorkspace: React.FC = () => {
       setProject(projDetails.project);
       setStaticTasks(projDetails.tasks);
       setFiles(projDetails.files);
+      setSubProjects(projDetails.sub_projects || []);
       setDynamicTasks(taskList);
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
+
+      if (projDetails.project?.is_parent) {
+        setActiveTab('sub_projects');
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -73,7 +84,13 @@ export const ProjectWorkspace: React.FC = () => {
     }
   }, [id]);
 
-  const tabs = [
+  const tabs = project?.is_parent ? [
+    { id: 'sub_projects', name: `Sub-Projects (${subProjects.length})`, icon: Layers },
+    { id: 'sub_analytics', name: 'Analytics & Rollup', icon: BarChart2 },
+    { id: 'overview', name: 'Major Project Details', icon: LayoutDashboard },
+    { id: 'notes', name: 'Major Project Notes', icon: StickyNote },
+    { id: 'activity', name: 'Activity Log', icon: Activity },
+  ] : [
     { id: 'tasks', name: 'Tasks', icon: CheckSquare },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
@@ -240,7 +257,28 @@ export const ProjectWorkspace: React.FC = () => {
                 <Briefcase className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-800 leading-tight">{project.name}</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-slate-800 leading-tight">{project.name}</h1>
+                  {project.is_parent && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                      Major Project ({subProjects.length} sub-projects)
+                    </span>
+                  )}
+                  {project.parent_id && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                      Sub-Project
+                    </span>
+                  )}
+                </div>
+                {project.parent_id && project.parent_name && (
+                  <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-1">
+                    <CornerDownRight className="h-3.5 w-3.5" />
+                    <span>Sub-project of Major Project:</span>
+                    <Link to={`/projects/${project.parent_id}`} className="underline font-bold hover:text-blue-800 transition-colors">
+                      {project.parent_name}
+                    </Link>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
                   <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600">{project.code}</span>
                   <span>•</span>
@@ -256,17 +294,27 @@ export const ProjectWorkspace: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => handleOpenEditTask()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
-            >
-              + Add Task
-            </button>
+            {!project.is_parent ? (
+              <button 
+                onClick={() => handleOpenEditTask()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
+              >
+                + Add Task
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsSubProjectModalOpen(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                Add Sub-Project
+              </button>
+            )}
             <button 
               onClick={() => setIsEditModalOpen(true)}
-              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg transition-colors border border-indigo-200"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors border border-slate-200 cursor-pointer"
             >
-              Edit Project
+              {project.is_parent ? 'Edit Major Project' : 'Edit Project'}
             </button>
           </div>
         </div>
@@ -296,6 +344,134 @@ export const ProjectWorkspace: React.FC = () => {
 
       {/* Workspace Content Area */}
       <div className="flex-1 overflow-y-auto p-6 relative">
+        {activeTab === 'sub_projects' && (
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Sub-Projects ({subProjects.length})</h2>
+                <p className="text-xs text-slate-500 font-medium">All sub-project modules linked directly inside this major project folder.</p>
+              </div>
+              <button
+                onClick={() => setIsSubProjectModalOpen(true)}
+                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Add Sub-Project
+              </button>
+            </div>
+
+            {subProjects.length === 0 ? (
+              <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-xs">
+                <FolderPlus className="h-10 w-10 text-purple-400 mx-auto mb-3" />
+                <h3 className="font-bold text-slate-800 text-base mb-1">No sub-projects yet</h3>
+                <p className="text-slate-500 font-medium text-xs max-w-md mx-auto mb-4">
+                  Major projects act as containers. Create sub-projects to manage individual BOMs, schematics, and task timelines.
+                </p>
+                <button
+                  onClick={() => setIsSubProjectModalOpen(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create First Sub-Project
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {subProjects.map(sp => (
+                  <Link
+                    key={sp.id}
+                    to={`/projects/${sp.id}`}
+                    className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm hover:shadow-md hover:border-purple-300 transition-all flex flex-col justify-between group"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+                          {sp.code}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          sp.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                          sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {sp.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-base mb-1 group-hover:text-purple-700 transition-colors">{sp.name}</h3>
+                      <p className="text-xs text-slate-500 line-clamp-2">{sp.description || 'Sub-project module.'}</p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-600">
+                      <span>Completion</span>
+                      <span className="font-bold text-slate-800">{sp.completion_percentage ?? 0}%</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'sub_analytics' && (
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sub-Projects</span>
+                <div className="text-2xl font-black text-slate-800 mt-1">{subProjects.length}</div>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Avg Completion</span>
+                <div className="text-2xl font-black text-purple-600 mt-1">
+                  {subProjects.length > 0 
+                    ? Math.round(subProjects.reduce((acc, curr) => acc + (curr.completion_percentage || 0), 0) / subProjects.length)
+                    : 0}%
+                </div>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Completed Modules</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">
+                  {subProjects.filter(sp => sp.status === 'COMPLETED').length}
+                </div>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Modules</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">
+                  {subProjects.filter(sp => sp.status !== 'COMPLETED' && sp.status !== 'CANCELLED').length}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+              <h3 className="font-bold text-slate-800 text-base mb-4">Sub-Projects Health & Status Rollup</h3>
+              <div className="space-y-4">
+                {subProjects.map(sp => (
+                  <div key={sp.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-800 text-sm">{sp.name}</h4>
+                        <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-slate-200 font-bold">{sp.code}</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2 mt-2 max-w-md">
+                        <div 
+                          className="bg-purple-600 h-2 rounded-full transition-all" 
+                          style={{ width: `${sp.completion_percentage || 0}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs font-bold text-slate-600">{sp.completion_percentage || 0}% Complete</span>
+                      <Link 
+                        to={`/projects/${sp.id}`} 
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        Open Workspace →
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
             <div className="md:col-span-2 space-y-6">
@@ -395,6 +571,22 @@ export const ProjectWorkspace: React.FC = () => {
         onClose={() => setIsEditModalOpen(false)}
         project={project}
         onSave={handleSaveProject}
+      />
+
+      <ProjectFormModal
+        isOpen={isSubProjectModalOpen}
+        onClose={() => setIsSubProjectModalOpen(false)}
+        project={null}
+        allProjects={[project]}
+        onSave={async (formData) => {
+          try {
+            await createProject({ ...formData, parent_id: project.id, is_parent: false });
+            setIsSubProjectModalOpen(false);
+            loadData(project.id);
+          } catch (err: any) {
+            showAlert(err.message || 'Failed to create sub-project');
+          }
+        }}
       />
 
       <TaskFormModal

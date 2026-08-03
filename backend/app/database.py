@@ -855,7 +855,7 @@ class DBStore:
 
     # PROJECTS METHODS
     @staticmethod
-    def get_projects(page: int = 1, limit: int = 100, search: str = None, status: str = None) -> Dict[str, Any]:
+    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
@@ -870,6 +870,10 @@ class DBStore:
             where_clauses.append("p.status = %s")
             params.append(status)
 
+        if parent_id is not None:
+            where_clauses.append("p.parent_id = %s")
+            params.append(parent_id)
+
         where_str = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
         # Count total
@@ -881,6 +885,8 @@ class DBStore:
 
         cursor.execute(f"""
             SELECT p.*,
+                parent_proj.name as parent_name,
+                (SELECT COUNT(*) FROM projects sub_p WHERE sub_p.parent_id = p.id) as sub_projects_count,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id) as total_dynamic_tasks,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id AND dt.status = 'COMPLETED') as completed_dynamic_tasks,
                 (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id) as total_static_tasks,
@@ -891,6 +897,7 @@ class DBStore:
                     WHERE pt.project_id = p.id
                 ) as completed_static_tasks
             FROM projects p 
+            LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
             {where_str}
             ORDER BY p.id DESC
             LIMIT %s OFFSET %s
@@ -909,19 +916,13 @@ class DBStore:
                 p['date_of_delivery'] = p['date_of_delivery'].isoformat()
             
             # boolean conversion
-            for k in ['has_software', 'has_firmware', 'has_transformer']:
+            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent']:
                 if k in p:
                     p[k] = bool(p[k])
                     
             # Calculate completion percentage
             total_tasks = p.get('total_dynamic_tasks', 0) + p.get('total_static_tasks', 0)
             completed_tasks = p.get('completed_dynamic_tasks', 0) + p.get('completed_static_tasks', 0)
-            
-            # Remove intermediate keys if desired, or keep them for frontend usage
-            # p.pop('total_dynamic_tasks', None)
-            # p.pop('completed_dynamic_tasks', None)
-            # p.pop('total_static_tasks', None)
-            # p.pop('completed_static_tasks', None)
             
             if total_tasks > 0:
                 p['completion_percentage'] = int((completed_tasks / total_tasks) * 100)
@@ -939,10 +940,18 @@ class DBStore:
     def get_all_projects_unpaginated() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM projects")
+        cursor.execute("""
+            SELECT p.*, parent_proj.name as parent_name
+            FROM projects p
+            LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
+        """)
         projects = cursor.fetchall()
         cursor.close()
         conn.close()
+        for p in projects:
+            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent']:
+                if k in p:
+                    p[k] = bool(p[k])
         return projects
 
     @staticmethod
@@ -951,8 +960,8 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         query = """
             INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
-                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project.get("code"), project.get("name"), project.get("po_number"),
@@ -964,7 +973,9 @@ class DBStore:
             1 if project.get("has_transformer") else 0,
             project.get("no_of_panels", 1),
             project.get("folder_path"),
-            project.get("date_of_delivery") or None
+            project.get("date_of_delivery") or None,
+            project.get("parent_id") or None,
+            1 if project.get("is_parent") else 0
         )
         cursor.execute(query, values)
         conn.commit()
@@ -981,15 +992,15 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery"]:
+        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id"]:
             if key in data:
                 updates.append(f"{key} = %s")
-                if key in ["start_date", "end_date", "date_of_delivery"] and not data[key]:
+                if key in ["start_date", "end_date", "date_of_delivery", "parent_id"] and not data[key]:
                     values.append(None)
                 else:
                     values.append(data[key])
                     
-        for key in ["has_software", "has_firmware", "has_transformer"]:
+        for key in ["has_software", "has_firmware", "has_transformer", "is_parent"]:
             if key in data:
                 updates.append(f"{key} = %s")
                 values.append(1 if data[key] else 0)
