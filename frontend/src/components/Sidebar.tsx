@@ -70,7 +70,7 @@ export const Sidebar: React.FC = () => {
       { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList }
     ];
     
-    if (hasRole(['Administrator', 'Store Manager', 'Manager'])) {
+    if (hasRole(['Administrator', 'Store Manager'])) {
       menuItems.push({ name: 'Daily Standup', path: '/projects/standup', icon: Users });
     }
     

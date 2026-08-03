@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Folder, CheckCircle2, Building2, User, CalendarDays, Layers, 
   Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X
@@ -9,7 +9,7 @@ interface ProjectFormModalProps {
   project?: any; // If provided, edit mode. If null, create mode.
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: any) => Promise<void>;
+  onSave: (data: any, closeAfterSave?: boolean) => Promise<any>;
   nextCode?: string;
   allProjects?: any[];
 }
@@ -17,6 +17,7 @@ interface ProjectFormModalProps {
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
   project, isOpen, onClose, onSave, nextCode, allProjects = []
 }) => {
+  const submitActionRef = useRef<'save' | 'save_and_add'>('save');
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [useAiPlanning, setUseAiPlanning] = useState(false);
@@ -138,7 +139,26 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSave({ ...form, isAiPlanning: useAiPlanning });
+    const action = submitActionRef.current;
+    
+    if (action === 'save_and_add') {
+      const savedProject = await onSave({ ...form, isAiPlanning: useAiPlanning }, false);
+      if (savedProject) {
+         setProjectTypeOption('sub');
+         setForm(prev => ({
+           ...prev,
+           code: '', 
+           name: '',
+           is_parent: false,
+           parent_id: savedProject.id,
+           budget: 0,
+           budget_actual: 0
+         }));
+         submitActionRef.current = 'save'; // reset back to default
+      }
+    } else {
+      await onSave({ ...form, isAiPlanning: useAiPlanning }, true);
+    }
   };
 
   return (
@@ -358,21 +378,23 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 Management & Client
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Customer Name</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Building2 className="h-4 w-4 text-slate-400" />
+                {projectTypeOption !== 'sub' && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Customer Name</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Building2 className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <input
+                        type="text"
+                        value={form.client_name}
+                        onChange={(e) => setForm({...form, client_name: e.target.value})}
+                        placeholder="Acme Corp"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={form.client_name}
-                      onChange={(e) => setForm({...form, client_name: e.target.value})}
-                      placeholder="Acme Corp"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
-                    />
                   </div>
-                </div>
+                )}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Incharge</label>
                   <div className="relative">
@@ -640,8 +662,19 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
             >
               Cancel
             </button>
+            {!project && (projectTypeOption === 'major' || projectTypeOption === 'standalone') && (
+              <button
+                type="submit"
+                onClick={() => { submitActionRef.current = 'save_and_add'; }}
+                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm flex items-center gap-2"
+              >
+                <Layers className="h-4 w-4" />
+                Save & Add Sub-Project
+              </button>
+            )}
             <button
               type="submit"
+              onClick={() => { submitActionRef.current = 'save'; }}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition-colors shadow-sm flex items-center gap-2"
             >
               <CheckCircle2 className="h-4 w-4" />

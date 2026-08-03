@@ -167,6 +167,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           onDragEnd={handleRowDragEnd}
           onDragOver={(e) => handleRowDragOver(e, task)}
           onDrop={(e) => handleRowDrop(e, task)}
+          onDoubleClick={() => handleOpenEditTask(task)}
           className={`hover:bg-indigo-50/30 transition-all text-sm group border-b border-slate-100 last:border-0 ${
             isBeingDragged ? 'opacity-30 bg-indigo-50/50 border-dashed border-indigo-300' : ''
           }`}

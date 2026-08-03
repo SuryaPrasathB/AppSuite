@@ -86,21 +86,26 @@ export const Projects: React.FC = () => {
     }
   };
 
-  const handleSaveProject = async (formData: any) => {
+  const handleSaveProject = async (formData: any, closeAfterSave = true) => {
     try {
+      let savedProject = null;
       if (editProjectId) {
-        await updateProject(editProjectId, formData);
+        savedProject = await updateProject(editProjectId, formData);
       } else {
         if (formData.isAiPlanning) {
           setIsGenerating(true);
-          await generateProjectPlan(formData);
+          savedProject = await generateProjectPlan(formData);
         } else {
-          await createProject(formData);
+          savedProject = await createProject(formData);
         }
       }
-      setIsNewProjectOpen(false);
-      setEditProjectId(null);
+      
+      if (closeAfterSave) {
+        setIsNewProjectOpen(false);
+        setEditProjectId(null);
+      }
       loadProjects();
+      return savedProject;
     } catch (err: any) {
       alert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
     } finally {

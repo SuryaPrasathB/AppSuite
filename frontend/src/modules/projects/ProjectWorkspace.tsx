@@ -47,7 +47,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [taskForm, setTaskForm] = useState({
     parent_id: null as number | null,
     title: '', description: '', status: 'TODO', priority: 'MEDIUM',
-    assignee_id: '', start_date: '', due_date: '', dependencies: [] as any[],
+    assignee_id: '', start_date: '', due_date: '', dependencies: [] as any[], blocking: [] as any[],
     estimated_hours: 0, actual_hours: 0,
   });
 
@@ -157,11 +157,27 @@ export const ProjectWorkspace: React.FC = () => {
           depsArray = task.dependencies.split(',').map((id: string) => ({ id: parseInt(id, 10), type: 'FS' })).filter((d: any) => d && !isNaN(d.id));
         }
       }
+      let blockingArray: any[] = [];
+      dynamicTasks.forEach(t => {
+        if (t.id !== task.id && t.dependencies) {
+           try {
+             const parsed = JSON.parse(t.dependencies);
+             if (Array.isArray(parsed) && parsed.some((d: any) => (typeof d === 'number' ? d : d.id) === task.id)) {
+               blockingArray.push({ id: t.id, type: 'FS' });
+             }
+           } catch {
+             if (t.dependencies.split(',').includes(task.id.toString())) {
+               blockingArray.push({ id: t.id, type: 'FS' });
+             }
+           }
+        }
+      });
+
       setTaskForm({
         parent_id: task.parent_id || null,
         title: task.title, description: task.description || '', status: task.status, priority: task.priority,
         assignee_id: task.assignee_id ? task.assignee_id.toString() : '',
-        start_date: task.start_date || '', due_date: task.due_date || '', dependencies: depsArray,
+        start_date: task.start_date || '', due_date: task.due_date || '', dependencies: depsArray, blocking: blockingArray,
         estimated_hours: task.estimated_hours || 0, actual_hours: task.actual_hours || 0,
       });
     } else {
@@ -172,6 +188,7 @@ export const ProjectWorkspace: React.FC = () => {
         start_date: '',
         due_date: '',
         dependencies: [],
+        blocking: [],
         estimated_hours: 0, actual_hours: 0,
       });
     }
@@ -187,7 +204,8 @@ export const ProjectWorkspace: React.FC = () => {
     const payload = {
       ...taskForm,
       assignee_id: taskForm.assignee_id ? parseInt(taskForm.assignee_id, 10) : null,
-      dependencies: taskForm.dependencies.length > 0 ? JSON.stringify(taskForm.dependencies) : null
+      dependencies: taskForm.dependencies.length > 0 ? JSON.stringify(taskForm.dependencies) : null,
+      blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null
     };
     try {
       if (editingTask) await updateDynamicTask(project.id, editingTask.id, payload);

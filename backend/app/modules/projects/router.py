@@ -14,7 +14,6 @@ from app.modules.projects.ai_planning import AIPlanningService
 from app.modules.projects.scheduling import SchedulingEngine
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
-
 class ProjectCreate(BaseModel):
     code: str = Field(..., description="Unique project code")
     name: str = Field(..., description="Name of the project")
@@ -581,6 +580,7 @@ class TaskCreate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
+    blocking: Optional[str] = None
     estimated_hours: Optional[float] = 0.00
     actual_hours: Optional[float] = 0.00
 
@@ -595,6 +595,7 @@ class TaskUpdate(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     dependencies: Optional[str] = None
+    blocking: Optional[str] = None
     estimated_hours: Optional[float] = None
     actual_hours: Optional[float] = None
 
@@ -669,6 +670,30 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
     
+    if task.blocking is not None:
+        try:
+            new_blocks = json.loads(task.blocking)
+            new_block_ids = [int(d["id"] if isinstance(d, dict) else d) for d in new_blocks]
+            
+            all_tasks_now = DBStore.get_dynamic_tasks(project_id)
+            for t in all_tasks_now:
+                if t["id"] == new_task["id"]:
+                    continue
+                should_be_blocked = t["id"] in new_block_ids
+                if should_be_blocked:
+                    t_deps = []
+                    if t.get("dependencies"):
+                        try:
+                            t_deps = json.loads(t["dependencies"])
+                        except:
+                            pass
+                    is_currently_blocked = any(int(d["id"] if isinstance(d, dict) else d) == new_task["id"] for d in t_deps)
+                    if not is_currently_blocked:
+                        t_deps.append({"id": new_task["id"], "type": "FS"})
+                        DBStore.update_dynamic_task(t["id"], {"dependencies": json.dumps(t_deps)})
+        except Exception as e:
+            print("Error processing blocking field on create:", e)
+    
     notify_user_ids = new_task.get("assignee_ids") or ([] if not new_task.get("assignee_id") else [new_task["assignee_id"]])
     proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
     proj_name = proj["name"] if proj else f"Project {project_id}"
@@ -722,6 +747,34 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
 
     if task.status and task.status != existing_task.get("status"):
         DBStore.add_project_activity(project_id, "TASK_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
+
+    if task.blocking is not None:
+        try:
+            new_blocks = json.loads(task.blocking)
+            new_block_ids = [int(d["id"] if isinstance(d, dict) else d) for d in new_blocks]
+            
+            all_tasks_now = DBStore.get_dynamic_tasks(project_id)
+            for t in all_tasks_now:
+                if t["id"] == task_id:
+                    continue
+                t_deps = []
+                if t.get("dependencies"):
+                    try:
+                        t_deps = json.loads(t["dependencies"])
+                    except:
+                        pass
+                
+                is_currently_blocked = any(int(d["id"] if isinstance(d, dict) else d) == task_id for d in t_deps)
+                should_be_blocked = t["id"] in new_block_ids
+                
+                if should_be_blocked and not is_currently_blocked:
+                    t_deps.append({"id": task_id, "type": "FS"})
+                    DBStore.update_dynamic_task(t["id"], {"dependencies": json.dumps(t_deps)})
+                elif not should_be_blocked and is_currently_blocked:
+                    t_deps = [d for d in t_deps if int(d["id"] if isinstance(d, dict) else d) != task_id]
+                    DBStore.update_dynamic_task(t["id"], {"dependencies": json.dumps(t_deps) if t_deps else None})
+        except Exception as e:
+            print("Error processing blocking field:", e)
 
     updated_assignee_ids = updated.get("assignee_ids") or []
     for uid in updated_assignee_ids:

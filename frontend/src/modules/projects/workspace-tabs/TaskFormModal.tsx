@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, User, Calendar, Flag, GitBranch, AlignLeft } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, User, Calendar, Flag, GitBranch, AlignLeft, AlertTriangle, MinusCircle, ArrowRightLeft, Search, CheckCircle2, Circle } from 'lucide-react';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 
@@ -17,6 +17,24 @@ interface TaskFormModalProps {
 export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   isOpen, onClose, onSave, taskForm, setTaskForm, editingTask, employees, dynamicTasks
 }) => {
+  const [depMenuOpen, setDepMenuOpen] = useState(false);
+  const [depMenuMode, setDepMenuMode] = useState<'main' | 'blocks' | 'blocked_by'>('main');
+  const [depSearch, setDepSearch] = useState('');
+  const depDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (depDropdownRef.current && !depDropdownRef.current.contains(e.target as Node)) {
+        setDepMenuOpen(false);
+        setTimeout(() => setDepMenuMode('main'), 200);
+      }
+    };
+    if (depMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [depMenuOpen]);
+
   if (!isOpen) return null;
 
   const currentProjectName = "Project Task";
@@ -231,64 +249,163 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
           {/* Dependencies / Blocked By Selector */}
           <div className="pt-4 border-t border-slate-100">
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Blocked By (Dependencies)</label>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl max-h-40 overflow-y-auto custom-scrollbar p-3 space-y-1.5">
-              {dynamicTasks.filter(t => t.id !== (editingTask?.id)).map(task => {
-                const isSelected = taskForm.dependencies.some((d: any) => typeof d === 'number' ? d === task.id : d.id === task.id);
-                const currentDep = taskForm.dependencies.find((d: any) => typeof d === 'number' ? d === task.id : d.id === task.id);
-                const currentType = typeof currentDep === 'object' && currentDep ? currentDep.type : 'FS';
-
-                return (
-                  <div key={task.id} className={`flex flex-col gap-1.5 p-2 rounded-xl border transition-colors ${isSelected ? 'bg-indigo-55 border-indigo-200' : 'hover:bg-slate-100 border-transparent'}`}>
-                    <label className="flex items-start gap-3 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setTaskForm((prev: any) => ({ ...prev, dependencies: [...prev.dependencies, { id: task.id, type: 'FS' }] }));
-                          } else {
-                            setTaskForm((prev: any) => ({ ...prev, dependencies: prev.dependencies.filter((d: any) => (typeof d === 'number' ? d !== task.id : d.id !== task.id)) }));
-                          }
-                        }}
-                      />
-                      <div className="flex flex-col flex-1">
-                        <span className="text-sm font-bold text-slate-800 leading-tight">{task.title}</span>
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{task.status}</span>
-                      </div>
+            {/* Selected Dependencies Lists */}
+            {(taskForm.dependencies.length > 0 || taskForm.blocking.length > 0) && (
+              <div className="mb-4 space-y-4">
+                {taskForm.dependencies.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                      Blocked By
                     </label>
-                    {isSelected && (
-                      <div className="pl-7 flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Type:</span>
-                        <select
-                          value={currentType}
-                          onChange={(e) => {
-                            setTaskForm((prev: any) => ({
-                              ...prev,
-                              dependencies: prev.dependencies.map((d: any) => {
-                                const id = typeof d === 'number' ? d : d.id;
-                                if (id === task.id) {
-                                  return { id, type: e.target.value };
-                                }
-                                return d;
-                              })
-                            }));
-                          }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                        >
-                          <option value="FS">Finish → Start (FS)</option>
-                          <option value="SS">Start → Start (SS)</option>
-                          <option value="FF">Finish → Finish (FF)</option>
-                          <option value="SF">Start → Finish (SF)</option>
-                        </select>
-                      </div>
-                    )}
+                    <div className="space-y-1.5">
+                      {taskForm.dependencies.map((d: any) => {
+                        const id = typeof d === 'number' ? d : d.id;
+                        const task = dynamicTasks.find(t => t.id === id);
+                        if (!task) return null;
+                        return (
+                          <div key={`dep-${id}`} className="flex items-center justify-between p-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+                            <div className="flex items-center gap-2.5">
+                              <Circle className="h-3.5 w-3.5 text-slate-300" />
+                              <span className="text-sm font-semibold text-slate-700">{task.title}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTaskForm((prev: any) => ({ ...prev, dependencies: prev.dependencies.filter((x: any) => (typeof x === 'number' ? x : x.id) !== id) }))}
+                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                );
-              })}
-              {dynamicTasks.filter(t => t.id !== (editingTask?.id)).length === 0 && (
-                <div className="text-xs text-slate-400 p-2 text-center italic">No other tasks available</div>
+                )}
+                {taskForm.blocking.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <MinusCircle className="h-3.5 w-3.5 text-rose-500" />
+                      Blocks
+                    </label>
+                    <div className="space-y-1.5">
+                      {taskForm.blocking.map((d: any) => {
+                        const id = typeof d === 'number' ? d : d.id;
+                        const task = dynamicTasks.find(t => t.id === id);
+                        if (!task) return null;
+                        return (
+                          <div key={`blk-${id}`} className="flex items-center justify-between p-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+                            <div className="flex items-center gap-2.5">
+                              <Circle className="h-3.5 w-3.5 text-slate-300" />
+                              <span className="text-sm font-semibold text-slate-700">{task.title}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTaskForm((prev: any) => ({ ...prev, blocking: prev.blocking.filter((x: any) => (typeof x === 'number' ? x : x.id) !== id) }))}
+                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="relative inline-block w-full" ref={depDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setDepMenuOpen(!depMenuOpen)}
+                className="w-fit flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+                Relate items or add dependencies
+              </button>
+
+              {depMenuOpen && (
+                <div className="absolute left-0 bottom-full mb-1 w-72 bg-[#1a1b1e] border border-slate-700/60 rounded-xl shadow-[0_-8px_30px_rgb(0,0,0,0.12)] z-50 overflow-hidden text-slate-200">
+                  {depMenuMode === 'main' ? (
+                    <div className="p-1.5 flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setDepMenuMode('blocks'); setDepSearch(''); }}
+                        className="flex items-center gap-3 w-full px-3 py-2 text-sm text-left hover:bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <MinusCircle className="h-4 w-4 text-rose-500 fill-rose-500/20" />
+                        This task blocks...
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDepMenuMode('blocked_by'); setDepSearch(''); }}
+                        className="flex items-center gap-3 w-full px-3 py-2 text-sm text-left hover:bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <AlertTriangle className="h-4 w-4 text-amber-500 fill-amber-500/20" />
+                        This task is blocked by...
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col max-h-64">
+                      <div className="p-2 border-b border-slate-700/50">
+                        <div className="flex items-center gap-2 bg-[#2a2b2e] px-2.5 py-1.5 rounded-lg border border-slate-700/50">
+                          <Search className="h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search..."
+                            value={depSearch}
+                            onChange={(e) => setDepSearch(e.target.value)}
+                            className="bg-transparent border-none text-sm w-full focus:outline-none focus:ring-0 text-slate-200 placeholder:text-slate-500 p-0"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="p-2 overflow-y-auto custom-scrollbar flex-1">
+                        <div className="text-[10px] font-bold text-slate-400 mb-1 px-1 flex items-center justify-between">
+                          <span>Recent Tasks</span>
+                          <Plus className="h-3 w-3" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          {dynamicTasks
+                            .filter(t => t.id !== editingTask?.id)
+                            .filter(t => t.title.toLowerCase().includes(depSearch.toLowerCase()))
+                            .map(task => {
+                              const isSelected = depMenuMode === 'blocks'
+                                ? taskForm.blocking.some((d: any) => (typeof d === 'number' ? d : d.id) === task.id)
+                                : taskForm.dependencies.some((d: any) => (typeof d === 'number' ? d : d.id) === task.id);
+                              
+                              return (
+                                <button
+                                  key={task.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const listKey = depMenuMode === 'blocks' ? 'blocking' : 'dependencies';
+                                    if (isSelected) {
+                                      setTaskForm((prev: any) => ({ ...prev, [listKey]: prev[listKey].filter((d: any) => (typeof d === 'number' ? d : d.id) !== task.id) }));
+                                    } else {
+                                      setTaskForm((prev: any) => ({ ...prev, [listKey]: [...prev[listKey], { id: task.id, type: 'FS' }] }));
+                                    }
+                                  }}
+                                  className="flex items-center gap-2.5 w-full px-2 py-1.5 text-sm text-left hover:bg-slate-800 rounded-lg transition-colors group"
+                                >
+                                  {isSelected ? (
+                                    <CheckCircle2 className="h-4 w-4 text-indigo-400 shrink-0" />
+                                  ) : (
+                                    <Circle className="h-4 w-4 text-slate-600 group-hover:text-slate-400 shrink-0 border-dashed" />
+                                  )}
+                                  <span className="truncate flex-1">{task.title}</span>
+                                </button>
+                              );
+                            })}
+                          {dynamicTasks.filter(t => t.id !== editingTask?.id).length === 0 && (
+                            <div className="text-xs text-slate-500 p-2 text-center italic">No tasks available</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
