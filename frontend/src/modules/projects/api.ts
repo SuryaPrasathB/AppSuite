@@ -61,6 +61,12 @@ export async function fetchNextProjectCode() {
   return res.json();
 }
 
+export async function fetchStandupData() {
+  const res = await fetch(`${API_BASE}/dashboard/standup`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch standup data');
+  return res.json();
+}
+
 export async function fetchProjectDetails(id: number) {
   const res = await fetch(`${API_BASE}/${id}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch project details');

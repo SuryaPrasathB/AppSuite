@@ -67,10 +67,17 @@ export const Sidebar: React.FC = () => {
     menuItems = [
       { name: 'Dashboard', path: '/projects/dashboard', icon: LayoutDashboard },
       { name: 'Projects', path: '/projects', icon: Folder },
-      { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList },
+      { name: 'My Tasks', path: '/projects/my-tasks', icon: ClipboardList }
+    ];
+    
+    if (hasRole(['Administrator', 'Store Manager', 'Manager'])) {
+      menuItems.push({ name: 'Daily Standup', path: '/projects/standup', icon: Users });
+    }
+    
+    menuItems.push(
       { name: 'Global Timeline', path: '/projects/timeline', icon: Folder },
       { name: 'Service Desk', path: '/projects/service-tickets', icon: AlertCircle }
-    ];
+    );
   } else if (activeModule === 'bom') {
     moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };
     menuItems = [

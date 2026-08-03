@@ -258,6 +258,59 @@ def get_dashboard_activity():
     activities = DBStore.get_all_project_activities(20)
     return activities
 
+@router.get("/dashboard/standup")
+def get_standup_dashboard(current_user: Dict[str, Any] = Depends(get_current_user)):
+    # Restrict to admins/managers
+    if current_user.get("role") not in ["Administrator", "Store Manager", "Manager"]:
+        raise HTTPException(status_code=403, detail="Not authorized to view standup dashboard")
+
+    try:
+        all_employees = DBStore.get_employees()
+    except Exception:
+        all_employees = []
+        
+    all_tasks = DBStore.get_all_dynamic_tasks()
+    all_projects = DBStore.get_all_projects_unpaginated()
+    
+    project_map = {p["id"]: p["code"] + " - " + p["name"] for p in all_projects}
+
+    standup_data = {}
+    for emp in all_employees:
+        standup_data[str(emp["id"])] = {
+            "id": emp["id"],
+            "name": emp["name"],
+            "role": emp.get("role", "Employee"),
+            "tasks": []
+        }
+        
+    for task in all_tasks:
+        status = task.get("status", "TODO")
+        if status in ["CANCELLED"]:
+            continue
+            
+        assignees = task.get("assignees") or []
+        if not assignees and task.get("assignee_id"):
+            assignees = [{"id": task["assignee_id"], "name": task.get("assignee_name", "Unknown")}]
+            
+        task_with_proj = dict(task)
+        if "project_id" in task_with_proj:
+            task_with_proj["project_name"] = project_map.get(task_with_proj["project_id"], "Unknown Project")
+            
+        for emp in assignees:
+            emp_id_str = str(emp["id"])
+            if emp_id_str not in standup_data:
+                standup_data[emp_id_str] = {
+                    "id": emp["id"],
+                    "name": emp["name"],
+                    "role": emp.get("role", "Employee"),
+                    "tasks": []
+                }
+            standup_data[emp_id_str]["tasks"].append(task_with_proj)
+            
+    # Filter out employees with 0 tasks to keep dashboard clean? 
+    # Or keep them so managers know who has no work? Let's keep them, frontend can filter.
+    return list(standup_data.values())
+
 @router.get("/{project_id}")
 def get_project(project_id: int):
     projects = DBStore.get_all_projects_unpaginated()
