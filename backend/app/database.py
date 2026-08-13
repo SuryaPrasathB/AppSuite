@@ -916,7 +916,7 @@ class DBStore:
                 p['date_of_delivery'] = p['date_of_delivery'].isoformat()
             
             # boolean conversion
-            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent']:
+            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
                     
@@ -949,7 +949,7 @@ class DBStore:
         cursor.close()
         conn.close()
         for p in projects:
-            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent']:
+            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
         return projects
@@ -960,8 +960,8 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         query = """
             INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
-                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project.get("code"), project.get("name"), project.get("po_number"),
@@ -975,7 +975,8 @@ class DBStore:
             project.get("folder_path"),
             project.get("date_of_delivery") or None,
             project.get("parent_id") or None,
-            1 if project.get("is_parent") else 0
+            1 if project.get("is_parent") else 0,
+            1 if project.get("is_template") else 0
         )
         cursor.execute(query, values)
         conn.commit()
@@ -1000,7 +1001,7 @@ class DBStore:
                 else:
                     values.append(data[key])
                     
-        for key in ["has_software", "has_firmware", "has_transformer", "is_parent"]:
+        for key in ["has_software", "has_firmware", "has_transformer", "is_parent", "is_template"]:
             if key in data:
                 updates.append(f"{key} = %s")
                 values.append(1 if data[key] else 0)
@@ -1027,7 +1028,7 @@ class DBStore:
                 p['end_date'] = p['end_date'].isoformat()
             if p.get('date_of_delivery') and hasattr(p['date_of_delivery'], 'isoformat'):
                 p['date_of_delivery'] = p['date_of_delivery'].isoformat()
-            for k in ['has_software', 'has_firmware', 'has_transformer']:
+            for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
         return p
@@ -1987,10 +1988,12 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tickets:
-            if t.get('created_at'):
+            if t.get('created_at') and hasattr(t['created_at'], 'isoformat'):
                 t['created_at'] = t['created_at'].isoformat()
-            if t.get('closed_at'):
+            if t.get('closed_at') and hasattr(t['closed_at'], 'isoformat'):
                 t['closed_at'] = t['closed_at'].isoformat()
+            if t.get('updated_at') and hasattr(t['updated_at'], 'isoformat'):
+                t['updated_at'] = t['updated_at'].isoformat()
         return tickets
 
     @staticmethod
@@ -2095,10 +2098,12 @@ class DBStore:
             updated_ticket = cursor.fetchone()
             
             if updated_ticket:
-                if updated_ticket.get('created_at'):
+                if updated_ticket.get('created_at') and hasattr(updated_ticket['created_at'], 'isoformat'):
                     updated_ticket['created_at'] = updated_ticket['created_at'].isoformat()
-                if updated_ticket.get('closed_at'):
+                if updated_ticket.get('closed_at') and hasattr(updated_ticket['closed_at'], 'isoformat'):
                     updated_ticket['closed_at'] = updated_ticket['closed_at'].isoformat()
+                if updated_ticket.get('updated_at') and hasattr(updated_ticket['updated_at'], 'isoformat'):
+                    updated_ticket['updated_at'] = updated_ticket['updated_at'].isoformat()
                     
             return updated_ticket
         except Exception as e:
@@ -2108,35 +2113,3 @@ class DBStore:
             cursor.close()
             conn.close()
 
-    @staticmethod
-    def update_project(project_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        try:
-            updates = []
-            values = []
-            for k, v in data.items():
-                updates.append(f"{k} = %s")
-                values.append(v)
-            if not updates:
-                return None
-            values.append(project_id)
-            query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s"
-            cursor.execute(query, tuple(values))
-            conn.commit()
-            
-            cursor.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
-            updated_proj = cursor.fetchone()
-            if updated_proj and updated_proj.get('created_at'):
-                updated_proj['created_at'] = updated_proj['created_at'].isoformat()
-            if updated_proj and updated_proj.get('start_date'):
-                updated_proj['start_date'] = updated_proj['start_date'].isoformat()
-            if updated_proj and updated_proj.get('end_date'):
-                updated_proj['end_date'] = updated_proj['end_date'].isoformat()
-            return updated_proj
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cursor.close()
-            conn.close()

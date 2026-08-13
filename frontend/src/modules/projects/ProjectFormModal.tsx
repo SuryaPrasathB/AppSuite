@@ -38,6 +38,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     budget_estimated: 0,
     budget_actual: 0,
     parent_id: null as number | null,
+    template_id: null as number | null,
     is_parent: false,
     // AI fields
     objectives: '',
@@ -80,6 +81,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           budget_estimated: project.budget_estimated || 0,
           budget_actual: project.budget_actual || 0,
           parent_id: parentId,
+          template_id: null,
           is_parent: isParent,
           objectives: '',
           scope: '',
@@ -110,6 +112,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           budget_estimated: 0,
           budget_actual: 0,
           parent_id: null,
+          template_id: null,
           is_parent: false,
           objectives: '',
           scope: '',
@@ -272,6 +275,29 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                   <span>
                     Major project folders contain sub-project directories. Standard template folders (BOM, Schematic, etc.) are disabled for major project containers.
                   </span>
+                </div>
+              )}
+
+              {!project && projectTypeOption !== 'major' && (
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 mt-4">
+                  <label className="block text-[11px] font-bold text-indigo-900 uppercase tracking-wide mb-1.5">
+                    Start from Template (Optional)
+                  </label>
+                  <select
+                    value={form.template_id || ''}
+                    onChange={(e) => setForm({ ...form, template_id: parseInt(e.target.value) || null })}
+                    className="w-full bg-white border border-indigo-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="">-- No Template (Start from Scratch) --</option>
+                    {allProjects
+                      .filter(p => p.is_template)
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))
+                    }
+                  </select>
                 </div>
               )}
             </section>

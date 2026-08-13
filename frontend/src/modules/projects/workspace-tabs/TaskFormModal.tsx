@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, User, Calendar, Flag, GitBranch, AlignLeft, AlertTriangle, MinusCircle, ArrowRightLeft, Search, CheckCircle2, Circle } from 'lucide-react';
+import { X, User, Calendar, Flag, GitBranch, AlignLeft, AlertTriangle, MinusCircle, ArrowRightLeft, Search, CheckCircle2, Circle, Plus } from 'lucide-react';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 

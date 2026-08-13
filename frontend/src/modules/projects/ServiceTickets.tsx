@@ -3,7 +3,7 @@ import { AlertCircle, Plus, CheckCircle2, Clock, ShieldAlert, X } from 'lucide-r
 import { Combobox } from '../../components/Combobox';
 import { apiClient } from '../../api/apiClient';
 
-const API_BASE_URL = `http://localhost:8000/api`;
+const API_BASE_URL = `/api`;
 
 async function apiRequest(endpoint: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers || {});
@@ -144,7 +144,7 @@ export const ServiceTickets = () => {
 
     if (loading) {
         return (
-            <div className="flex justify-center items-center h-full min-h-[400px]">
+            <div className="flex justify-center items-center h-full min-h-100">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
             </div>
         );
@@ -353,8 +353,8 @@ export const ServiceTickets = () => {
                                                         return images.length > 0 && (
                                                             <div className="flex gap-2 mt-3 flex-wrap">
                                                                 {images.map((img: string, idx: number) => (
-                                                                    <a key={idx} href={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:8000'}${img}`} target="_blank" rel="noreferrer">
-                                                                        <img src={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:8000'}${img}`} alt="Resolution" className="h-16 w-16 object-cover rounded border border-emerald-200 hover:opacity-80 transition-opacity" />
+                                                                    <a key={idx} href={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : ''}${img}`} target="_blank" rel="noreferrer">
+                                                                        <img src={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : ''}${img}`} alt="Resolution" className="h-16 w-16 object-cover rounded border border-emerald-200 hover:opacity-80 transition-opacity" />
                                                                     </a>
                                                                 ))}
                                                             </div>

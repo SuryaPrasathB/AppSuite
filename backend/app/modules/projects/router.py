@@ -33,6 +33,8 @@ class ProjectCreate(BaseModel):
     budget_actual: Optional[float] = 0.00
     parent_id: Optional[int] = None
     is_parent: bool = False
+    is_template: bool = False
+    template_id: Optional[int] = None
 
 class ProjectUpdate(BaseModel):
     code: Optional[str] = None
@@ -53,6 +55,7 @@ class ProjectUpdate(BaseModel):
     budget_actual: Optional[float] = None
     parent_id: Optional[int] = None
     is_parent: Optional[bool] = None
+    is_template: Optional[bool] = None
 
 def get_next_project_num():
     base_dir = settings.PROJECTS_BASE_DIR
@@ -363,7 +366,12 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         parent_folder = parent_project.get("folder_path")
         if not parent_folder or not os.path.exists(parent_folder):
             parent_folder = base_dir
-        folder_name = f"Sub No {proj_num}_{proj_name}"
+            
+        # Calculate sub-project number by counting existing children
+        existing_sub_projects = [p for p in all_projects if p.get("parent_id") == project.parent_id]
+        sub_proj_num = str(len(existing_sub_projects) + 1).zfill(3)
+            
+        folder_name = f"Sub No {sub_proj_num}_{proj_name}"
         full_path = os.path.join(parent_folder, folder_name)
     else:
         # Standalone or Major Project container
@@ -411,6 +419,18 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         for sf in subfolders:
             DBStore.add_project_task(saved_project["id"], sf, "PENDING")
         
+    if project.template_id:
+        template_tasks = DBStore.get_dynamic_tasks(project.template_id)
+        for t in template_tasks:
+            new_task = {
+                "title": t["title"],
+                "description": t.get("description"),
+                "status": "TODO",
+                "priority": t.get("priority", "MEDIUM"),
+                "estimated_hours": t.get("estimated_hours", 0.0)
+            }
+            DBStore.add_dynamic_task(saved_project["id"], new_task)
+
     DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
 
     return saved_project
@@ -423,20 +443,28 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Check permissions if completing or changing critical info
-    if project.status == "COMPLETED" and existing_proj["status"] != "COMPLETED":
+    if project.status == "COMPLETED" and existing_proj.get("status") != "COMPLETED":
         if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != existing_proj.get("project_incharge"):
             raise HTTPException(status_code=403, detail="Not authorized to complete project")
 
     project_dump = project.model_dump(exclude_unset=True)
 
     # Handle folder path update if code, name, or client_name changed
-    new_code = project_dump.get("code", existing_proj.get("code", ""))
-    new_name = project_dump.get("name", existing_proj.get("name", ""))
-    new_client = project_dump.get("client_name", existing_proj.get("client_name", ""))
+    new_code = project_dump.get("code")
+    if new_code is None:
+        new_code = existing_proj.get("code") or ""
+    
+    new_name = project_dump.get("name")
+    if new_name is None:
+        new_name = existing_proj.get("name") or ""
+        
+    new_client = project_dump.get("client_name")
+    if new_client is None:
+        new_client = existing_proj.get("client_name") or ""
 
-    old_code = existing_proj.get("code", "")
-    old_name = existing_proj.get("name", "")
-    old_client = existing_proj.get("client_name", "")
+    old_code = existing_proj.get("code") or ""
+    old_name = existing_proj.get("name") or ""
+    old_client = existing_proj.get("client_name") or ""
 
     old_folder_path = existing_proj.get("folder_path")
 
@@ -447,9 +475,18 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
         customer = new_client or "Unknown_Customer"
         customer = re.sub(r'[\\/*?:"<>|]', "", customer)
         proj_name_cleaned = re.sub(r'[\\/*?:"<>|]', "", new_name)
-        new_folder_name = f"Project No {proj_num}_{customer}_{proj_name_cleaned}"
+        
+        if existing_proj.get("parent_id"):
+            # Extract existing sub project number from the old folder path
+            old_basename = os.path.basename(old_folder_path)
+            sub_match = re.search(r"Sub No (\d+)", old_basename)
+            sub_proj_num = sub_match.group(1) if sub_match else "Unknown"
+            new_folder_name = f"Sub No {sub_proj_num}_{proj_name_cleaned}"
+        else:
+            new_folder_name = f"Project No {proj_num}_{customer}_{proj_name_cleaned}"
 
-        base_dir = settings.PROJECTS_BASE_DIR
+        # Use dirname of old folder to keep sub-projects nested inside their parent
+        base_dir = os.path.dirname(old_folder_path) if old_folder_path else settings.PROJECTS_BASE_DIR
         new_folder_path = os.path.join(base_dir, new_folder_name)
 
         if old_folder_path != new_folder_path:
@@ -464,8 +501,13 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
             else:
                 # old folder is missing, maybe user renamed it manually.
                 # Just accept the new folder path. Create it if it somehow isn't there.
-                if not os.path.exists(new_folder_path):
-                    os.makedirs(new_folder_path, exist_ok=True)
+                try:
+                    if not os.path.exists(new_folder_path):
+                        os.makedirs(new_folder_path, exist_ok=True)
+                except Exception as e:
+                    # If the drive (like Z:) is not mapped, it throws an error. We just ignore it 
+                    # so the DB update still succeeds even if physical folder isn't created locally.
+                    print(f"Warning: Could not create folder {new_folder_path}: {e}")
             
             project_dump["folder_path"] = new_folder_path
 

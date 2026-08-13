@@ -1,4 +1,4 @@
-const API_BASE = `http://${window.location.hostname}:8000/api/projects`;
+const API_BASE = `/api/projects`;
 
 function getAuthHeaders(isFileUpload = false): Headers {
   const headers = new Headers();
@@ -242,7 +242,7 @@ export async function deleteTaskComment(projectId: number, taskId: number, comme
 }
 
 export async function fetchEmployees() {
-  const res = await fetch(`http://${window.location.hostname}:8000/api/employees`, { headers: getAuthHeaders() });
+  const res = await fetch(`/api/employees`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch employees');
   return res.json();
 }

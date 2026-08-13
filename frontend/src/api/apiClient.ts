@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const API_BASE_URL = `http://${window.location.hostname}:8000/api`;
+const API_BASE_URL = `/api`;
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
@@ -113,7 +113,7 @@ export const apiClient = {
       const token = localStorage.getItem('smart_store_user') 
         ? JSON.parse(localStorage.getItem('smart_store_user') || '{}').token 
         : '';
-      return fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/projects/service-tickets/${id}/resolve`, {
+      return fetch(`${import.meta.env.VITE_API_URL || '/api'}/projects/service-tickets/${id}/resolve`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

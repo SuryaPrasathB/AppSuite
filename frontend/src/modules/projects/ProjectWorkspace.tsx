@@ -124,6 +124,16 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
+  const handleSaveAsTemplate = async () => {
+    try {
+      await updateProject(project.id, { is_template: true });
+      showAlert('Project successfully saved as template');
+      loadData(project.id);
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to save as template');
+    }
+  };
+
   const handleFileUpload = async (taskName: string, files: globalThis.File[]) => {
     try {
       setUploadingTask(taskName);
@@ -293,6 +303,11 @@ export const ProjectWorkspace: React.FC = () => {
                       Sub-Project
                     </span>
                   )}
+                  {project.is_template && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                      TEMPLATE
+                    </span>
+                  )}
                 </div>
                 {project.parent_id && project.parent_name && (
                   <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-1">
@@ -326,6 +341,14 @@ export const ProjectWorkspace: React.FC = () => {
                 + Add Task
               </button>
             ) : null}
+            {!project.is_template && (
+              <button 
+                onClick={handleSaveAsTemplate}
+                className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs rounded-lg transition-colors"
+              >
+                Save as Template
+              </button>
+            )}
             <button 
               onClick={() => setIsEditModalOpen(true)}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors"

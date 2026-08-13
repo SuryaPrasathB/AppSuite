@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS projects (
     end_date DATE,
     parent_id INT NULL,
     is_parent BOOLEAN DEFAULT FALSE,
+    is_template BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES projects(id) ON DELETE CASCADE
 );
