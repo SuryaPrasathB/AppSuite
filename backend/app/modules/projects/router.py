@@ -60,17 +60,31 @@ class ProjectUpdate(BaseModel):
 
 def get_next_project_num():
     base_dir = settings.PROJECTS_BASE_DIR
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir, exist_ok=True)
-        return 1
     max_num = 0
-    for folder in os.listdir(base_dir):
-        if os.path.isdir(os.path.join(base_dir, folder)):
-            match = re.search(r"Project No (\d+)_", folder, re.IGNORECASE)
+    try:
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir, exist_ok=True)
+            return 1
+            
+        for folder in os.listdir(base_dir):
+            if os.path.isdir(os.path.join(base_dir, folder)):
+                match = re.search(r"Project No (\d+)_", folder, re.IGNORECASE)
+                if match:
+                    num = int(match.group(1))
+                    if num > max_num:
+                        max_num = num
+    except Exception as e:
+        print(f"Warning: Could not access or create base directory {base_dir}: {e}")
+        # Fallback to DB if folder scan fails
+        projects = DBStore.get_all_projects_unpaginated()
+        for p in projects:
+            code = p.get("code", "")
+            match = re.search(r"(\d+)/PRJ/", code)
             if match:
                 num = int(match.group(1))
                 if num > max_num:
                     max_num = num
+                    
     return max_num + 1 if max_num > 0 else 1
 
 @router.get("")

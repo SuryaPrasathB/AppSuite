@@ -132,6 +132,16 @@ CREATE TABLE IF NOT EXISTS projects (
     status VARCHAR(50) DEFAULT 'PLANNING',
     start_date DATE,
     end_date DATE,
+    project_incharge VARCHAR(255),
+    has_software BOOLEAN DEFAULT FALSE,
+    has_firmware BOOLEAN DEFAULT FALSE,
+    has_transformer BOOLEAN DEFAULT FALSE,
+    no_of_panels INT DEFAULT 1,
+    folder_path VARCHAR(500),
+    date_of_delivery DATE,
+    constraints TEXT,
+    budget DECIMAL(15, 2),
+    priority VARCHAR(20) DEFAULT 'MEDIUM',
     parent_id INT NULL,
     is_parent BOOLEAN DEFAULT FALSE,
     is_template BOOLEAN DEFAULT FALSE,
@@ -169,18 +179,25 @@ CREATE INDEX idx_bom_items_bom ON bom_items(bom_id);
 -- 12. SERVICE TICKETS TABLE
 CREATE TABLE IF NOT EXISTS service_tickets (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    project_id INT,
-    employee_id INT,
+    project_id INT NULL,
+    custom_project_name VARCHAR(255) NULL,
+    creator_id INT NULL,
+    assignee_id INT NULL,
+    resolved_by INT NULL,
     title VARCHAR(255) NOT NULL,
     description TEXT,
     status VARCHAR(50) DEFAULT 'OPEN',
     resolution_notes TEXT,
     resolution_time_mins INT,
+    resolution_images TEXT,
     history_logs TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     closed_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+    FOREIGN KEY (creator_id) REFERENCES employees(id) ON DELETE SET NULL,
+    FOREIGN KEY (assignee_id) REFERENCES employees(id) ON DELETE SET NULL,
+    FOREIGN KEY (resolved_by) REFERENCES employees(id) ON DELETE SET NULL
 );
 CREATE INDEX idx_service_tickets_project ON service_tickets(project_id);
 CREATE INDEX idx_service_tickets_status ON service_tickets(status);
