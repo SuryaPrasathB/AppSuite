@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search } from 'lucide-react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
@@ -152,6 +152,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     const isAboveTarget = isTarget && dragOverTarget?.position === 'above';
     const isBelowTarget = isTarget && dragOverTarget?.position === 'below';
 
+    let depsArray: any[] = [];
+    try { if (task.dependencies) depsArray = JSON.parse(task.dependencies); } catch {}
+    if (!Array.isArray(depsArray)) depsArray = [];
+    
+    let blocksArray: any[] = [];
+    try { if (task.blocking) blocksArray = JSON.parse(task.blocking); } catch {}
+    if (!Array.isArray(blocksArray)) blocksArray = [];
+
     return (
       <React.Fragment key={task.id}>
         {isAboveTarget && (
@@ -185,8 +193,50 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               ) : (
                 <Circle className="h-4 w-4 text-indigo-500 fill-indigo-500/10 shrink-0" />
               )}
-              <div className="flex-1 font-medium text-slate-800 truncate" title={task.title}>
-                {task.title}
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <div className="font-medium text-slate-800 truncate" title={task.title}>
+                  {task.title}
+                </div>
+                {depsArray.length > 0 && (
+                  <div className="group/dep relative flex items-center justify-center shrink-0 cursor-help" title="Blocked by other tasks">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
+                    <div className="hidden group-hover/dep:flex absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-[#1a1b1e] border border-slate-700 rounded-lg p-2 z-[60] shadow-xl whitespace-nowrap text-xs text-slate-200">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Blocked By</span>
+                        {depsArray.map((d: any, idx) => {
+                          const depId = typeof d === 'number' ? d : d.id;
+                          const depTask = dynamicTasks.find(t => t.id === depId);
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span className="truncate max-w-[200px]">{depTask?.title || `Task #${depId}`}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {blocksArray.length > 0 && (
+                  <div className="group/block relative flex items-center justify-center shrink-0 cursor-help" title="Blocks other tasks">
+                    <MinusCircle className="h-3.5 w-3.5 text-rose-500 fill-rose-500/20" />
+                    <div className="hidden group-hover/block:flex absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-[#1a1b1e] border border-slate-700 rounded-lg p-2 z-[60] shadow-xl whitespace-nowrap text-xs text-slate-200">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Blocks</span>
+                        {blocksArray.map((b: any, idx) => {
+                          const bId = typeof b === 'number' ? b : b.id;
+                          const bTask = dynamicTasks.find(t => t.id === bId);
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              <span className="truncate max-w-[200px]">{bTask?.title || `Task #${bId}`}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </td>

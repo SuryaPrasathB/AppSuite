@@ -226,6 +226,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     return dTime > startTime && dTime < dueTime;
   };
 
+  const isToday = (day: Date) => {
+    const today = new Date();
+    return day.getDate() === today.getDate() &&
+           day.getMonth() === today.getMonth() &&
+           day.getFullYear() === today.getFullYear();
+  };
+
   const getHeaderDisplay = () => {
     if (!tempStart) return 'Select dates';
     const startStr = tempStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -331,6 +338,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
                 {days.map((dayObj, i) => {
                   const isDaySelected = isSelected(dayObj.date);
                   const isDayInRange = isInRange(dayObj.date);
+                  const isTodayDay = isToday(dayObj.date);
 
                   return (
                     <button
@@ -343,6 +351,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
                           ? 'bg-indigo-600 text-white rounded-full font-bold shadow-md shadow-indigo-600/30'
                           : isDayInRange
                           ? 'bg-indigo-50 text-indigo-600'
+                          : isTodayDay
+                          ? 'ring-2 ring-indigo-400 rounded-full bg-indigo-50/50 text-indigo-700 font-bold'
                           : 'hover:bg-slate-100 rounded-full'
                       }`}
                     >

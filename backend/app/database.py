@@ -1034,9 +1034,14 @@ class DBStore:
         return p
 
     @staticmethod
-    def delete_project(proj_id: int) -> bool:
+    def delete_project(proj_id: int, delete_subprojects: bool = False) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        if delete_subprojects:
+            cursor.execute("DELETE FROM projects WHERE parent_id = %s", (proj_id,))
+        else:
+            cursor.execute("UPDATE projects SET parent_id = NULL WHERE parent_id = %s", (proj_id,))
+            
         cursor.execute("DELETE FROM projects WHERE id = %s", (proj_id,))
         conn.commit()
         cursor.close()
@@ -2017,11 +2022,19 @@ class DBStore:
             if p_id == "":
                 p_id = None
                 
+            c_id = data.get("creator_id")
+            if c_id == "":
+                c_id = None
+                
+            a_id = data.get("assignee_id")
+            if a_id == "":
+                a_id = None
+                
             cursor.execute(query, (
                 p_id,
                 data.get("custom_project_name"),
-                data.get("creator_id"),
-                data.get("assignee_id"),
+                c_id,
+                a_id,
                 data["title"],
                 data.get("description", ""),
                 json.dumps(history)
@@ -2067,10 +2080,14 @@ class DBStore:
                     updates.append("resolution_time_mins = %s")
                     values.append(diff_mins)
             
-            if "assignee_id" in data and data["assignee_id"] != ticket.get("assignee_id"):
-                updates.append("assignee_id = %s")
-                values.append(data["assignee_id"])
-                history.append({"action": f"Assigned to employee {data['assignee_id']}", "timestamp": datetime.now().isoformat()})
+            if "assignee_id" in data:
+                a_id = data["assignee_id"]
+                if a_id == "":
+                    a_id = None
+                if a_id != ticket.get("assignee_id"):
+                    updates.append("assignee_id = %s")
+                    values.append(a_id)
+                    history.append({"action": f"Assigned to employee {a_id}", "timestamp": datetime.now().isoformat()})
                 
             if "resolution_notes" in data:
                 updates.append("resolution_notes = %s")

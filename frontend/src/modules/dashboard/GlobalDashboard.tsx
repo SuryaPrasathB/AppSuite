@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight } from 'lucide-react';
 import { fetchProjects, fetchDashboardTasks, fetchDashboardStats } from '../projects/api';
 import { apiClient } from '../../api/apiClient';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -102,6 +102,32 @@ export const GlobalDashboard: React.FC = () => {
 
   const overdueTasks = tasks.due_or_overdue.Overdue || [];
 
+  const rootProjects = projects.filter(p => !p.parent_id);
+  const subMap = new Map<number, any[]>();
+  projects.forEach(p => {
+    if (p.parent_id) {
+      if (!subMap.has(p.parent_id)) subMap.set(p.parent_id, []);
+      subMap.get(p.parent_id)!.push(p);
+    }
+  });
+
+  const hierarchicalProjects: { item: any, isSub: boolean }[] = [];
+  rootProjects.forEach(rp => {
+    hierarchicalProjects.push({ item: rp, isSub: false });
+    if (subMap.has(rp.id)) {
+      subMap.get(rp.id)!.forEach(sp => {
+        hierarchicalProjects.push({ item: sp, isSub: true });
+      });
+    }
+  });
+  projects.forEach(p => {
+    if (p.parent_id && !rootProjects.find(rp => rp.id === p.parent_id)) {
+      if (!hierarchicalProjects.find(o => o.item.id === p.id)) {
+        hierarchicalProjects.push({ item: p, isSub: true });
+      }
+    }
+  });
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col overflow-hidden relative">
       
@@ -142,8 +168,8 @@ export const GlobalDashboard: React.FC = () => {
                 <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">PENDING TASKS</div>
               </div>
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
-                <div className="text-4xl font-black text-purple-600 mb-2">{overallProgress}%</div>
-                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">OVERALL PROGRESS</div>
+                <div className="text-4xl font-black text-red-500 mb-2">{overdue}</div>
+                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">OVERDUE TASKS</div>
               </div>
             </div>
           </div>
@@ -231,7 +257,7 @@ export const GlobalDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 font-bold">
-                  {projects.map((p, i) => {
+                  {hierarchicalProjects.map(({ item: p, isSub }, i) => {
                     const prog = p.completion_percentage || 0;
                     let statusColor = "text-emerald-500";
                     let statusText = "On Track";
@@ -261,7 +287,22 @@ export const GlobalDashboard: React.FC = () => {
                     return (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                         <td className="p-3 pl-5 text-slate-400">{i + 1}</td>
-                        <td className="p-3">{p.name}</td>
+                        <td className={`p-3 ${isSub ? 'pl-8' : ''}`}>
+                          <div className="flex items-center gap-2">
+                             {isSub && <CornerDownRight className="h-4 w-4 text-blue-500 shrink-0" />}
+                             <span className={isSub ? 'text-blue-900 font-semibold' : ''}>{p.name}</span>
+                             {p.is_parent && (
+                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                 Major Project {p.sub_projects_count > 0 ? `(${p.sub_projects_count})` : ''}
+                               </span>
+                             )}
+                             {p.parent_id && (
+                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                                 Sub-Project
+                               </span>
+                             )}
+                          </div>
+                        </td>
                         <td className="p-3">{p.project_incharge || '—'}</td>
                         <td className="p-3 text-slate-500 font-medium">{p.start_date ? new Date(p.start_date).toLocaleDateString('en-GB') : '—'}</td>
                         <td className="p-3 text-slate-500 font-medium">{p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString('en-GB') : '—'}</td>

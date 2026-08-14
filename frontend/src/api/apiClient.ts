@@ -104,7 +104,7 @@ export const apiClient = {
     list: () => request<any[]>('/projects'),
     create: (body: any) => request<any>('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-    delete: (id: number | string) => request<any>(`/projects/${id}`, { method: 'DELETE' }),
+    delete: (id: number | string, deleteSubprojects?: boolean) => request<any>(`/projects/${id}${deleteSubprojects ? '?delete_subprojects=true' : ''}`, { method: 'DELETE' }),
     myOverdue: () => request<any>('/projects/tasks/my-overdue'),
     myAssignedTickets: () => request<any[]>('/projects/service-tickets/my-assigned'),
     updateServiceTicket: (id: number | string, body: any) => request<any>(`/projects/service-tickets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

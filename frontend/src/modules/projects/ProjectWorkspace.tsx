@@ -47,7 +47,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [taskForm, setTaskForm] = useState({
     parent_id: null as number | null,
     title: '', description: '', status: 'TODO', priority: 'MEDIUM',
-    assignee_id: '', start_date: '', due_date: '', dependencies: [] as any[], blocking: [] as any[],
+    assignee_id: '', assignee_ids: [] as number[], start_date: '', due_date: '', dependencies: [] as any[], blocking: [] as any[],
     estimated_hours: 0, actual_hours: 0,
   });
 
@@ -185,10 +185,18 @@ export const ProjectWorkspace: React.FC = () => {
         }
       });
 
+      let parsedAssigneeIds: number[] = [];
+      if (task.assignee_ids) {
+        parsedAssigneeIds = typeof task.assignee_ids === 'string' ? JSON.parse(task.assignee_ids) : task.assignee_ids;
+      } else if (task.assignee_id) {
+        parsedAssigneeIds = [task.assignee_id];
+      }
+
       setTaskForm({
         parent_id: task.parent_id || null,
         title: task.title, description: task.description || '', status: task.status, priority: task.priority,
         assignee_id: task.assignee_id ? task.assignee_id.toString() : '',
+        assignee_ids: parsedAssigneeIds,
         start_date: task.start_date || '', due_date: task.due_date || '', dependencies: depsArray, blocking: blockingArray,
         estimated_hours: task.estimated_hours || 0, actual_hours: task.actual_hours || 0,
       });
@@ -196,7 +204,7 @@ export const ProjectWorkspace: React.FC = () => {
       setEditingTask(null);
       setTaskForm({
         parent_id: null,
-        title: '', description: '', status: 'TODO', priority: 'MEDIUM', assignee_id: '',
+        title: '', description: '', status: 'TODO', priority: 'MEDIUM', assignee_id: '', assignee_ids: [],
         start_date: '',
         due_date: '',
         dependencies: [],
@@ -216,6 +224,7 @@ export const ProjectWorkspace: React.FC = () => {
     const payload = {
       ...taskForm,
       assignee_id: taskForm.assignee_id ? parseInt(taskForm.assignee_id, 10) : null,
+      assignee_ids: taskForm.assignee_ids || [],
       dependencies: taskForm.dependencies.length > 0 ? JSON.stringify(taskForm.dependencies) : null,
       blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null
     };

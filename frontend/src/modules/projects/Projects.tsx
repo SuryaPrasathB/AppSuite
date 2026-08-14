@@ -28,7 +28,8 @@ export const Projects: React.FC = () => {
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [editProjectId, setEditProjectId] = useState<number | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmProject, setDeleteConfirmProject] = useState<any | null>(null);
+  const [deleteSubprojects, setDeleteSubprojects] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Code logic for new project
@@ -71,15 +72,16 @@ export const Projects: React.FC = () => {
     setIsNewProjectOpen(true);
   };
 
-  const confirmDeleteProject = (id: number) => {
-    setDeleteConfirmId(id);
+  const confirmDeleteProject = (project: any) => {
+    setDeleteConfirmProject(project);
+    setDeleteSubprojects(true); // default to true
   };
 
   const handleDeleteProject = async () => {
-    if (!deleteConfirmId) return;
+    if (!deleteConfirmProject) return;
     try {
-      await deleteProject(deleteConfirmId);
-      setDeleteConfirmId(null);
+      await deleteProject(deleteConfirmProject.id, true); // Always delete sub-projects
+      setDeleteConfirmProject(null);
       loadProjects();
     } catch (err: any) {
       alert(err.message || "Failed to delete project");
@@ -355,7 +357,7 @@ export const Projects: React.FC = () => {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            confirmDeleteProject(p.id);
+                            confirmDeleteProject(p);
                           }}
                           title="Delete Project"
                           className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-600 hover:text-red-600 rounded transition-colors"
@@ -413,7 +415,7 @@ export const Projects: React.FC = () => {
       </div>
 
       {/* Delete Confirmation Modal */}
-      {deleteConfirmId && (
+      {deleteConfirmProject && (
         <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200">
             <div className="p-6 text-center">
@@ -421,10 +423,24 @@ export const Projects: React.FC = () => {
                 <Trash2 className="h-6 w-6 text-red-600" />
               </div>
               <h3 className="text-lg font-bold text-slate-800 mb-2">Delete Project</h3>
-              <p className="text-sm text-slate-500 mb-6">Are you sure you want to delete this project? This action cannot be undone.</p>
+              <p className="text-sm text-slate-500 mb-4">
+                Are you sure you want to delete <strong>{deleteConfirmProject.name}</strong>? This action cannot be undone.
+              </p>
+              
+              {deleteConfirmProject.sub_projects_count > 0 && (
+                <div className="mb-6 p-3 bg-red-50/50 border border-red-100 rounded-lg text-left">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <span className="text-sm font-bold text-red-700 block">Warning: {deleteConfirmProject.sub_projects_count} sub-projects will also be deleted</span>
+                      <span className="text-xs text-red-600">Deleting a major project permanently deletes all of its sub-projects.</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 justify-center">
                 <button
-                  onClick={() => setDeleteConfirmId(null)}
+                  onClick={() => setDeleteConfirmProject(null)}
                   className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex-1"
                 >
                   Cancel

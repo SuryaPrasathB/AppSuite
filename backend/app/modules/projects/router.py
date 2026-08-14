@@ -689,7 +689,7 @@ def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, A
     return {"message": "File deleted successfully"}
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+def delete_project(project_id: int, delete_subprojects: bool = False, current_user: Dict[str, Any] = Depends(get_current_user)):
     projects = DBStore.get_all_projects_unpaginated()
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
@@ -698,7 +698,7 @@ def delete_project(project_id: int, current_user: Dict[str, Any] = Depends(get_c
     if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != proj.get("project_incharge"):
         raise HTTPException(status_code=403, detail="Not authorized to delete project")
 
-    DBStore.delete_project(project_id)
+    DBStore.delete_project(project_id, delete_subprojects)
     return {"message": "Project deleted successfully from database (files preserved)"}
 
 
@@ -1042,14 +1042,14 @@ def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, A
 class TicketCreate(BaseModel):
     project_id: Optional[Union[int, str]] = None
     custom_project_name: Optional[str] = None
-    creator_id: Optional[int] = None
-    assignee_id: Optional[int] = None
+    creator_id: Optional[Union[int, str]] = None
+    assignee_id: Optional[Union[int, str]] = None
     title: str
     description: Optional[str] = None
 
 class TicketUpdate(BaseModel):
     status: Optional[str] = None
-    assignee_id: Optional[int] = None
+    assignee_id: Optional[Union[int, str]] = None
     resolution_notes: Optional[str] = None
     resolution_images: Optional[str] = None
 
