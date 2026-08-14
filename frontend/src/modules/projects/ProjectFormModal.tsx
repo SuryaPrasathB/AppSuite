@@ -4,6 +4,7 @@ import {
   Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X
 } from 'lucide-react';
 import { fetchEmployees } from './api';
+import { useDialog } from '../../context/DialogContext';
 
 interface ProjectFormModalProps {
   project?: any; // If provided, edit mode. If null, create mode.
@@ -12,11 +13,13 @@ interface ProjectFormModalProps {
   onSave: (data: any, closeAfterSave?: boolean) => Promise<any>;
   nextCode?: string;
   allProjects?: any[];
+  initialParentId?: number;
 }
 
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
-  project, isOpen, onClose, onSave, nextCode, allProjects = []
+  project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId
 }) => {
+  const { showConfirm } = useDialog();
   const submitActionRef = useRef<'save' | 'save_and_add'>('save');
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -94,7 +97,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       } else {
         setIsCodeManualOverride(false);
         setUseAiPlanning(false);
-        setProjectTypeOption('standalone');
+        setProjectTypeOption(initialParentId ? 'sub' : 'standalone');
         const today = new Date().toISOString().split('T')[0];
         setForm({
           code: nextCode || '',
@@ -111,7 +114,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           no_of_panels: 1,
           budget_estimated: 0,
           budget_actual: 0,
-          parent_id: null,
+          parent_id: initialParentId || null,
           template_id: null,
           is_parent: false,
           objectives: '',
@@ -124,7 +127,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
         });
       }
     }
-  }, [isOpen, project, nextCode]);
+  }, [isOpen, project, nextCode, initialParentId]);
 
   const handleProjectTypeChange = (type: 'standalone' | 'major' | 'sub') => {
     setProjectTypeOption(type);
@@ -143,6 +146,16 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const action = submitActionRef.current;
+    
+    // Check if converting from standalone/sub to major
+    if (project && !project.is_parent && form.is_parent) {
+      const confirmed = await showConfirm(
+        "WARNING: Converting this project to a Major Project container will remove all its existing tasks and default folders. This action cannot be undone. Are you sure you want to proceed?",
+        "Convert to Major Project",
+        true
+      );
+      if (!confirmed) return;
+    }
     
     if (action === 'save_and_add') {
       const savedProject = await onSave({ ...form, isAiPlanning: useAiPlanning }, false);

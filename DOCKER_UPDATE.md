@@ -64,8 +64,7 @@ docker exec -it smart_store_backend python add_announcements_table.py
 ```
 *If a script hangs or freezes for a long time, press `Ctrl + C`, restart the database (`docker restart smart_store_db`), and try running the script again to clear any database locks.*
 
----
-
+---,  ,
 ## Troubleshooting
 
 - **Mount Denied Error (Too many colons):** If you see an error like `mount denied: the source path ... too many colons` when starting containers on Windows, ensure your `docker-compose.yml` uses forward slashes for absolute paths. (e.g., Use `D:/PROJECTS:/projects` instead of `D:\PROJECTS:/projects`).

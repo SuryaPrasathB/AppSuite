@@ -84,7 +84,7 @@ export const ProjectsDashboard: React.FC = () => {
           <span className="text-sm font-semibold text-slate-700">{activity.description || activity.action}</span>
         </div>
         <div className="flex justify-between items-center text-xs text-slate-500">
-          <span>{activity.user_id ? `User ${activity.user_id}` : 'System'}</span>
+          <span>{activity.user_name ? activity.user_name : (activity.user_id ? `User ${activity.user_id}` : 'System')}</span>
           <span>{new Date(activity.created_at).toLocaleString()}</span>
         </div>
       </div>
@@ -98,7 +98,7 @@ export const ProjectsDashboard: React.FC = () => {
           {task.status === 'COMPLETED' && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
         </button>
         <div>
-          <p className="text-xs text-slate-400 mb-0.5">Project {task.project_id}</p>
+          <p className="text-xs text-slate-400 mb-0.5">{task.project_name || `Project ${task.project_id}`}</p>
           <p className="text-sm text-slate-800 font-medium group-hover:text-blue-600 transition-colors">{task.title}</p>
         </div>
       </div>
@@ -331,7 +331,7 @@ export const ProjectsDashboard: React.FC = () => {
                   {tasks.completed_this_week.map((t: any) => (
                     <div key={t.id} className="text-sm border-b border-slate-100 pb-3">
                       <p className="text-slate-800 line-through decoration-slate-400">{t.title}</p>
-                      <p className="text-xs text-slate-400 mt-1">Project {t.project_id}</p>
+                      <p className="text-xs text-slate-400 mt-1">{t.project_name || `Project ${t.project_id}`}</p>
                     </div>
                   ))}
                 </div>

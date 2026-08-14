@@ -1,0 +1,1 @@
+import sys; sys.path.append('backend'); from fastapi.testclient import TestClient; from app.main import app; client = TestClient(app, raise_server_exceptions=True); print(client.get('/api/projects/tasks/my-overdue', headers={'Authorization': 'Bearer mock-jwt-token-for-aravind'}).json())

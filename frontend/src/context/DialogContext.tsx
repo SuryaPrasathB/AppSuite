@@ -8,11 +8,12 @@ interface DialogState {
   message: string;
   title?: string;
   resolve?: (value: boolean) => void;
+  isDestructive?: boolean;
 }
 
 interface DialogContextType {
   showAlert: (message: string, title?: string) => Promise<boolean>;
-  showConfirm: (message: string, title?: string) => Promise<boolean>;
+  showConfirm: (message: string, title?: string, isDestructive?: boolean) => Promise<boolean>;
 }
 
 const DialogContext = createContext<DialogContextType | undefined>(undefined);
@@ -44,7 +45,7 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
   };
 
-  const showConfirm = (message: string, title?: string): Promise<boolean> => {
+  const showConfirm = (message: string, title?: string, isDestructive?: boolean): Promise<boolean> => {
     return new Promise((resolve) => {
       setDialogState({
         isOpen: true,
@@ -52,6 +53,7 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         message,
         title,
         resolve,
+        isDestructive,
       });
     });
   };
@@ -92,9 +94,13 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               )}
               <button
                 onClick={() => handleClose(true)}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
+                  dialogState.isDestructive
+                    ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
+                    : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                }`}
               >
-                OK
+                {dialogState.isDestructive ? 'Proceed' : 'OK'}
               </button>
             </div>
           </div>

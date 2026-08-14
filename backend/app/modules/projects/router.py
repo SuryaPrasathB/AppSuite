@@ -1,12 +1,13 @@
 import os
 import re
 import shutil
+import json
+import time
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-import json
 from app.database import DBStore, get_db_connection
 from app.config import settings
 from app.dependencies import get_current_user
@@ -335,8 +336,29 @@ def get_project(project_id: int):
         "sub_projects": sub_projects
     }
 
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, BackgroundTasks
+from fastapi.responses import FileResponse
+
+# ... (rest of imports)
+
+def _create_project_folders(full_path: str, subfolders: List[str]):
+    try:
+        os.makedirs(full_path, exist_ok=True)
+        for sf in subfolders:
+            os.makedirs(os.path.join(full_path, sf), exist_ok=True)
+    except Exception as e:
+        print(f"Background folder creation failed: {e}")
+
 @router.post("")
-def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if not project.code or str(project.code).strip() == "":
+        if project.parent_id:
+            project.code = f"SUB-{int(time.time())}"
+        else:
+            next_num = get_next_project_num()
+            mmyy = datetime.now().strftime("%m%y")
+            project.code = f"{next_num}/PRJ/{mmyy}"
+        
     existing = [p for p in DBStore.get_all_projects_unpaginated() if p["code"] == project.code]
     if existing:
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
@@ -364,7 +386,7 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
     if parent_project:
         # Sub-Project: Nest directly inside parent project folder
         parent_folder = parent_project.get("folder_path")
-        if not parent_folder or not os.path.exists(parent_folder):
+        if not parent_folder:
             parent_folder = base_dir
             
         # Calculate sub-project number by counting existing children
@@ -378,36 +400,26 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
         folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
         full_path = os.path.join(base_dir, folder_name)
     
-    # Check if a folder for this project already exists at full_path
+    # 2. Check physical directories
     if os.path.exists(full_path):
         raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
-    
-    # 2. Create physical directories
-    try:
-        os.makedirs(full_path, exist_ok=False)
         
-        subfolders = []
-        if not project.is_parent:
-            # Template subfolders are ONLY created for sub-projects or standalone projects (NOT for Major Projects)
-            subfolders = [
-                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-                "Test Report", "Service Report", "Installation Report",
-                "User Manual", "Photos", "Technical Specification"
-            ]
-            if project.has_software:
-                subfolders.append("Software")
-            if project.has_firmware:
-                subfolders.append("Firmware")
-            if project.has_transformer:
-                subfolders.append("Transformer Design")
-                
-            for sf in subfolders:
-                os.makedirs(os.path.join(full_path, sf), exist_ok=True)
+    subfolders = []
+    if not project.is_parent:
+        subfolders = [
+            "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+            "Test Report", "Service Report", "Installation Report",
+            "User Manual", "Photos", "Technical Specification"
+        ]
+        if project.has_software:
+            subfolders.append("Software")
+        if project.has_firmware:
+            subfolders.append("Firmware")
+        if project.has_transformer:
+            subfolders.append("Transformer Design")
             
-    except FileExistsError:
-        raise HTTPException(status_code=400, detail=f"Project folder already exists.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create directory structure: {e}")
+    background_tasks.add_task(_create_project_folders, full_path, subfolders)
+        
         
     # 3. Save to DB
     proj_dict = project.model_dump()
@@ -436,7 +448,7 @@ def create_project(project: ProjectCreate, current_user: Dict[str, Any] = Depend
     return saved_project
 
 @router.put("/{project_id}")
-def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
+def update_project(project_id: int, project: ProjectUpdate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
     projects = DBStore.get_all_projects_unpaginated()
     existing_proj = next((p for p in projects if p["id"] == project_id), None)
     if not existing_proj:
@@ -450,6 +462,17 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
     project_dump = project.model_dump(exclude_unset=True)
 
     # Handle folder path update if code, name, or client_name changed
+    # Check if converting between parent and standalone
+    was_parent = existing_proj.get("is_parent", False)
+    is_now_parent = project_dump.get("is_parent", was_parent)
+    
+    if was_parent and not is_now_parent:
+        # Check if it has sub-projects
+        all_projects = DBStore.get_all_projects_unpaginated()
+        sub_projects = [p for p in all_projects if p.get("parent_id") == project_id]
+        if sub_projects:
+            raise HTTPException(status_code=400, detail="Cannot convert a Major Project to Standalone because it has existing sub-projects.")
+
     new_code = project_dump.get("code")
     if new_code is None:
         new_code = existing_proj.get("code") or ""
@@ -516,6 +539,62 @@ def update_project(project_id: int, project: ProjectUpdate, current_user: Dict[s
     # Log activity
     if project.status and project.status != existing_proj["status"]:
         DBStore.add_project_activity(project_id, "STATUS_CHANGED", f"Project status changed to {project.status}", current_user["id"])
+
+    # Ensure necessary folders exist if it's now a standalone/sub-project
+    # e.g., if it was a Major Project and changed to Standalone, or if has_software was checked.
+    final_is_parent = project_dump.get("is_parent", existing_proj.get("is_parent", False))
+    if not final_is_parent:
+        final_folder_path = project_dump.get("folder_path", existing_proj.get("folder_path"))
+        if final_folder_path:
+            subfolders = [
+                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+                "Test Report", "Service Report", "Installation Report",
+                "User Manual", "Photos", "Technical Specification"
+            ]
+            if project_dump.get("has_software", existing_proj.get("has_software", False)):
+                subfolders.append("Software")
+            if project_dump.get("has_firmware", existing_proj.get("has_firmware", False)):
+                subfolders.append("Firmware")
+            if project_dump.get("has_transformer", existing_proj.get("has_transformer", False)):
+                subfolders.append("Transformer Design")
+            
+            background_tasks.add_task(_create_project_folders, final_folder_path, subfolders)
+            
+            # Optionally, we should also ensure default project tasks exist in the DB,
+            # but usually they are created on project creation. We can add missing tasks:
+            existing_tasks = DBStore.get_project_tasks(project_id)
+            existing_task_names = [t["task_name"] for t in existing_tasks]
+            for sf in subfolders:
+                if sf not in existing_task_names:
+                    DBStore.add_project_task(project_id, sf, "PENDING")
+                    
+    elif not was_parent and final_is_parent:
+        # Converted from Standalone to Major Project
+        # Delete tasks from DB
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM project_tasks WHERE project_id = ?", (project_id,))
+                conn.commit()
+        except Exception as e:
+            print(f"Failed to delete tasks: {e}")
+            
+        # Delete physical subfolders if they exist
+        final_folder_path = project_dump.get("folder_path", existing_proj.get("folder_path"))
+        if final_folder_path and os.path.exists(final_folder_path):
+            subfolders = [
+                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+                "Test Report", "Service Report", "Installation Report",
+                "User Manual", "Photos", "Technical Specification",
+                "Software", "Firmware", "Transformer Design"
+            ]
+            for sf in subfolders:
+                sf_path = os.path.join(final_folder_path, sf)
+                if os.path.exists(sf_path):
+                    try:
+                        shutil.rmtree(sf_path)
+                    except Exception as e:
+                        print(f"Failed to delete folder {sf_path}: {e}")
 
     return updated
 

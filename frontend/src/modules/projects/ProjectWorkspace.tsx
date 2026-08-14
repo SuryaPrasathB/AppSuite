@@ -72,6 +72,8 @@ export const ProjectWorkspace: React.FC = () => {
 
       if (projDetails.project?.is_parent) {
         setActiveTab('sub_projects');
+      } else {
+        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview'].includes(prev) ? prev : 'tasks');
       }
     } catch (error) {
       console.error(error);
@@ -620,6 +622,7 @@ export const ProjectWorkspace: React.FC = () => {
         onClose={() => setIsSubProjectModalOpen(false)}
         project={null}
         allProjects={[project]}
+        initialParentId={project.id}
         onSave={async (formData) => {
           try {
             await createProject({ ...formData, parent_id: project.id, is_parent: false });
