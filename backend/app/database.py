@@ -886,6 +886,7 @@ class DBStore:
         cursor.execute(f"""
             SELECT p.*,
                 parent_proj.name as parent_name,
+                parent_proj.client_name as parent_client_name,
                 (SELECT COUNT(*) FROM projects sub_p WHERE sub_p.parent_id = p.id) as sub_projects_count,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id) as total_dynamic_tasks,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id AND dt.status = 'COMPLETED') as completed_dynamic_tasks,
@@ -908,6 +909,10 @@ class DBStore:
         for p in projects:
             if p.get('created_at'):
                 p['created_at'] = p['created_at'].isoformat()
+            if p.get('parent_id') and p.get('parent_client_name'):
+                p['client_name'] = p.get('parent_client_name')
+            p.pop('parent_client_name', None)
+            
             if p.get('start_date') and hasattr(p['start_date'], 'isoformat'):
                 p['start_date'] = p['start_date'].isoformat()
             if p.get('end_date') and hasattr(p['end_date'], 'isoformat'):
@@ -941,7 +946,7 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT p.*, parent_proj.name as parent_name
+            SELECT p.*, parent_proj.name as parent_name, parent_proj.client_name as parent_client_name
             FROM projects p
             LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
         """)
@@ -949,6 +954,9 @@ class DBStore:
         cursor.close()
         conn.close()
         for p in projects:
+            if p.get('parent_id') and p.get('parent_client_name'):
+                p['client_name'] = p.get('parent_client_name')
+            p.pop('parent_client_name', None)
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
@@ -1940,7 +1948,7 @@ class DBStore:
     def get_active_announcements(limit=5) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE ORDER BY created_at DESC LIMIT %s", (limit,))
+        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND created_at >= NOW() - INTERVAL 2 DAY ORDER BY created_at DESC LIMIT %s", (limit,))
         announcements = cursor.fetchall()
         cursor.close()
         conn.close()

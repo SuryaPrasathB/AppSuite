@@ -58,6 +58,10 @@ class ProjectUpdate(BaseModel):
     is_parent: Optional[bool] = None
     is_template: Optional[bool] = None
 
+class RelinkRequest(BaseModel):
+    manual_path: Optional[str] = None
+
+
 def get_next_project_num():
     base_dir = settings.PROJECTS_BASE_DIR
     max_num = 0
@@ -111,7 +115,7 @@ def get_workload():
 
     workload = {}
     for task in all_tasks:
-        if task["status"] in ["COMPLETED", "CANCELLED"]:
+        if task.get("status") == "CANCELLED":
             continue
 
         assignees = task.get("assignees") or []
@@ -332,6 +336,110 @@ def get_standup_dashboard(current_user: Dict[str, Any] = Depends(get_current_use
     # Or keep them so managers know who has no work? Let's keep them, frontend can filter.
     return list(standup_data.values())
 
+def sync_project_directory_files(project_id: int, folder_path: str):
+    if not folder_path or not os.path.isdir(folder_path):
+        return
+    try:
+        db_files = DBStore.get_project_files(project_id)
+        db_files_map = {(f["task_name"], f["file_name"]): f for f in db_files}
+        
+        subfolders = [
+            "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+            "Test Report", "Service Report", "Installation Report",
+            "User Manual", "Photos", "Technical Specification",
+            "Software", "Firmware", "Transformer Design"
+        ]
+        
+        try:
+            disk_items = os.listdir(folder_path)
+            disk_dirs_lower = {
+                d.lower(): d for d in disk_items 
+                if os.path.isdir(os.path.join(folder_path, d))
+            }
+        except Exception as e:
+            print(f"Failed to list project folder_path {folder_path}: {e}")
+            return
+
+        tasks_with_files = set()
+        
+        for task_name in subfolders:
+            matched_dir_name = disk_dirs_lower.get(task_name.lower())
+            if not matched_dir_name:
+                continue
+                
+            task_dir = os.path.join(folder_path, matched_dir_name)
+            try:
+                items = os.listdir(task_dir)
+            except Exception as e:
+                print(f"Failed to list directory {task_dir}: {e}")
+                continue
+                
+            for item in items:
+                item_path = os.path.join(task_dir, item)
+                if os.path.isfile(item_path):
+                    tasks_with_files.add(task_name)
+                    if (task_name, item) not in db_files_map:
+                        try:
+                            DBStore.add_project_file(project_id, task_name, item, item_path)
+                        except Exception as e:
+                            print(f"Failed to auto-sync file {item} in DB: {e}")
+                    else:
+                        db_files_map.pop((task_name, item), None)
+                        
+        for (task_name, file_name), f_record in db_files_map.items():
+            phys_path = f_record.get("file_path")
+            if phys_path and not os.path.exists(phys_path):
+                try:
+                    DBStore.delete_project_file(f_record["id"])
+                except Exception as e:
+                    print(f"Failed to delete missing file record {f_record['id']}: {e}")
+
+        if tasks_with_files:
+            existing_tasks = DBStore.get_project_tasks(project_id)
+            existing_tasks_map = {t["task_name"]: t for t in existing_tasks}
+            for task_name in tasks_with_files:
+                if task_name in existing_tasks_map:
+                    if existing_tasks_map[task_name]["status"] != "COMPLETED":
+                        try:
+                            DBStore.update_project_task(project_id, task_name, "COMPLETED")
+                        except Exception as e:
+                            print(f"Failed to auto-complete task {task_name}: {e}")
+    except Exception as e:
+        print(f"Sync project directory files error: {e}")
+
+@router.get("/folders/browse")
+def browse_folders(path: Optional[str] = None):
+    base = settings.PROJECTS_BASE_DIR
+    target_path = os.path.abspath(path) if path else os.path.abspath(base)
+    
+    # Security check: ensure target_path is within base
+    if not target_path.startswith(os.path.abspath(base)):
+        target_path = os.path.abspath(base)
+        
+    if not os.path.exists(target_path):
+        raise HTTPException(status_code=404, detail="Path not found")
+        
+    folders = []
+    try:
+        for item in os.listdir(target_path):
+            item_path = os.path.join(target_path, item)
+            if os.path.isdir(item_path):
+                folders.append({
+                    "name": item,
+                    "path": item_path
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    folders.sort(key=lambda x: x["name"].lower())
+    
+    return {
+        "current_path": target_path,
+        "base_path": os.path.abspath(base),
+        "parent_path": os.path.dirname(target_path) if target_path != os.path.abspath(base) else None,
+        "folders": folders
+    }
+
 @router.get("/{project_id}")
 def get_project(project_id: int):
     projects = DBStore.get_all_projects_unpaginated()
@@ -339,6 +447,10 @@ def get_project(project_id: int):
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Auto sync directory files before returning details
+    if proj.get("folder_path"):
+        sync_project_directory_files(project_id, proj.get("folder_path"))
+
     tasks = DBStore.get_project_tasks(project_id)
     files = DBStore.get_project_files(project_id)
     sub_projects = [p for p in projects if p.get("parent_id") == project_id]
@@ -354,6 +466,61 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, B
 from fastapi.responses import FileResponse
 
 # ... (rest of imports)
+
+@router.post("/{project_id}/relink")
+def relink_project_folder(project_id: int, req: RelinkRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    projects = DBStore.get_all_projects_unpaginated()
+    proj = next((p for p in projects if p["id"] == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if req.manual_path:
+        new_path = req.manual_path
+        if not os.path.exists(new_path):
+            raise HTTPException(status_code=404, detail="The provided manual path does not exist on the server.")
+        
+        DBStore.update_project(project_id, {"folder_path": new_path})
+        return {"status": "success", "folder_path": new_path}
+    
+    base_dir = settings.PROJECTS_BASE_DIR
+    code = proj.get("code", "")
+    match = re.search(r"(\d+)", code)
+    if not match:
+        raise HTTPException(status_code=404, detail="Could not automatically find the project folder (no number in code). Please provide a manual path.")
+        
+    proj_num = match.group(1)
+    
+    try:
+        found_path = None
+        is_parent = proj.get("is_parent", False)
+        parent_id = proj.get("parent_id")
+        
+        if parent_id:
+            parent_proj = next((p for p in projects if p["id"] == parent_id), None)
+            if parent_proj and parent_proj.get("folder_path") and os.path.exists(parent_proj.get("folder_path")):
+                search_dir = parent_proj.get("folder_path")
+                prefix = f"Sub No {proj_num}_"
+                for item in os.listdir(search_dir):
+                    if item.lower().startswith(prefix.lower()) and os.path.isdir(os.path.join(search_dir, item)):
+                        found_path = os.path.join(search_dir, item)
+                        break
+        else:
+            prefix = f"Project No {proj_num}_"
+            if os.path.exists(base_dir):
+                for item in os.listdir(base_dir):
+                    if item.lower().startswith(prefix.lower()) and os.path.isdir(os.path.join(base_dir, item)):
+                        found_path = os.path.join(base_dir, item)
+                        break
+                    
+        if found_path:
+            DBStore.update_project(project_id, {"folder_path": found_path})
+            return {"status": "success", "folder_path": found_path}
+        else:
+            raise HTTPException(status_code=404, detail="Could not automatically find the project folder. Please provide a manual path.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching for folder: {str(e)}")
 
 def _create_project_folders(full_path: str, subfolders: List[str]):
     try:
@@ -398,6 +565,9 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
             raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
 
     if parent_project:
+        # Automatically take the client of the major project
+        project.client_name = parent_project.get("client_name")
+
         # Sub-Project: Nest directly inside parent project folder
         parent_folder = parent_project.get("folder_path")
         if not parent_folder:
@@ -620,12 +790,24 @@ async def upload_project_file(project_id: int, task_name: str = Form(...), files
         raise HTTPException(status_code=404, detail="Project not found")
         
     folder_path = proj.get("folder_path")
-    if not folder_path or not os.path.exists(folder_path):
+    if not folder_path:
         raise HTTPException(status_code=500, detail="Project physical folder not found on server")
+
+    # Rebase path for cross-environment compatibility (Windows <-> Docker)
+    normalized = folder_path.replace('\\', '/')
+    parts = [p for p in normalized.split('/') if p.startswith("Project No ") or p.startswith("Sub Project ")]
+    
+    if parts:
+        current_path = settings.PROJECTS_BASE_DIR
+        for p in parts:
+            current_path = os.path.join(current_path, p)
+        folder_path = current_path
+
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path, exist_ok=True)
         
     task_dir = os.path.join(folder_path, task_name)
     if not os.path.exists(task_dir):
-        # Create it just in case
         os.makedirs(task_dir, exist_ok=True)
         
     saved_files = []
@@ -666,6 +848,31 @@ def download_project_file(project_id: int, file_id: int):
         raise HTTPException(status_code=404, detail="File not found on server")
 
     return FileResponse(path=file_path, filename=file_record["file_name"])
+
+@router.post("/{project_id}/files/{file_id}/open-location")
+def open_project_file_location(project_id: int, file_id: int):
+    import subprocess
+    import platform
+
+    file_record = DBStore.get_project_file(file_id)
+    if not file_record or file_record["project_id"] != project_id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = file_record["file_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            subprocess.run(["explorer", "/select,", os.path.normpath(file_path)])
+        elif system == "Darwin":
+            subprocess.run(["open", "-R", file_path])
+        else:
+            subprocess.run(["xdg-open", os.path.dirname(file_path)])
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{project_id}/files/{file_id}")
 def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):

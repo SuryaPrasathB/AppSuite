@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder
 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
@@ -12,7 +13,8 @@ export const MyTasks: React.FC = () => {
   const [view, setView] = useState<'list' | 'kanban'>('list');
 
   // Filter state
-  const [selectedAssignee, setSelectedAssignee] = useState<string>(user?.name || 'All');
+  const location = useLocation();
+  const [selectedAssignee, setSelectedAssignee] = useState<string>(location.state?.filter || user?.name || 'All');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
 
   const toggleProjectCollapse = (projName: string) => {

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
-  uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask
+  uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask, fetchProjects, relinkProjectFolder
 } from './api';
 import { ProjectFormModal } from './ProjectFormModal';
 import { TasksTab } from './workspace-tabs/TasksTab';
@@ -19,6 +19,7 @@ import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
+import { FolderBrowserModal } from './FolderBrowserModal';
 import { useDialog } from '../../context/DialogContext';
 
 export const ProjectWorkspace: React.FC = () => {
@@ -35,6 +36,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isFolderBrowserOpen, setIsFolderBrowserOpen] = useState(false);
   const [activeCommentTask, setActiveCommentTask] = useState<any | null>(null);
 
   // Upload state
@@ -57,10 +59,11 @@ export const ProjectWorkspace: React.FC = () => {
   const loadData = async (projectId: number, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [projDetails, taskList, empList] = await Promise.all([
+      const [projDetails, taskList, empList, allProjs] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
-        fetchEmployees().catch(() => [])
+        fetchEmployees().catch(() => []),
+        fetchProjects(1, 1000).catch(() => ({ data: [] }))
       ]);
       setProject(projDetails.project);
       setStaticTasks(projDetails.tasks);
@@ -69,6 +72,7 @@ export const ProjectWorkspace: React.FC = () => {
       setDynamicTasks(taskList);
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
+      setAllProjectsList(allProjs.data || []);
 
       if (projDetails.project?.is_parent) {
         setActiveTab('sub_projects');
@@ -133,6 +137,34 @@ export const ProjectWorkspace: React.FC = () => {
       loadData(project.id);
     } catch (err: any) {
       showAlert(err.message || 'Failed to save as template');
+    }
+  };
+
+  const handleRelinkFolder = async () => {
+    try {
+      // First try automatic relink
+      await relinkProjectFolder(project.id);
+      showAlert("Project folder successfully relinked automatically.");
+      loadData(project.id, true);
+    } catch (err: any) {
+      if (err.message && err.message.includes("automatically find")) {
+        // Automatic failed, open folder browser modal
+        setIsFolderBrowserOpen(true);
+      } else {
+        showAlert(err.message || 'Failed to relink folder.');
+      }
+    }
+  };
+
+  const handleManualRelink = async (manualPath: string) => {
+    setIsFolderBrowserOpen(false);
+    if (!manualPath) return;
+    try {
+      await relinkProjectFolder(project.id, manualPath.trim());
+      showAlert("Project folder successfully relinked to manual path.");
+      loadData(project.id, true);
+    } catch (manualErr: any) {
+      showAlert(manualErr.message || 'Failed to manually relink folder.');
     }
   };
 
@@ -304,16 +336,6 @@ export const ProjectWorkspace: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold text-slate-800 leading-tight">{project.name}</h1>
-                  {project.is_parent && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                      Major Project ({subProjects.length} sub-projects)
-                    </span>
-                  )}
-                  {project.parent_id && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                      Sub-Project
-                    </span>
-                  )}
                   {project.is_template && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
                       TEMPLATE
@@ -360,6 +382,12 @@ export const ProjectWorkspace: React.FC = () => {
                 Save as Template
               </button>
             )}
+            <button 
+              onClick={handleRelinkFolder}
+              className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-lg transition-colors"
+            >
+              Relink Folder
+            </button>
             <button 
               onClick={() => setIsEditModalOpen(true)}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors"
@@ -611,7 +639,7 @@ export const ProjectWorkspace: React.FC = () => {
             uploadingTask={uploadingTask}
             setPreviewFile={setPreviewFile as any}
             handleFileUpload={handleFileUpload as any}
-            onFilesChanged={() => loadData(project.id)}
+            onFilesChanged={() => loadData(project.id, true)}
           />
         )}
         
@@ -619,18 +647,29 @@ export const ProjectWorkspace: React.FC = () => {
         {activeTab === 'activity' && <ActivityTab projectId={project.id} />}
       </div>
 
-      <ProjectFormModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        project={project}
-        onSave={handleSaveProject}
-      />
+      {isEditModalOpen && (
+        <ProjectFormModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          project={project}
+          allProjects={allProjectsList}
+          onSave={handleSaveProject}
+        />
+      )}
+
+      {isFolderBrowserOpen && (
+        <FolderBrowserModal
+          isOpen={isFolderBrowserOpen}
+          onClose={() => setIsFolderBrowserOpen(false)}
+          onSelect={handleManualRelink}
+        />
+      )}
 
       <ProjectFormModal
         isOpen={isSubProjectModalOpen}
         onClose={() => setIsSubProjectModalOpen(false)}
         project={null}
-        allProjects={[project]}
+        allProjects={allProjectsList}
         initialParentId={project.id}
         onSave={async (formData) => {
           try {

@@ -18,6 +18,7 @@ export const Projects: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [activeTab, setActiveTab] = useState('All Projects');
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<number>>(new Set());
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -80,7 +81,7 @@ export const Projects: React.FC = () => {
   const handleDeleteProject = async () => {
     if (!deleteConfirmProject) return;
     try {
-      await deleteProject(deleteConfirmProject.id, true); // Always delete sub-projects
+      await deleteProject(deleteConfirmProject.id, deleteSubprojects); // Use state for deleting sub-projects
       setDeleteConfirmProject(null);
       loadProjects();
     } catch (err: any) {
@@ -155,6 +156,19 @@ export const Projects: React.FC = () => {
   const hierarchicalProjects = getHierarchicalList(filteredProjects);
 
   const totalPages = Math.ceil(totalProjects / limit);
+
+  const toggleCollapse = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCollapsedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -240,7 +254,9 @@ export const Projects: React.FC = () => {
                   <td colSpan={9} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
                 </tr>
               ) : hierarchicalProjects.length > 0 ? (
-                hierarchicalProjects.map(({ item: p, isSub }) => (
+                hierarchicalProjects
+                  .filter(({ item: p, isSub }) => !isSub || !collapsedProjects.has(p.parent_id))
+                  .map(({ item: p, isSub }) => (
                   <tr 
                     key={p.id} 
                     onClick={() => navigate(`/projects/${p.id}`)} 
@@ -258,17 +274,19 @@ export const Projects: React.FC = () => {
                           {isSub && (
                             <CornerDownRight className="h-4 w-4 text-blue-500 shrink-0" />
                           )}
+                          {!isSub && p.is_parent && (
+                            <button 
+                              onClick={(e) => toggleCollapse(p.id, e)}
+                              className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+                            >
+                              {collapsedProjects.has(p.id) ? (
+                                <ChevronRight className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
                           <span className={`font-bold text-sm ${isSub ? 'text-blue-900 font-semibold' : 'text-slate-800'}`}>{p.name}</span>
-                          {p.is_parent && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 shadow-2xs">
-                              Major Project {p.sub_projects_count > 0 && `(${p.sub_projects_count})`}
-                            </span>
-                          )}
-                          {p.parent_id && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200 shadow-2xs">
-                              Sub-Project
-                            </span>
-                          )}
                         </div>
                         <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
                           <span className={isSub ? 'pl-6' : ''}>{p.code}</span>

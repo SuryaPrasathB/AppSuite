@@ -16,10 +16,21 @@ interface ProjectFormModalProps {
   initialParentId?: number;
 }
 
+const toTitleCase = (str: string) => {
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => {
+      if (!word) return '';
+      return word.replace(/[a-z]/, (c) => c.toUpperCase());
+    })
+    .join(' ');
+};
+
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
   project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId
 }) => {
-  const { showConfirm } = useDialog();
+  const { showConfirm, showAlert } = useDialog();
   const submitActionRef = useRef<'save' | 'save_and_add'>('save');
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -135,7 +146,12 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       setForm(prev => ({ ...prev, is_parent: true, parent_id: null }));
     } else if (type === 'sub') {
       const firstParent = allProjects.find(p => p.is_parent || !p.parent_id);
-      setForm(prev => ({ ...prev, is_parent: false, parent_id: firstParent ? firstParent.id : null }));
+      setForm(prev => ({ 
+        ...prev, 
+        is_parent: false, 
+        parent_id: firstParent ? firstParent.id : null,
+        client_name: firstParent ? (firstParent.client_name || '') : ''
+      }));
     } else {
       setForm(prev => ({ ...prev, is_parent: false, parent_id: null }));
     }
@@ -146,6 +162,15 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const action = submitActionRef.current;
+
+    if (form.start_date && form.date_of_delivery) {
+      const start = new Date(form.start_date);
+      const delivery = new Date(form.date_of_delivery);
+      if (delivery < start) {
+        showAlert("Delivery date cannot be before the start date.", "Invalid Date Range");
+        return;
+      }
+    }
     
     // Check if converting from standalone/sub to major
     if (project && !project.is_parent && form.is_parent) {
@@ -157,8 +182,22 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       if (!confirmed) return;
     }
     
+    const finalForm = { ...form };
+    if (finalForm.name) {
+      finalForm.name = finalForm.name.toUpperCase();
+    }
+    
+    if (finalForm.parent_id) {
+      const parentProj = allProjects.find(p => p.id === finalForm.parent_id);
+      if (parentProj) {
+        finalForm.client_name = (parentProj.client_name || '').toUpperCase();
+      }
+    } else if (finalForm.client_name) {
+      finalForm.client_name = finalForm.client_name.toUpperCase();
+    }
+
     if (action === 'save_and_add') {
-      const savedProject = await onSave({ ...form, isAiPlanning: useAiPlanning }, false);
+      const savedProject = await onSave({ ...finalForm, isAiPlanning: useAiPlanning }, false);
       if (savedProject) {
          setProjectTypeOption('sub');
          setForm(prev => ({
@@ -167,13 +206,14 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
            name: '',
            is_parent: false,
            parent_id: savedProject.id,
+           client_name: savedProject.client_name ? savedProject.client_name.toUpperCase() : '',
            budget: 0,
            budget_actual: 0
          }));
          submitActionRef.current = 'save'; // reset back to default
       }
     } else {
-      await onSave({ ...form, isAiPlanning: useAiPlanning }, true);
+      await onSave({ ...finalForm, isAiPlanning: useAiPlanning }, true);
     }
   };
 
@@ -263,7 +303,15 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                   <select
                     required
                     value={form.parent_id || ''}
-                    onChange={(e) => setForm({ ...form, parent_id: parseInt(e.target.value) || null })}
+                    onChange={(e) => {
+                      const pId = parseInt(e.target.value) || null;
+                      const parentProj = allProjects.find(p => p.id === pId);
+                      setForm({
+                        ...form,
+                        parent_id: pId,
+                        client_name: parentProj ? (parentProj.client_name || '').toUpperCase() : ''
+                      });
+                    }}
                     className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     <option value="" disabled>-- Select Major Parent Project --</option>
@@ -366,7 +414,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                       required
                       type="text"
                       value={form.name}
-                      onChange={(e) => setForm({...form, name: e.target.value})}
+                      onChange={(e) => setForm({...form, name: e.target.value.toUpperCase()})}
                       placeholder="Factory Automation System"
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                     />
@@ -427,7 +475,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                       <input
                         type="text"
                         value={form.client_name}
-                        onChange={(e) => setForm({...form, client_name: e.target.value})}
+                        onChange={(e) => setForm({...form, client_name: e.target.value.toUpperCase()})}
                         placeholder="Acme Corp"
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                       />

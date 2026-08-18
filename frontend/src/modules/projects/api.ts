@@ -96,8 +96,9 @@ export async function updateProject(id: number, data: any) {
   return res.json();
 }
 
-export async function deleteProject(id: number) {
-  const res = await fetch(`${API_BASE}/${id}`, {
+export async function deleteProject(id: number, deleteSubprojects: boolean = false) {
+  const url = `${API_BASE}/${id}${deleteSubprojects ? '?delete_subprojects=true' : ''}`;
+  const res = await fetch(url, {
     method: 'DELETE',
     headers: getAuthHeaders(),
   });
@@ -149,6 +150,30 @@ export async function downloadTaskFile(projectId: number, fileId: number) {
   a.click();
   window.URL.revokeObjectURL(url);
   a.remove();
+}
+
+export async function viewTaskFile(projectId: number, fileId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/files/${fileId}/download`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to fetch file for viewing');
+  }
+  const blob = await res.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  return { objectUrl, type: blob.type };
+}
+
+export async function openFileLocation(projectId: number, fileId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/files/${fileId}/open-location`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to open file location');
+  }
+  return res.json();
 }
 
 export async function deleteTaskFile(projectId: number, fileId: number) {
@@ -291,4 +316,32 @@ export async function generateProjectPlan(data: any) {
   }
   return res.json();
 }
+
+export async function fetchServerFolders(path?: string) {
+  let url = `${API_BASE}/folders/browse`;
+  if (path) {
+    url += `?path=${encodeURIComponent(path)}`;
+  }
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to fetch server folders');
+  }
+  return res.json();
+}
+
+export async function relinkProjectFolder(projectId: number, manualPath?: string) {
+  const body = manualPath ? { manual_path: manualPath } : {};
+  const res = await fetch(`${API_BASE}/${projectId}/relink`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to relink project folder');
+  }
+  return res.json();
+}
+
 

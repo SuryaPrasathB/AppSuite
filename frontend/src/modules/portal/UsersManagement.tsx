@@ -193,65 +193,81 @@ export const UsersManagement: React.FC = () => {
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900"></div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filteredUsers.length > 0 ? (
-              filteredUsers.map((u) => (
-                <div key={u.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                  <div>
-                    <div className="flex justify-between items-start gap-2 mb-4">
-                      <div>
-                        <h3 className="font-bold text-slate-900 text-base leading-snug truncate" title={u.name}>{u.name}</h3>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 ring-1 ring-inset ring-blue-700/10 uppercase tracking-wider">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
+                    <th className="p-4 font-bold">User</th>
+                    <th className="p-4 font-bold">Role</th>
+                    <th className="p-4 font-bold">Department</th>
+                    <th className="p-4 font-bold">Contact</th>
+                    <th className="p-4 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredUsers.length > 0 ? (
+                    filteredUsers.map((u) => (
+                      <tr key={u.id} className="hover:bg-slate-50 transition-colors group">
+                        <td className="p-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-900">{u.name}</span>
+                            <span className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
+                              <User className="h-3 w-3" /> @{u.username || 'N/A'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 ring-1 ring-inset ring-blue-700/10 uppercase tracking-wider whitespace-nowrap">
                             {u.role || 'No Role'}
                           </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => openEditModal(u, e)} className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors cursor-pointer" title="Edit User">
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        {user?.username !== u.username && (
-                          <button onClick={(e) => handleDelete(u.id, e)} className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer" title="Delete User">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-sm text-slate-600 mt-5">
-                      <div className="flex items-center gap-2.5">
-                        <User className="h-4 w-4 text-slate-400 shrink-0" />
-                        <span className="font-medium text-slate-700">@{u.username || 'N/A'}</span>
-                      </div>
-                      {u.email && (
-                        <div className="flex items-center gap-2.5">
-                          <Mail className="h-4 w-4 text-slate-400 shrink-0" />
-                          <a href={`mailto:${u.email}`} className="hover:text-slate-900 transition-colors truncate" title={u.email}>{u.email}</a>
-                        </div>
-                      )}
-                      {u.phone && (
-                        <div className="flex items-center gap-2.5">
-                          <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-                          <span>{u.phone}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {u.department && (
-                    <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider">
-                      <span>Dept: {u.department}</span>
-                    </div>
+                        </td>
+                        <td className="p-4 text-sm text-slate-600 font-medium">
+                          {u.department || '-'}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col gap-1 text-xs text-slate-600">
+                            {u.email && (
+                              <div className="flex items-center gap-1.5">
+                                <Mail className="h-3.5 w-3.5 text-slate-400" />
+                                <a href={`mailto:${u.email}`} className="hover:text-slate-900 transition-colors truncate max-w-[150px] block" title={u.email}>{u.email}</a>
+                              </div>
+                            )}
+                            {u.phone && (
+                              <div className="flex items-center gap-1.5">
+                                <Phone className="h-3.5 w-3.5 text-slate-400" />
+                                <span>{u.phone}</span>
+                              </div>
+                            )}
+                            {!u.email && !u.phone && <span className="text-slate-400 italic">No contact info</span>}
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={(e) => openEditModal(u, e)} className="p-1.5 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors cursor-pointer" title="Edit User">
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            {user?.username !== u.username && (
+                              <button onClick={(e) => handleDelete(u.id, e)} className="p-1.5 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer" title="Delete User">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="p-16 text-center text-slate-500">
+                        <Users className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+                        <p className="text-lg font-bold text-slate-700">No users found</p>
+                        <p className="text-sm mt-1">Try adjusting your search or add a new user.</p>
+                      </td>
+                    </tr>
                   )}
-                </div>
-              ))
-            ) : (
-              <div className="col-span-full bg-white border border-slate-200 p-16 text-center text-slate-500 rounded-2xl shadow-sm">
-                <Users className="h-12 w-12 mx-auto text-slate-300 mb-3" />
-                <p className="text-lg font-bold text-slate-700">No users found</p>
-                <p className="text-sm mt-1">Try adjusting your search or add a new user.</p>
-              </div>
-            )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

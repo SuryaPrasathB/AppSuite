@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight } from 'lucide-react';
-import { fetchProjects, fetchDashboardTasks, fetchDashboardStats } from '../projects/api';
+import { fetchProjects, fetchDashboardTasks, fetchDashboardStats, fetchWorkload } from '../projects/api';
 import { apiClient } from '../../api/apiClient';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -16,13 +16,15 @@ export const GlobalDashboard: React.FC = () => {
   const [tasks, setTasks] = useState<any>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [workload, setWorkload] = useState<any[]>([]);
 
   const loadData = async () => {
     try {
-      const [projectsData, tasksData, statsData, announcementsData] = await Promise.all([
+      const [projectsData, tasksData, statsData, workloadData, announcementsData] = await Promise.all([
         fetchProjects(1, 100, '', 'All'),
         fetchDashboardTasks(),
         fetchDashboardStats(),
+        fetchWorkload(),
         apiClient.announcements.listActive(5).catch(() => [])
       ]);
 
@@ -32,6 +34,7 @@ export const GlobalDashboard: React.FC = () => {
       setProjects(activeProjectsList);
       setTasks(tasksData);
       setStats(statsData);
+      setWorkload(workloadData);
       setAnnouncements(announcementsData);
     } catch (err) {
       console.error("Failed to load global dashboard data", err);
@@ -72,7 +75,7 @@ export const GlobalDashboard: React.FC = () => {
 
   if (!stats || !tasks) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">
+      <div className="h-screen bg-slate-50 flex items-center justify-center text-slate-500">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
     );
@@ -82,7 +85,7 @@ export const GlobalDashboard: React.FC = () => {
   const activeProjectsCount = projects.length;
   const tasksInProgress = stats.counters.in_progress || 0;
   const pendingTasks = stats.counters.pending || 0;
-  const overallProgress = projects.length > 0 ? Math.round(projects.reduce((acc, p) => acc + (p.completion_percentage || 0), 0) / projects.length) : 0;
+  const unassignedTasks = stats.counters.unassigned || 0;
 
   // Pie chart data
   const completed = stats.counters.completed || 0;
@@ -111,9 +114,10 @@ export const GlobalDashboard: React.FC = () => {
     }
   });
 
-  const hierarchicalProjects: { item: any, isSub: boolean }[] = [];
+  const hierarchicalProjects: { item: any, isSub: boolean, displayIndex?: number }[] = [];
+  let currentDisplayIndex = 1;
   rootProjects.forEach(rp => {
-    hierarchicalProjects.push({ item: rp, isSub: false });
+    hierarchicalProjects.push({ item: rp, isSub: false, displayIndex: currentDisplayIndex++ });
     if (subMap.has(rp.id)) {
       subMap.get(rp.id)!.forEach(sp => {
         hierarchicalProjects.push({ item: sp, isSub: true });
@@ -129,19 +133,21 @@ export const GlobalDashboard: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col overflow-hidden relative">
+    <div className="h-screen w-screen bg-slate-100 font-sans text-slate-800 flex flex-col overflow-hidden relative">
       
       {/* Header Bar */}
-      <header className="px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-6">
+      <header className="px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10 relative">
+        <div className="w-32">
            <button onClick={() => navigate('/')} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400">
              <ArrowLeft className="h-5 w-5" />
            </button>
-           <img src="/LSCS_MainLogo.png" alt="LSCS Logo" className="h-10 object-contain" />
         </div>
-        <div className="text-center flex-1">
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">COMPANY DASHBOARD – AT A GLANCE</h1>
+        <div className="text-center absolute left-1/2 -translate-x-1/2">
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">L S CONTROL SYSTEMS</h1>
           <CurrentDateAndTime />
+        </div>
+        <div className="w-32 flex justify-end">
+           <img src="/LSCS.png" alt="LSCS Logo" className="h-10 object-contain" />
         </div>
       </header>
 
@@ -149,36 +155,42 @@ export const GlobalDashboard: React.FC = () => {
       <main className="flex-1 p-4 overflow-hidden w-full max-w-[1920px] mx-auto flex flex-col gap-4">
         
         {/* Top Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[35%] min-h-[220px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[35%] min-h-[250px]">
           
           {/* Overview */}
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
-            <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-4">OVERVIEW</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
+          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4 min-h-0">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-bold text-slate-500 tracking-wider">OVERVIEW</h3>
+              <a href="/projects" onClick={e => { e.preventDefault(); navigate('/projects'); }} className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">View All Projects &gt;</a>
+            </div>
+             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
-                <div className="text-4xl font-black text-blue-600 mb-2">{activeProjectsCount}</div>
-                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">ACTIVE PROJECTS</div>
+                <div className="text-6xl font-black text-blue-600 mb-2">{activeProjectsCount}</div>
+                <div className="text-xs font-bold text-slate-500 text-center tracking-wide">ACTIVE PROJECTS</div>
               </div>
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
-                <div className="text-4xl font-black text-emerald-600 mb-2">{tasksInProgress}</div>
-                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">TASKS IN PROGRESS</div>
+                <div className="text-6xl font-black text-emerald-600 mb-2">{tasksInProgress}</div>
+                <div className="text-xs font-bold text-slate-500 text-center tracking-wide">TASKS IN PROGRESS</div>
               </div>
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
-                <div className="text-4xl font-black text-amber-500 mb-2">{pendingTasks}</div>
-                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">PENDING TASKS</div>
+                <div className="text-6xl font-black text-amber-500 mb-2">{pendingTasks}</div>
+                <div className="text-xs font-bold text-slate-500 text-center tracking-wide">PENDING TASKS</div>
               </div>
               <div className="bg-slate-50 rounded-xl flex flex-col items-center justify-center p-4 border border-slate-100">
-                <div className="text-4xl font-black text-red-500 mb-2">{overdue}</div>
-                <div className="text-[10px] font-bold text-slate-500 text-center tracking-wide">OVERDUE TASKS</div>
+                <div className="text-6xl font-black text-red-500 mb-2">{unassignedTasks}</div>
+                <div className="text-xs font-bold text-slate-500 text-center tracking-wide">UNASSIGNED TASKS</div>
               </div>
             </div>
           </div>
 
           {/* Task Status */}
-          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
-            <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-2">TASK STATUS</h3>
+          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4 min-h-0">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold text-slate-500 tracking-wider">TASK STATUS</h3>
+              <a href="/projects/my-tasks" onClick={e => { e.preventDefault(); navigate('/projects/my-tasks', { state: { filter: 'All' } }); }} className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">View All Tasks &gt;</a>
+            </div>
             <div className="flex-1 flex items-center justify-between min-h-0">
-               <div className="flex-1 h-full min-w-0">
+               <div className="flex-1 h-full min-w-0 relative">
                  <ResponsiveContainer width="100%" height="100%">
                    <PieChart>
                      <Pie 
@@ -199,6 +211,10 @@ export const GlobalDashboard: React.FC = () => {
                      <Tooltip />
                    </PieChart>
                  </ResponsiveContainer>
+                 <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none flex flex-col items-center justify-center">
+                   <span className="text-xl font-black text-slate-800 leading-none">{tasksInProgress + pendingTasks + overdue}</span>
+                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Total</span>
+                 </div>
                </div>
                <div className="flex flex-col gap-2 shrink-0 justify-center">
                  {pieData.map(d => (
@@ -212,24 +228,35 @@ export const GlobalDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Project Progress */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4">
-             <h3 className="text-xs font-bold text-slate-500 tracking-wider mb-2">PROJECT PROGRESS</h3>
-             <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-2">
-               <div className="flex text-[10px] font-bold text-slate-400 mb-1">
-                 <div className="flex-1">Project</div>
-                 <div>Progress</div>
-               </div>
-               {topProjects.map(p => (
-                 <div key={p.name} className="flex items-center gap-4 text-xs font-bold text-slate-700">
-                   <div className="flex-1 truncate">{p.name}</div>
-                   <div className="w-32 bg-slate-200 h-2.5 rounded-full overflow-hidden">
-                     <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${p.progress}%` }}></div>
-                   </div>
-                   <div className="w-8 text-right">{p.progress}%</div>
-                 </div>
-               ))}
-               {topProjects.length === 0 && <div className="text-sm text-slate-400">No active projects</div>}
+          {/* Team Workload */}
+          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col p-4 min-h-0">
+             <div className="flex items-center justify-between mb-2">
+               <h3 className="text-xs font-bold text-slate-500 tracking-wider">TEAM WORKLOAD</h3>
+               <a href="/projects/standup" onClick={e => { e.preventDefault(); navigate('/projects/standup'); }} className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">View All Members &gt;</a>
+             </div>
+             <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-2 mt-2">
+               {workload.slice(0, 5).map(member => {
+                  const totalTasks = member.tasks.length;
+                  const inProgress = member.tasks.filter((t: any) => t.status === 'IN_PROGRESS').length;
+                  const pending = member.tasks.filter((t: any) => t.status === 'PENDING' || t.status === 'TODO' || t.status === 'REVIEW').length;
+                  const completed = member.tasks.filter((t: any) => t.status === 'COMPLETED').length;
+                  const overdue = member.tasks.filter((t: any) => t.status !== 'COMPLETED' && t.due_date && new Date(t.due_date) < new Date()).length;
+                  return (
+                    <div key={member.employee_name} className="flex flex-col gap-1 border-b border-slate-100 pb-2 mb-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700">{member.employee_name}</span>
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{totalTasks} tasks</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] font-semibold flex-wrap">
+                        <div className="flex items-center gap-1 text-slate-500"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Pending: {pending}</div>
+                        <div className="flex items-center gap-1 text-slate-500"><span className="w-2 h-2 rounded-full bg-blue-500"></span> In Progress: {inProgress}</div>
+                        <div className="flex items-center gap-1 text-slate-500"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Completed: {completed}</div>
+                        <div className="flex items-center gap-1 text-slate-500"><span className="w-2 h-2 rounded-full bg-red-500"></span> Overdue: {overdue}</div>
+                      </div>
+                    </div>
+                  );
+               })}
+               {workload.length === 0 && <div className="text-sm text-slate-400 text-center mt-4">No workload data available</div>}
              </div>
           </div>
           
@@ -239,8 +266,8 @@ export const GlobalDashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
           
           {/* Active Projects Table */}
-          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-slate-100">
+          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden min-h-0">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-500 tracking-wider">ACTIVE PROJECTS</h3>
             </div>
             <div className="flex-1 overflow-auto">
@@ -249,6 +276,7 @@ export const GlobalDashboard: React.FC = () => {
                   <tr className="text-[10px] font-bold text-slate-400 tracking-wider">
                     <th className="p-3 pl-5 border-b border-slate-100">#</th>
                     <th className="p-3 border-b border-slate-100">PROJECT NAME</th>
+                    <th className="p-3 border-b border-slate-100">CUSTOMER</th>
                     <th className="p-3 border-b border-slate-100">PROJECT MANAGER</th>
                     <th className="p-3 border-b border-slate-100">START DATE</th>
                     <th className="p-3 border-b border-slate-100">END DATE</th>
@@ -257,7 +285,7 @@ export const GlobalDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 font-bold">
-                  {hierarchicalProjects.map(({ item: p, isSub }, i) => {
+                  {hierarchicalProjects.map(({ item: p, isSub, displayIndex }, i) => {
                     const prog = p.completion_percentage || 0;
                     let statusColor = "text-emerald-500";
                     let statusText = "On Track";
@@ -286,23 +314,14 @@ export const GlobalDashboard: React.FC = () => {
 
                     return (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
-                        <td className="p-3 pl-5 text-slate-400">{i + 1}</td>
+                        <td className="p-3 pl-5 text-slate-400">{isSub ? '' : displayIndex}</td>
                         <td className={`p-3 ${isSub ? 'pl-8' : ''}`}>
                           <div className="flex items-center gap-2">
                              {isSub && <CornerDownRight className="h-4 w-4 text-blue-500 shrink-0" />}
                              <span className={isSub ? 'text-blue-900 font-semibold' : ''}>{p.name}</span>
-                             {p.is_parent && (
-                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                                 Major Project {p.sub_projects_count > 0 ? `(${p.sub_projects_count})` : ''}
-                               </span>
-                             )}
-                             {p.parent_id && (
-                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                                 Sub-Project
-                               </span>
-                             )}
                           </div>
                         </td>
+                        <td className="p-3 text-slate-600">{p.client_name || '—'}</td>
                         <td className="p-3">{p.project_incharge || '—'}</td>
                         <td className="p-3 text-slate-500 font-medium">{p.start_date ? new Date(p.start_date).toLocaleDateString('en-GB') : '—'}</td>
                         <td className="p-3 text-slate-500 font-medium">{p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString('en-GB') : '—'}</td>
@@ -331,25 +350,28 @@ export const GlobalDashboard: React.FC = () => {
             
             {/* Overdue Tasks */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex items-center gap-2">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-500 tracking-wider">OVERDUE TASKS</h3>
               </div>
               <div className="flex-1 overflow-auto p-4 pt-2">
-                <div className="grid grid-cols-3 text-[10px] font-bold text-slate-400 mb-3 border-b border-slate-100 pb-2 sticky top-0 bg-white">
+                <div className="grid grid-cols-4 text-[10px] font-bold text-slate-400 mb-3 border-b border-slate-100 pb-2 sticky top-0 bg-white">
                   <div className="col-span-1">TASK</div>
                   <div className="col-span-1">PROJECT</div>
+                  <div className="col-span-1">ASSIGNEE</div>
                   <div className="col-span-1 text-right">DUE DATE</div>
                 </div>
                 <div className="flex flex-col gap-3">
                   {overdueTasks.slice(0, 5).map((t: any) => {
                     const projectName = projects.find(p => p.id === t.project_id)?.name || `Project ${t.project_id}`;
+                    const assigneeText = t.assignees && t.assignees.length > 0 ? t.assignees.map((a: any) => a.name).join(', ') : t.assignee_name || 'Unassigned';
                     return (
-                    <div key={t.id} className="grid grid-cols-3 text-xs font-bold items-center">
+                    <div key={t.id} className="grid grid-cols-4 text-xs font-bold items-center">
                       <div className="col-span-1 text-red-500 flex items-center gap-1 truncate pr-2">
                         <AlertTriangle className="h-3 w-3 shrink-0" />
                         <span className="truncate" title={t.title}>{t.title}</span>
                       </div>
                       <div className="col-span-1 text-slate-600 truncate pr-2" title={projectName}>{projectName}</div>
+                      <div className="col-span-1 text-slate-500 truncate pr-2" title={assigneeText}>{assigneeText}</div>
                       <div className="col-span-1 text-red-500 text-right">{new Date(t.due_date).toLocaleDateString('en-GB')}</div>
                     </div>
                   )})}
@@ -374,10 +396,13 @@ export const GlobalDashboard: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-auto p-4 text-sm text-slate-700 font-medium">
-                <ul className="list-disc pl-5 space-y-3">
+                <ul className="list-disc pl-5 space-y-4">
                   {announcements.map((a: any) => (
                     <li key={a.id} className="leading-snug">
-                      {a.message}
+                      <div className="text-sm">{a.message}</div>
+                      <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                        {new Date(a.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} at {new Date(a.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </li>
                   ))}
                   {announcements.length === 0 && (
@@ -385,7 +410,7 @@ export const GlobalDashboard: React.FC = () => {
                   )}
                 </ul>
                 <div className="mt-8 text-center text-blue-600 font-bold italic text-xs">
-                  Teamwork Today, Excellence Tomorrow.
+                  Power of Excellence.
                 </div>
               </div>
             </div>
