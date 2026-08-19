@@ -26,6 +26,20 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
     return response.json();
 }
 
+const formatMinutes = (totalMinutes: number) => {
+    if (!totalMinutes || totalMinutes < 0) return '0 mins';
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const mins = totalMinutes % 60;
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+    if (hours > 0) parts.push(`${hours} hr${hours !== 1 ? 's' : ''}`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins} min${mins !== 1 ? 's' : ''}`);
+    
+    return parts.join(' ');
+};
+
 export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
     const [tickets, setTickets] = useState<any[]>([]);
     const [projects, setProjects] = useState<any[]>([]);
@@ -370,7 +384,7 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                                                     } catch(e) { return null; }
                                                 })()}
                                                 <p className="text-xs font-bold text-emerald-600/70 mt-2 uppercase tracking-wide">
-                                                    Resolved {ticket.resolver_name ? `by ${ticket.resolver_name} ` : ''}in {ticket.resolution_time_mins} minutes
+                                                    Resolved {ticket.resolver_name ? `by ${ticket.resolver_name} ` : ''}in {formatMinutes(ticket.resolution_time_mins)}
                                                 </p>
                                                 
                                                 <button 

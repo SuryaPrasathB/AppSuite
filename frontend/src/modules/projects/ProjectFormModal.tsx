@@ -42,6 +42,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     po_number: '',
     client_name: '',
     project_incharge: '',
+    description: '',
     start_date: '',
     date_of_delivery: '',
     status: 'PLANNING',
@@ -85,6 +86,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           po_number: project.po_number || '',
           client_name: project.client_name || '',
           project_incharge: project.project_incharge || '',
+          description: project.description || '',
           start_date: project.start_date ? project.start_date.split('T')[0] : '',
           date_of_delivery: project.date_of_delivery ? project.date_of_delivery.split('T')[0] : '',
           status: project.status || 'PLANNING',
@@ -116,6 +118,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           po_number: '',
           client_name: '',
           project_incharge: '',
+          description: '',
           start_date: today,
           date_of_delivery: '',
           status: 'PLANNING',
@@ -471,6 +474,17 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                     </select>
                   </div>
                 )}
+              </div>
+              
+              <div className="mt-5">
+                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({...form, description: e.target.value})}
+                  placeholder="Enter a brief description of the project..."
+                  rows={3}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all resize-none"
+                />
               </div>
             </section>
 

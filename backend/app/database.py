@@ -855,7 +855,7 @@ class DBStore:
 
     # PROJECTS METHODS
     @staticmethod
-    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
@@ -873,6 +873,8 @@ class DBStore:
         if parent_id is not None:
             where_clauses.append("p.parent_id = %s")
             params.append(parent_id)
+        elif root_only:
+            where_clauses.append("p.parent_id IS NULL")
 
         where_str = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -962,6 +964,16 @@ class DBStore:
                 if k in p:
                     p[k] = bool(p[k])
         return projects
+
+    @staticmethod
+    def get_all_project_codes() -> List[str]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT code FROM projects WHERE code IS NOT NULL")
+        codes = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        return codes
 
     @staticmethod
     def add_project(project: Dict[str, Any]) -> Dict[str, Any]:

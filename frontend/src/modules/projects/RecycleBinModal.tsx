@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RefreshCcw, AlertTriangle, X } from 'lucide-react';
 import { fetchDeletedProjects, restoreProject, forceDeleteProject } from './api';
+import { useDialog } from '../../context/DialogContext';
 
 interface RecycleBinModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ export const RecycleBinModal: React.FC<RecycleBinModalProps> = ({ isOpen, onClos
   const [deletedProjects, setDeletedProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const { showConfirm, showAlert } = useDialog();
 
   useEffect(() => {
     const userStr = localStorage.getItem('smart_store_user');
@@ -48,17 +50,23 @@ export const RecycleBinModal: React.FC<RecycleBinModalProps> = ({ isOpen, onClos
       onRestore(); // trigger refresh of main list
       loadDeletedProjects();
     } catch (err: any) {
-      alert(err.message || 'Failed to restore project');
+      showAlert(err.message || 'Failed to restore project');
     }
   };
 
   const handleForceDelete = async (id: number) => {
-    if (!window.confirm("Are you sure you want to permanently delete this project? This cannot be undone.")) return;
+    const confirmed = await showConfirm(
+      "Are you sure you want to permanently delete this project? This cannot be undone.",
+      "Permanently Delete Project?",
+      true
+    );
+    if (!confirmed) return;
+    
     try {
       await forceDeleteProject(id, true);
       loadDeletedProjects();
     } catch (err: any) {
-      alert(err.message || 'Failed to permanently delete project');
+      showAlert(err.message || 'Failed to permanently delete project');
     }
   };
 

@@ -9,17 +9,19 @@ import { fetchProjects, createProject, fetchNextProjectCode, updateProject, dele
 import { useNavigate } from 'react-router-dom';
 import { ProjectFormModal } from './ProjectFormModal';
 import { RecycleBinModal } from './RecycleBinModal';
+import { useDialog } from '../../context/DialogContext';
 
 export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { showAlert } = useDialog();
 
   // Filters & State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [activeTab, setActiveTab] = useState('All Projects');
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<number>>(new Set());
+  const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -42,12 +44,12 @@ export const Projects: React.FC = () => {
   const loadProjects = async () => {
     try {
       setLoading(true);
-      const data = await fetchProjects(page, limit, searchQuery, activeTab === 'All Projects' ? statusFilter : activeTab.toUpperCase().replace(' ', '_'));
+      const data = await fetchProjects(page, limit, searchQuery, activeTab === 'All Projects' ? statusFilter : activeTab.toUpperCase().replace(' ', '_'), undefined, true);
       setProjects(data.data || []);
       setTotalProjects(data.total || 0);
     } catch (err) {
       console.error(err);
-      alert("Failed to load projects");
+      showAlert("Failed to load projects");
     } finally {
       setLoading(false);
     }
@@ -88,7 +90,7 @@ export const Projects: React.FC = () => {
       setDeleteConfirmProject(null);
       loadProjects();
     } catch (err: any) {
-      alert(err.message || "Failed to delete project");
+      showAlert(err.message || "Failed to delete project");
     }
   };
 
@@ -113,7 +115,7 @@ export const Projects: React.FC = () => {
       loadProjects();
       return savedProject;
     } catch (err: any) {
-      alert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
+      showAlert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
     } finally {
       setIsGenerating(false);
     }
@@ -123,8 +125,8 @@ export const Projects: React.FC = () => {
     try {
       await updateProject(projectId, { status: newStatus });
       loadProjects();
-    } catch (err) {
-      alert("Failed to update status");
+    } catch (err: any) {
+      showAlert(err.message || "Failed to update status");
     }
   };
 
@@ -175,9 +177,27 @@ export const Projects: React.FC = () => {
 
   const totalPages = Math.ceil(totalProjects / limit);
 
-  const toggleCollapse = (projectId: number, e: React.MouseEvent) => {
+  const toggleExpand = async (projectId: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setCollapsedProjects(prev => {
+
+    // Fetch sub-projects if we haven't already
+    const hasSubprojects = projects.some(p => p.parent_id === projectId);
+    if (!hasSubprojects) {
+      try {
+        const subData = await fetchProjects(1, 1000, '', 'All', projectId);
+        if (subData.data && subData.data.length > 0) {
+          setProjects(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newSubs = subData.data.filter((p: any) => !existingIds.has(p.id));
+            return [...prev, ...newSubs];
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch sub-projects", err);
+      }
+    }
+
+    setExpandedProjects(prev => {
       const next = new Set(prev);
       if (next.has(projectId)) {
         next.delete(projectId);
@@ -283,7 +303,7 @@ export const Projects: React.FC = () => {
                 </tr>
               ) : hierarchicalProjects.length > 0 ? (
                 hierarchicalProjects
-                  .filter(({ item: p, isSub }) => !isSub || !collapsedProjects.has(p.parent_id))
+                  .filter(({ item: p, isSub }) => !isSub || expandedProjects.has(p.parent_id))
                   .map(({ item: p, isSub }) => (
                   <tr 
                     key={p.id} 
@@ -304,13 +324,13 @@ export const Projects: React.FC = () => {
                           )}
                           {!isSub && p.is_parent && (
                             <button 
-                              onClick={(e) => toggleCollapse(p.id, e)}
+                              onClick={(e) => toggleExpand(p.id, e)}
                               className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
                             >
-                              {collapsedProjects.has(p.id) ? (
-                                <ChevronRight className="h-4 w-4" />
-                              ) : (
+                              {expandedProjects.has(p.id) ? (
                                 <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
                               )}
                             </button>
                           )}

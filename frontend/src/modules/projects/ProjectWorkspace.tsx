@@ -12,6 +12,7 @@ import {
 } from './api';
 import { ProjectFormModal } from './ProjectFormModal';
 import { TasksTab } from './workspace-tabs/TasksTab';
+import { AnalyticsTab } from './workspace-tabs/AnalyticsTab';
 import { KanbanTab } from './workspace-tabs/KanbanTab';
 import { TimelineTab } from './workspace-tabs/TimelineTab';
 import { DocumentsTab } from './workspace-tabs/DocumentsTab';
@@ -78,7 +79,7 @@ export const ProjectWorkspace: React.FC = () => {
       if (projDetails.project?.is_parent) {
         setActiveTab('sub_projects');
       } else {
-        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service'].includes(prev) ? prev : 'tasks');
+        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
       }
     } catch (error) {
       console.error(error);
@@ -100,7 +101,8 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'notes', name: 'Major Project Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity Log', icon: Activity },
   ] : [
-    { id: 'tasks', name: 'Tasks', icon: CheckSquare },
+    { id: 'analytics', name: 'Analytics', icon: BarChart2 },
+    { id: 'tasks', name: 'Tasks List', icon: CheckCircle2 },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
     { id: 'documents', name: 'Documents', icon: FileText },
@@ -301,8 +303,8 @@ export const ProjectWorkspace: React.FC = () => {
     try {
       await updateDynamicTask(project.id, taskId, { status: newStatus });
       setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-    } catch (err) {
-      showAlert("Failed to update status");
+    } catch (err: any) {
+      showAlert(err.message || "Failed to update status");
       loadData(project.id, true);
     }
   };
@@ -555,8 +557,17 @@ export const ProjectWorkspace: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
             <div className="md:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-800 mb-4">Project Description</h3>
-                <p className="text-slate-600 text-sm leading-relaxed">{project.description || 'No description provided.'}</p>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                  <LayoutDashboard className="h-5 w-5 mr-2 text-slate-400" />
+                  Project Specifications
+                </h3>
+                {project.description ? (
+                  <div className="prose prose-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6">
+                    {project.description.split('\n').map((line: string, i: number) => (
+                      <p key={i} className="mb-2 last:mb-0">{line}</p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
             
@@ -590,6 +601,10 @@ export const ProjectWorkspace: React.FC = () => {
           </div>
         )}
         
+        {activeTab === 'analytics' && (
+          <AnalyticsTab dynamicTasks={dynamicTasks} />
+        )}
+
         {activeTab === 'tasks' && (
           <TasksTab 
             dynamicTasks={dynamicTasks}

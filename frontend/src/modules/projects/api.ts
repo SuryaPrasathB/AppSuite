@@ -18,13 +18,15 @@ function getAuthHeaders(isFileUpload = false): Headers {
   return headers;
 }
 
-export async function fetchProjects(page = 1, limit = 100, search = '', status = 'All') {
+export async function fetchProjects(page = 1, limit = 100, search = '', status = 'All', parentId?: number, rootOnly = false) {
   const params = new URLSearchParams({
     page: page.toString(),
     limit: limit.toString(),
   });
   if (search) params.append('search', search);
   if (status && status !== 'All') params.append('status', status);
+  if (parentId !== undefined) params.append('parent_id', parentId.toString());
+  if (rootOnly) params.append('root_only', 'true');
 
   const res = await fetch(`${API_BASE}?${params.toString()}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch projects');
@@ -92,7 +94,10 @@ export async function updateProject(id: number, data: any) {
     headers: getAuthHeaders(),
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Failed to update project');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to update project');
+  }
   return res.json();
 }
 

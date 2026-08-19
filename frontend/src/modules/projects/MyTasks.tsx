@@ -5,12 +5,14 @@ import {
   CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { useDialog } from '../../context/DialogContext';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'kanban'>('list');
+  const { showAlert } = useDialog();
 
   // Filter state
   const location = useLocation();
@@ -44,8 +46,8 @@ export const MyTasks: React.FC = () => {
     try {
       await updateDynamicTask(projectId, taskId, { status: newStatus });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-    } catch (err) {
-      alert("Failed to update status");
+    } catch (err: any) {
+      showAlert(err.message || "Failed to update status");
     }
   };
 

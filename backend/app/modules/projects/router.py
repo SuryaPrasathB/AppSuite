@@ -68,32 +68,35 @@ def get_next_project_num():
     try:
         if not os.path.exists(base_dir):
             os.makedirs(base_dir, exist_ok=True)
-            return 1
-            
-        for folder in os.listdir(base_dir):
-            if os.path.isdir(os.path.join(base_dir, folder)):
-                match = re.search(r"Project No (\d+)_", folder, re.IGNORECASE)
+        else:
+            for folder in os.listdir(base_dir):
+                if os.path.isdir(os.path.join(base_dir, folder)):
+                    match = re.search(r"Project No (\d+)_", folder, re.IGNORECASE)
+                    if match:
+                        num = int(match.group(1))
+                        if num > max_num:
+                            max_num = num
+    except Exception as e:
+        print(f"Warning: Could not access or create base directory {base_dir}: {e}")
+        
+    # Always check DB as well to prevent duplicates if folders are missing or out of sync
+    try:
+        codes = DBStore.get_all_project_codes()
+        for code in codes:
+            if code:
+                match = re.search(r"^(\d+)/PRJ/", code)
                 if match:
                     num = int(match.group(1))
                     if num > max_num:
                         max_num = num
     except Exception as e:
-        print(f"Warning: Could not access or create base directory {base_dir}: {e}")
-        # Fallback to DB if folder scan fails
-        projects = DBStore.get_all_projects_unpaginated()
-        for p in projects:
-            code = p.get("code", "")
-            match = re.search(r"(\d+)/PRJ/", code)
-            if match:
-                num = int(match.group(1))
-                if num > max_num:
-                    max_num = num
+        print(f"Warning: Could not check DB for max project number: {e}")
                     
     return max_num + 1 if max_num > 0 else 1
 
 @router.get("")
-def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None):
-    return DBStore.get_projects(page, limit, search, status, parent_id)
+def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False):
+    return DBStore.get_projects(page, limit, search, status, parent_id, root_only)
 
 @router.get("/next-code")
 def get_next_code():
@@ -642,6 +645,33 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     if project.status == "COMPLETED" and existing_proj.get("status") != "COMPLETED":
         if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != existing_proj.get("project_incharge"):
             raise HTTPException(status_code=403, detail="Not authorized to complete project")
+            
+        # Enforce all tasks completed
+        tasks = DBStore.get_dynamic_tasks(project_id)
+        incomplete_tasks = [t for t in tasks if t.get("status") not in ["COMPLETED", "CANCELLED"]]
+        if incomplete_tasks:
+            raise HTTPException(status_code=400, detail=f"Cannot complete project. There are {len(incomplete_tasks)} incomplete task(s).")
+            
+        # Enforce mandatory documents
+        if not existing_proj.get("is_parent"):
+            expected_categories = [
+                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
+                "Test Report", "Installation Report", "User Manual", 
+                "Photos", "Technical Specification"
+            ]
+            if existing_proj.get("has_software"):
+                expected_categories.append("Software")
+            if existing_proj.get("has_firmware"):
+                expected_categories.append("Firmware")
+            if existing_proj.get("has_transformer"):
+                expected_categories.append("Transformer Design")
+                
+            project_files = DBStore.get_project_files(project_id)
+            uploaded_categories = set([f.get("task_name") for f in project_files])
+            missing_categories = [cat for cat in expected_categories if cat not in uploaded_categories]
+            
+            if missing_categories:
+                raise HTTPException(status_code=400, detail=f"Cannot complete project. Missing documents in: {', '.join(missing_categories)}")
 
     project_dump = project.model_dump(exclude_unset=True)
 
