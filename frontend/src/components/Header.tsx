@@ -75,7 +75,9 @@ export const Header: React.FC = () => {
     // Projects Module
     if (path.startsWith('/projects/dashboard')) return { title: 'Projects Dashboard', desc: 'Overview of all active projects and metrics' };
     if (path.startsWith('/projects/my-tasks')) return { title: 'My Tasks', desc: 'Manage and track your assigned project tasks' };
+    if (path.startsWith('/projects/standup')) return { title: 'Daily Standup', desc: 'Team standup and sprint coordination' };
     if (path.startsWith('/projects/timeline')) return { title: 'Global Timeline', desc: 'Gantt chart view of all project schedules' };
+    if (path.startsWith('/projects/service-tickets') || path.startsWith('/projects/service-desk')) return { title: 'Service Desk', desc: 'Manage customer service issues, hardware repairs & field tickets' };
     if (path === '/projects') return { title: 'Projects', desc: 'Manage projects and track material consumption' };
     if (path.startsWith('/projects/')) return { title: 'Project Workspace', desc: 'Detailed view and management of project' };
 
@@ -128,34 +130,12 @@ export const Header: React.FC = () => {
     }
   };
 
-    useEffect(() => {
-    fetchNotifications();
-    fetchOverdueTasks();
-    fetchAssignedTickets();
-    const interval = setInterval(() => {
-      fetchNotifications();
-      fetchOverdueTasks();
-      fetchAssignedTickets();
-    }, 60000); // Polling every minute
-
-    const handleTicketsUpdated = () => fetchAssignedTickets();
-    const handleTasksUpdated = () => fetchOverdueTasks();
-
-    window.addEventListener('ticketsUpdated', handleTicketsUpdated);
-    window.addEventListener('tasksUpdated', handleTasksUpdated);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('ticketsUpdated', handleTicketsUpdated);
-      window.removeEventListener('tasksUpdated', handleTasksUpdated);
-    };
-  }, [user]);
-
   const fetchOverdueTasks = async () => {
     if (!user) return;
     try {
-      const data = await apiClient.projects.myOverdue();
-      setOverdueTasks(data.tasks || []);
+      const data = await apiClient.projects.myOverdue().catch(() => ({ tasks: [] }));
+      const tasks = Array.isArray(data) ? data : (data?.tasks || []);
+      setOverdueTasks(tasks);
     } catch (err) {
       console.error("Failed to load overdue tasks", err);
     }
@@ -170,6 +150,46 @@ export const Header: React.FC = () => {
       console.error("Failed to load assigned tickets", err);
     }
   };
+
+  useEffect(() => {
+    fetchNotifications();
+    fetchOverdueTasks();
+    fetchAssignedTickets();
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+      fetchOverdueTasks();
+      fetchAssignedTickets();
+    }, 10000); // Poll every 10 seconds for real-time reactivity
+
+    const handleTicketsUpdated = () => fetchAssignedTickets();
+    const handleTasksUpdated = () => fetchOverdueTasks();
+    const handleFocus = () => {
+      fetchNotifications();
+      fetchOverdueTasks();
+      fetchAssignedTickets();
+    };
+
+    window.addEventListener('ticketsUpdated', handleTicketsUpdated);
+    window.addEventListener('tasksUpdated', handleTasksUpdated);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('ticketsUpdated', handleTicketsUpdated);
+      window.removeEventListener('tasksUpdated', handleTasksUpdated);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user]);
+
+  // Also refresh on route changes
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      fetchOverdueTasks();
+      fetchAssignedTickets();
+    }
+  }, [location.pathname]);
 
   // Filter products based on search input
   useEffect(() => {
@@ -272,13 +292,21 @@ export const Header: React.FC = () => {
     <div className="sticky top-0 z-30 flex flex-col w-full shadow-sm">
       <div className="flex flex-col">
         {overdueTasks.length > 0 && (
-          <div className="bg-rose-500 text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md">
+          <div 
+            onClick={() => navigate('/projects/my-tasks')}
+            className="bg-rose-500 hover:bg-rose-600 transition-colors cursor-pointer text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md"
+            title="Click to view overdue tasks"
+          >
             <AlertTriangle className="h-4.5 w-4.5 animate-pulse" />
             <span>You have {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''}</span>
           </div>
         )}
         {assignedTickets.length > 0 && (
-          <div className="bg-indigo-600 text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md">
+          <div 
+            onClick={() => navigate('/projects/service-tickets')}
+            className="bg-indigo-600 hover:bg-indigo-700 transition-colors cursor-pointer text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 relative z-40 shadow-md"
+            title="Click to view assigned service tickets"
+          >
             <Package className="h-4.5 w-4.5 animate-pulse" />
             <span>You have {assignedTickets.length} assigned service ticket{assignedTickets.length > 1 ? 's' : ''}</span>
           </div>
@@ -400,7 +428,7 @@ export const Header: React.FC = () => {
                       key={ticket.id}
                       onClick={() => {
                         setShowAssignedDropdown(false);
-                        navigate(`/projects/service-desk`);
+                        navigate(`/projects/service-tickets`);
                       }}
                       className="px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1"
                     >

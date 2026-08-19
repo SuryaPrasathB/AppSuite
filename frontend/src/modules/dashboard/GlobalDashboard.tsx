@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight } from 'lucide-react';
+import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight, Trash2 } from 'lucide-react';
 import { fetchProjects, fetchDashboardTasks, fetchDashboardStats, fetchWorkload } from '../projects/api';
 import { apiClient } from '../../api/apiClient';
+import { useAuth } from '../../context/AuthContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 export const GlobalDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { hasRole } = useAuth();
   // Modals
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [newAnnouncement, setNewAnnouncement] = useState('');
@@ -59,6 +61,17 @@ export const GlobalDashboard: React.FC = () => {
     }
   };
 
+  const handleDeleteAnnouncement = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this announcement?")) return;
+    try {
+      await apiClient.announcements.deactivate(id);
+      loadData();
+    } catch (err) {
+      alert("Failed to delete announcement.");
+    }
+  };
+
+
   const CurrentDateAndTime = () => {
     const [time, setTime] = useState(new Date());
     useEffect(() => {
@@ -105,6 +118,46 @@ export const GlobalDashboard: React.FC = () => {
 
   const overdueTasks = tasks.due_or_overdue.Overdue || [];
 
+  // Helper to extract effective due date timestamp
+  const getProjectDueDate = (p: any): number | null => {
+    const dStr = p.date_of_delivery || p.end_date;
+    if (!dStr) return null;
+    const cleanStr = String(dStr).trim();
+    if (!cleanStr || cleanStr === '—' || cleanStr.toLowerCase() === 'tbd' || cleanStr.toLowerCase() === 'null' || cleanStr.startsWith('0000')) {
+      return null;
+    }
+    const time = new Date(cleanStr).getTime();
+    return isNaN(time) ? null : time;
+  };
+
+  // Helper to extract effective start/activity timestamp
+  const getProjectStartDate = (p: any): number => {
+    const dStr = p.start_date || p.created_at;
+    if (dStr) {
+      const cleanStr = String(dStr).trim();
+      if (cleanStr && cleanStr !== '—' && !cleanStr.startsWith('0000')) {
+        const time = new Date(cleanStr).getTime();
+        if (!isNaN(time)) return time;
+      }
+    }
+    return p.id ? Number(p.id) : 0;
+  };
+
+  // For a parent/root project, find the earliest due date across itself and its subprojects
+  const getEffectiveDueDate = (rp: any, subprojects: any[] = []): number | null => {
+    const all = [rp, ...subprojects];
+    const dueDates = all.map(getProjectDueDate).filter((d): d is number => d !== null);
+    if (dueDates.length === 0) return null;
+    return Math.min(...dueDates);
+  };
+
+  // For a parent/root project, find the most recent start/created date across itself and its subprojects
+  const getEffectiveRecentDate = (rp: any, subprojects: any[] = []): number => {
+    const all = [rp, ...subprojects];
+    const startDates = all.map(getProjectStartDate);
+    return Math.max(...startDates, rp.id ? Number(rp.id) : 0);
+  };
+
   const rootProjects = projects.filter(p => !p.parent_id);
   const subMap = new Map<number, any[]>();
   projects.forEach(p => {
@@ -114,9 +167,42 @@ export const GlobalDashboard: React.FC = () => {
     }
   });
 
+  // Sort subprojects under each parent: earliest due date first, then most recent start date
+  subMap.forEach((subList) => {
+    subList.sort((a, b) => {
+      const dueA = getProjectDueDate(a);
+      const dueB = getProjectDueDate(b);
+      if (dueA !== null && dueB !== null) {
+        if (dueA !== dueB) return dueA - dueB;
+        return getProjectStartDate(b) - getProjectStartDate(a);
+      }
+      if (dueA !== null) return -1;
+      if (dueB !== null) return 1;
+      return getProjectStartDate(b) - getProjectStartDate(a);
+    });
+  });
+
+  // Sort root projects: nearest due date on top, then most recent active projects
+  const sortedRootProjects = [...rootProjects].sort((a, b) => {
+    const subsA = subMap.get(a.id) || [];
+    const subsB = subMap.get(b.id) || [];
+
+    const dueA = getEffectiveDueDate(a, subsA);
+    const dueB = getEffectiveDueDate(b, subsB);
+
+    if (dueA !== null && dueB !== null) {
+      if (dueA !== dueB) return dueA - dueB;
+      return getEffectiveRecentDate(b, subsB) - getEffectiveRecentDate(a, subsA);
+    }
+    if (dueA !== null) return -1;
+    if (dueB !== null) return 1;
+
+    return getEffectiveRecentDate(b, subsB) - getEffectiveRecentDate(a, subsA);
+  });
+
   const hierarchicalProjects: { item: any, isSub: boolean, displayIndex?: number }[] = [];
   let currentDisplayIndex = 1;
-  rootProjects.forEach(rp => {
+  sortedRootProjects.forEach(rp => {
     hierarchicalProjects.push({ item: rp, isSub: false, displayIndex: currentDisplayIndex++ });
     if (subMap.has(rp.id)) {
       subMap.get(rp.id)!.forEach(sp => {
@@ -124,11 +210,22 @@ export const GlobalDashboard: React.FC = () => {
       });
     }
   });
-  projects.forEach(p => {
-    if (p.parent_id && !rootProjects.find(rp => rp.id === p.parent_id)) {
-      if (!hierarchicalProjects.find(o => o.item.id === p.id)) {
-        hierarchicalProjects.push({ item: p, isSub: true });
-      }
+
+  // Include any orphan subprojects (parent not found in active list)
+  const orphanSubProjects = projects.filter(
+    p => p.parent_id && !rootProjects.find(rp => rp.id === p.parent_id)
+  );
+  orphanSubProjects.sort((a, b) => {
+    const dueA = getProjectDueDate(a);
+    const dueB = getProjectDueDate(b);
+    if (dueA !== null && dueB !== null) return dueA - dueB;
+    if (dueA !== null) return -1;
+    if (dueB !== null) return 1;
+    return getProjectStartDate(b) - getProjectStartDate(a);
+  });
+  orphanSubProjects.forEach(p => {
+    if (!hierarchicalProjects.find(o => o.item.id === p.id)) {
+      hierarchicalProjects.push({ item: p, isSub: true });
     }
   });
 
@@ -290,13 +387,14 @@ export const GlobalDashboard: React.FC = () => {
                     let statusColor = "text-emerald-500";
                     let statusText = "On Track";
                     
+                    const targetDelivery = p.date_of_delivery || p.end_date;
                     if (p.status !== 'COMPLETED') {
-                      if (p.date_of_delivery && new Date(p.date_of_delivery) < new Date()) {
+                      if (targetDelivery && new Date(targetDelivery) < new Date()) {
                         statusColor = "text-red-500";
                         statusText = "Delayed";
-                      } else if (p.start_date && p.date_of_delivery) {
+                      } else if (p.start_date && targetDelivery) {
                         const start = new Date(p.start_date).getTime();
-                        const end = new Date(p.date_of_delivery).getTime();
+                        const end = new Date(targetDelivery).getTime();
                         const now = new Date().getTime();
                         const totalDuration = end - start;
                         const elapsedDuration = now - start;
@@ -324,7 +422,7 @@ export const GlobalDashboard: React.FC = () => {
                         <td className="p-3 text-slate-600">{p.client_name || '—'}</td>
                         <td className="p-3">{p.project_incharge || '—'}</td>
                         <td className="p-3 text-slate-500 font-medium">{p.start_date ? new Date(p.start_date).toLocaleDateString('en-GB') : '—'}</td>
-                        <td className="p-3 text-slate-500 font-medium">{p.date_of_delivery ? new Date(p.date_of_delivery).toLocaleDateString('en-GB') : '—'}</td>
+                        <td className="p-3 text-slate-500 font-medium">{targetDelivery ? new Date(targetDelivery).toLocaleDateString('en-GB') : '—'}</td>
                         <td className="p-3">
                            <div className="flex items-center gap-2">
                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
@@ -387,22 +485,38 @@ export const GlobalDashboard: React.FC = () => {
                   <Megaphone className="h-4 w-4 text-blue-600" />
                   <h3 className="text-xs font-bold text-blue-800 tracking-wider">ANNOUNCEMENTS</h3>
                 </div>
-                <button 
-                  onClick={() => setIsAnnouncementModalOpen(true)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-100 hover:bg-blue-200 text-blue-700 p-1 rounded cursor-pointer"
-                  title="Add Announcement"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
+                {hasRole(['Administrator', 'Store Manager']) && (
+                  <button 
+                    onClick={() => setIsAnnouncementModalOpen(true)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-100 hover:bg-blue-200 text-blue-700 p-1 rounded cursor-pointer"
+                    title="Add Announcement"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                )}
               </div>
               <div className="flex-1 overflow-auto p-4 text-sm text-slate-700 font-medium">
-                <ul className="list-disc pl-5 space-y-4">
+                <ul className="space-y-3">
                   {announcements.map((a: any) => (
-                    <li key={a.id} className="leading-snug">
-                      <div className="text-sm">{a.message}</div>
-                      <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                        {new Date(a.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} at {new Date(a.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    <li key={a.id} className="group/item flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-blue-50/40 transition-colors">
+                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 mt-2 shrink-0"></span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-slate-800 break-words">{a.message}</div>
+                          <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                            {new Date(a.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} at {new Date(a.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
                       </div>
+                      {hasRole(['Administrator', 'Store Manager']) && (
+                        <button
+                          onClick={() => handleDeleteAnnouncement(a.id)}
+                          className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-all cursor-pointer shrink-0"
+                          title="Delete Announcement"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </li>
                   ))}
                   {announcements.length === 0 && (

@@ -106,6 +106,31 @@ export async function deleteProject(id: number, deleteSubprojects: boolean = fal
   return res.json();
 }
 
+export async function fetchDeletedProjects() {
+  const res = await fetch(`${API_BASE}/bin/deleted`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch deleted projects');
+  return res.json();
+}
+
+export async function restoreProject(id: number) {
+  const res = await fetch(`${API_BASE}/${id}/restore`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to restore project');
+  return res.json();
+}
+
+export async function forceDeleteProject(id: number, deleteSubprojects: boolean = false) {
+  const url = `${API_BASE}/${id}/force${deleteSubprojects ? '?delete_subprojects=true' : ''}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to permanently delete project');
+  return res.json();
+}
+
 export async function uploadTaskFile(projectId: number, taskName: string, files: File[]) {
   const formData = new FormData();
   formData.append('task_name', taskName);
@@ -216,7 +241,9 @@ export async function createDynamicTask(projectId: number, data: any) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Failed to create task');
   }
-  return res.json();
+  const result = await res.json();
+  window.dispatchEvent(new Event('tasksUpdated'));
+  return result;
 }
 
 export async function updateDynamicTask(projectId: number, taskId: number, data: any) {
@@ -229,7 +256,9 @@ export async function updateDynamicTask(projectId: number, taskId: number, data:
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Failed to update task');
   }
-  return res.json();
+  const result = await res.json();
+  window.dispatchEvent(new Event('tasksUpdated'));
+  return result;
 }
 
 export async function deleteDynamicTask(projectId: number, taskId: number) {
@@ -238,7 +267,9 @@ export async function deleteDynamicTask(projectId: number, taskId: number) {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error('Failed to delete task');
-  return res.json();
+  const result = await res.json();
+  window.dispatchEvent(new Event('tasksUpdated'));
+  return result;
 }
 
 export async function fetchTaskComments(projectId: number, taskId: number) {

@@ -897,16 +897,38 @@ def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, A
 
 @router.delete("/{project_id}")
 def delete_project(project_id: int, delete_subprojects: bool = False, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Only Administrators can delete projects")
+
     projects = DBStore.get_all_projects_unpaginated()
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != proj.get("project_incharge"):
-        raise HTTPException(status_code=403, detail="Not authorized to delete project")
-
     DBStore.delete_project(project_id, delete_subprojects)
-    return {"message": "Project deleted successfully from database (files preserved)"}
+    return {"message": "Project moved to recycle bin"}
+
+@router.get("/bin/deleted")
+def get_deleted_projects(current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Only Administrators can view the recycle bin")
+    return DBStore.get_deleted_projects()
+
+@router.post("/{project_id}/restore")
+def restore_project(project_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Only Administrators can restore projects")
+    
+    DBStore.restore_project(project_id)
+    return {"message": "Project restored successfully"}
+
+@router.delete("/{project_id}/force")
+def force_delete_project(project_id: int, delete_subprojects: bool = False, current_user: Dict[str, Any] = Depends(get_current_user)):
+    if current_user.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Only Administrators can permanently delete projects")
+
+    DBStore.force_delete_project(project_id, delete_subprojects)
+    return {"message": "Project permanently deleted (files preserved)"}
 
 
 # DYNAMIC TASKS ENDPOINTS & SCHEMAS
@@ -1283,13 +1305,39 @@ def create_service_ticket(ticket: TicketCreate, current_user: Dict[str, Any] = D
     ticket_data = ticket.model_dump()
     ticket_data["creator_id"] = current_user.get("id")
     ticket_id = DBStore.create_service_ticket(ticket_data)
+    
+    # Notify assignee if one is set
+    assignee_id = ticket_data.get("assignee_id")
+    if assignee_id and str(assignee_id).strip() != "" and int(assignee_id) != current_user.get("id"):
+        DBStore.add_notification(
+            user_id=int(assignee_id),
+            title="New Service Ticket",
+            message=f"You have been assigned a new service ticket: '{ticket_data['title']}'",
+            link="/projects/service-tickets"
+        )
+        
     return {"id": ticket_id, "message": "Service ticket created successfully"}
 
 @router.put("/service-tickets/{ticket_id}")
-def update_service_ticket(ticket_id: int, ticket: TicketUpdate):
+def update_service_ticket(ticket_id: int, ticket: TicketUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    existing_tickets = DBStore.get_service_tickets()  # Need to check old assignee to avoid duplicate notifications
+    existing_ticket = next((t for t in existing_tickets if t["id"] == ticket_id), None)
+    
     updated = DBStore.update_service_ticket(ticket_id, ticket.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    # Check if assignee changed
+    new_assignee = updated.get("assignee_id")
+    if new_assignee and (not existing_ticket or existing_ticket.get("assignee_id") != new_assignee):
+        if new_assignee != current_user.get("id"):
+            DBStore.add_notification(
+                user_id=new_assignee,
+                title="Service Ticket Assigned",
+                message=f"You have been assigned the service ticket: '{updated.get('title', 'Ticket')}'",
+                link="/projects/service-tickets"
+            )
+            
     return updated
 
 @router.post("/service-tickets/{ticket_id}/resolve")

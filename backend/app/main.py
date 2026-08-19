@@ -1,4 +1,5 @@
 import uvicorn
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -37,6 +38,20 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(bom.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(announcements, prefix="/api/announcements", tags=["Announcements"])
+
+async def recycle_bin_cleanup_task():
+    while True:
+        try:
+            DBStore.cleanup_recycle_bin(days=30)
+            print("Recycle bin cleanup completed.")
+        except Exception as e:
+            print(f"Error during recycle bin cleanup: {e}")
+        # Run once a day (86400 seconds)
+        await asyncio.sleep(86400)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(recycle_bin_cleanup_task())
 
 # Valuation unit prices for dashboard KPI calculation
 UNIT_PRICES = {

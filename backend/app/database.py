@@ -859,7 +859,7 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        where_clauses = []
+        where_clauses = ["p.deleted_at IS NULL"]
         params = []
 
         if search:
@@ -949,6 +949,7 @@ class DBStore:
             SELECT p.*, parent_proj.name as parent_name, parent_proj.client_name as parent_client_name
             FROM projects p
             LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
+            WHERE p.deleted_at IS NULL
         """)
         projects = cursor.fetchall()
         cursor.close()
@@ -1046,6 +1047,19 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         if delete_subprojects:
+            cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE parent_id = %s", (proj_id,))
+            
+        cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s", (proj_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def force_delete_project(proj_id: int, delete_subprojects: bool = False) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        if delete_subprojects:
             cursor.execute("DELETE FROM projects WHERE parent_id = %s", (proj_id,))
         else:
             cursor.execute("UPDATE projects SET parent_id = NULL WHERE parent_id = %s", (proj_id,))
@@ -1055,6 +1069,45 @@ class DBStore:
         cursor.close()
         conn.close()
         return True
+
+    @staticmethod
+    def get_deleted_projects() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+        projects = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for p in projects:
+            if p.get('created_at'):
+                p['created_at'] = p['created_at'].isoformat()
+            if p.get('deleted_at'):
+                p['deleted_at'] = p['deleted_at'].isoformat()
+        return projects
+
+    @staticmethod
+    def restore_project(proj_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("UPDATE projects SET deleted_at = NULL WHERE id = %s", (proj_id,))
+        
+        # also restore subprojects if any
+        cursor.execute("UPDATE projects SET deleted_at = NULL WHERE parent_id = %s", (proj_id,))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def cleanup_recycle_bin(days: int = 30) -> None:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        # Delete projects where deleted_at is older than 30 days
+        cursor.execute("DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL %s DAY", (days,))
+        conn.commit()
+        cursor.close()
+        conn.close()
 
     @staticmethod
     def get_project_tasks(project_id: int) -> List[Dict[str, Any]]:
@@ -2052,6 +2105,7 @@ class DBStore:
             return ticket_id
         except Exception as e:
             conn.rollback()
+            with open('error.log', 'w') as f: f.write(str(e))
             raise e
         finally:
             cursor.close()

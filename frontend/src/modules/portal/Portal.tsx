@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity } from 'lucide-react';
+import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/apiClient';
 
@@ -163,7 +163,7 @@ export const Portal: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-805 flex flex-col justify-between relative overflow-hidden font-sans">
+    <div className="h-screen bg-slate-50 text-slate-805 flex flex-col relative overflow-hidden font-sans">
       {/* Background patterns */}
       <div className="absolute top-0 left-0 right-0 h-[500px] bg-linear-to-b from-primary-500/5 via-transparent to-transparent pointer-events-none" />
       <div className="absolute -top-40 -right-40 w-96 h-96 bg-primary-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -258,8 +258,9 @@ export const Portal: React.FC = () => {
       </header>
 
       {/* Main Grid */}
-      <main className="max-w-[1600px] mx-auto px-6 py-12 flex-1 flex flex-col justify-center z-10 w-full">
-        <div className="text-center mb-12">
+      <main className="max-w-[1600px] mx-auto px-6 py-6 flex-1 overflow-y-auto z-10 w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-full flex flex-col justify-center py-4">
+          <div className="text-center mb-10">
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-805 sm:text-4xl">
             Welcome to the LSCS App Suite
           </h2>
@@ -289,20 +290,26 @@ export const Portal: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs font-bold text-primary-600 mt-6">
-                  Launch Workspace
-                  <span className="transform translate-x-0 group-hover:translate-x-1.5 transition-transform duration-250">→</span>
+                <div className="flex items-center gap-2 text-xs font-semibold text-primary-600 mt-6 
+                transition-colors duration-200 group-hover:text-primary-700">
+                  <span>Launch Workspace</span>
+
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full 
+                                  bg-primary-50 transition-all duration-200
+                                  group-hover:bg-primary-100 group-hover:translate-x-0.5">
+                    <ArrowRight size={11} strokeWidth={2} />
+                  </span>
                 </div>
               </div>
             );
           })}
+          </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="h-12 border-t border-slate-200 px-8 flex items-center justify-between text-[11px] text-slate-400 font-medium z-10 bg-white">
-        <span>LSCS App Suite</span>
-        <span>v2.0.0</span>
+      <footer className="h-12 shrink-0 border-t border-slate-200 px-8 flex items-center justify-center text-[11px] text-slate-400 font-medium z-10 bg-white">
+        <span>&copy; {new Date().getFullYear()} L S Control Systems <span className="mx-1 text-slate-300">|</span> Designed &amp; Developed by Surya</span>
       </footer>
     </div>
   );

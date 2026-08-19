@@ -1,0 +1,1 @@
+1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`smart_store`.`service_tickets`, CONSTRAINT `service_tickets_ibfk_1` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE)

@@ -1,15 +1,19 @@
 import requests
 
-url = "http://127.0.0.1:8081/api/projects/service-tickets"
+url = "http://127.0.0.1:8000/api/projects/service-tickets"
 payload = {
     "project_id": "",
-    "custom_project_name": "Test project",
+    "custom_project_name": "",
     "creator_id": 1,
-    "assignee_id": 1,
+    "assignee_id": "",
     "title": "Test Ticket",
     "description": "Test description"
 }
 headers = {
-    # Need auth? The route says `current_user: Dict[str, Any] = Depends(get_current_user)`
-    # Let me check get_current_user
+    "Content-Type": "application/json",
+    "Authorization": "Bearer mock-jwt-token-for-Surya"
 }
+
+response = requests.post(url, json=payload, headers=headers)
+print(response.status_code)
+print(response.text)

@@ -138,12 +138,13 @@ const AppContent: React.FC = () => {
             <Route path="/reports" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Reports /></ProtectedRoute>} />
 
             <Route path="/projects/dashboard" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ProjectsDashboard /></ProtectedRoute>} />
-            <Route path="/projects" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><Projects /></ProtectedRoute>} />
-            <Route path="/projects/:id" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ProjectWorkspace /></ProtectedRoute>} />
             <Route path="/projects/my-tasks" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><MyTasks /></ProtectedRoute>} />
             <Route path="/projects/standup" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Manager']}><DailyStandup /></ProtectedRoute>} />
             <Route path="/projects/timeline" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><GlobalTimeline /></ProtectedRoute>} />
             <Route path="/projects/service-tickets" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ServiceTickets /></ProtectedRoute>} />
+            <Route path="/projects/service-desk" element={<Navigate to="/projects/service-tickets" replace />} />
+            <Route path="/projects" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><Projects /></ProtectedRoute>} />
+            <Route path="/projects/:id" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee']}><ProjectWorkspace /></ProtectedRoute>} />
 
             <Route path="/bom" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><BOM /></ProtectedRoute>} />
             <Route path="/bom/create" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><CreateBOMPage /></ProtectedRoute>} />

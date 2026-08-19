@@ -8,6 +8,7 @@ import {
 import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject, generateProjectPlan } from './api';
 import { useNavigate } from 'react-router-dom';
 import { ProjectFormModal } from './ProjectFormModal';
+import { RecycleBinModal } from './RecycleBinModal';
 
 export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
@@ -27,6 +28,7 @@ export const Projects: React.FC = () => {
 
   // Modals
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [editProjectId, setEditProjectId] = useState<number | null>(null);
   const [deleteConfirmProject, setDeleteConfirmProject] = useState<any | null>(null);
@@ -204,14 +206,24 @@ export const Projects: React.FC = () => {
           </div>
         </div>
 
-        {/* New Project Button */}
-        <button
-          onClick={handleOpenNewProjectModal}
-          className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
-        >
-          <Plus className="h-4 w-4" />
-          New Project
-        </button>
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsRecycleBinOpen(true)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2.5 rounded-lg transition-colors flex items-center justify-center shadow-sm cursor-pointer"
+            title="Recycle Bin"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          
+          <button
+            onClick={handleOpenNewProjectModal}
+            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" />
+            New Project
+          </button>
+        </div>
       </div>
 
       {/* Main Content */}
@@ -474,6 +486,13 @@ export const Projects: React.FC = () => {
           </div>
         </div>
       )}
+      
+      <RecycleBinModal 
+        isOpen={isRecycleBinOpen} 
+        onClose={() => setIsRecycleBinOpen(false)} 
+        onRestore={loadProjects} 
+      />
+
       {/* AI Planning Generating Overlay */}
       {isGenerating && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
