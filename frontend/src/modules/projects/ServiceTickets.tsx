@@ -26,14 +26,14 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
     return response.json();
 }
 
-export const ServiceTickets = () => {
+export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
     const [tickets, setTickets] = useState<any[]>([]);
     const [projects, setProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     
     // Create form state
     const [showForm, setShowForm] = useState(false);
-    const [newTicket, setNewTicket] = useState({ project_id: '', custom_project_name: '', title: '', description: '', assignee_id: '' });
+    const [newTicket, setNewTicket] = useState({ project_id: projectId ? projectId.toString() : '', custom_project_name: '', title: '', description: '', assignee_id: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isManualProject, setIsManualProject] = useState(false);
 
@@ -56,7 +56,13 @@ export const ServiceTickets = () => {
                 apiRequest('/projects?limit=1000'), // fetch projects
                 apiRequest('/employees') // fetch employees
             ]);
-            setTickets(ticketData);
+            
+            let filteredTickets = ticketData;
+            if (projectId) {
+                filteredTickets = ticketData.filter((t: any) => t.project_id === projectId);
+            }
+            
+            setTickets(filteredTickets);
             setProjects(projectData.data || projectData.projects || []);
             setEmployees(employeeData || []);
         } catch (error) {
@@ -83,7 +89,7 @@ export const ServiceTickets = () => {
                 body: JSON.stringify(newTicket)
             });
             setShowForm(false);
-            setNewTicket({ project_id: '', custom_project_name: '', title: '', description: '', assignee_id: '' });
+            setNewTicket({ project_id: projectId ? projectId.toString() : '', custom_project_name: '', title: '', description: '', assignee_id: '' });
             fetchData();
             window.dispatchEvent(new Event('ticketsUpdated'));
         } catch (error) {
@@ -181,37 +187,39 @@ export const ServiceTickets = () => {
                     <h2 className="text-lg font-bold text-slate-800 mb-5 pb-3 border-b border-slate-100">Create New Service Ticket</h2>
                     <form onSubmit={handleCreateTicket} className="space-y-5">
                         <div className="grid grid-cols-1 gap-5">
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Project</label>
-                                    <button 
-                                        type="button" 
-                                        onClick={() => {
-                                            setIsManualProject(!isManualProject);
-                                            setNewTicket({...newTicket, project_id: '', custom_project_name: ''});
-                                        }}
-                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
-                                    >
-                                        {isManualProject ? 'Select existing' : 'Enter manually'}
-                                    </button>
+                            {!projectId && (
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">Select Project</label>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => {
+                                                setIsManualProject(!isManualProject);
+                                                setNewTicket({...newTicket, project_id: '', custom_project_name: ''});
+                                            }}
+                                            className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                                        >
+                                            {isManualProject ? 'Select existing' : 'Enter manually'}
+                                        </button>
+                                    </div>
+                                    {isManualProject ? (
+                                        <input 
+                                            type="text"
+                                            placeholder="Enter manual project name..."
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
+                                            value={newTicket.custom_project_name}
+                                            onChange={e => setNewTicket({...newTicket, custom_project_name: e.target.value})}
+                                        />
+                                    ) : (
+                                        <Combobox 
+                                            options={projectOptions}
+                                            value={newTicket.project_id}
+                                            onChange={(val) => setNewTicket({...newTicket, project_id: val})}
+                                            placeholder="Search for a project..."
+                                        />
+                                    )}
                                 </div>
-                                {isManualProject ? (
-                                    <input 
-                                        type="text"
-                                        placeholder="Enter manual project name..."
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
-                                        value={newTicket.custom_project_name}
-                                        onChange={e => setNewTicket({...newTicket, custom_project_name: e.target.value})}
-                                    />
-                                ) : (
-                                    <Combobox 
-                                        options={projectOptions}
-                                        value={newTicket.project_id}
-                                        onChange={(val) => setNewTicket({...newTicket, project_id: val})}
-                                        placeholder="Search for a project..."
-                                    />
-                                )}
-                            </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Assign To</label>
                                 <Combobox 

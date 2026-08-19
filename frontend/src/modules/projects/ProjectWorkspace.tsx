@@ -4,7 +4,7 @@ import {
   ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, 
   Clock, Package, FileText, StickyNote, Activity,
   Briefcase, Layers, CornerDownRight, Folder, BarChart2,
-  TrendingUp, Plus, CheckCircle2, FolderPlus
+  TrendingUp, Plus, CheckCircle2, FolderPlus, ShieldAlert
 } from 'lucide-react';
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
@@ -21,6 +21,7 @@ import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
 import { FolderBrowserModal } from './FolderBrowserModal';
 import { useDialog } from '../../context/DialogContext';
+import { ServiceTickets } from './ServiceTickets';
 
 export const ProjectWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -77,7 +78,7 @@ export const ProjectWorkspace: React.FC = () => {
       if (projDetails.project?.is_parent) {
         setActiveTab('sub_projects');
       } else {
-        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview'].includes(prev) ? prev : 'tasks');
+        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service'].includes(prev) ? prev : 'tasks');
       }
     } catch (error) {
       console.error(error);
@@ -105,7 +106,8 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'documents', name: 'Documents', icon: FileText },
     { id: 'notes', name: 'Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity', icon: Activity },
-    { id: 'overview', name: 'Overview', icon: LayoutDashboard }
+    { id: 'overview', name: 'Overview', icon: LayoutDashboard },
+    ...(project?.status === 'COMPLETED' || project?.status === 'SERVICE' ? [{ id: 'service', name: 'Service', icon: ShieldAlert }] : [])
   ];
 
   if (loading) {
@@ -645,6 +647,7 @@ export const ProjectWorkspace: React.FC = () => {
         
         {activeTab === 'notes' && <NotesTab projectId={project.id} />}
         {activeTab === 'activity' && <ActivityTab projectId={project.id} />}
+        {activeTab === 'service' && <ServiceTickets projectId={project.id} />}
       </div>
 
       {isEditModalOpen && (

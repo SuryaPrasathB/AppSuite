@@ -181,6 +181,24 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       );
       if (!confirmed) return;
     }
+
+    if (project && project.status !== form.status) {
+      if (form.status === 'COMPLETED') {
+        const confirmed = await showConfirm(
+          "Are you sure you want to mark this project as completed? This will finalize the project and enable the Service tab.",
+          "Complete Project",
+          true
+        );
+        if (!confirmed) return;
+      } else if (project.status === 'COMPLETED') {
+        const confirmed = await showConfirm(
+          "Are you sure you want to revert this completed project? This will reopen it for modifications.",
+          "Revert Completion",
+          true
+        );
+        if (!confirmed) return;
+      }
+    }
     
     const finalForm = { ...form };
     if (finalForm.name) {

@@ -34,6 +34,7 @@ export const Projects: React.FC = () => {
   const [deleteConfirmProject, setDeleteConfirmProject] = useState<any | null>(null);
   const [deleteSubprojects, setDeleteSubprojects] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [confirmStatusChange, setConfirmStatusChange] = useState<{ project: any, targetStatus: string } | null>(null);
 
   // Code logic for new project
   const [nextProjectCode, setNextProjectCode] = useState<string>('');
@@ -116,6 +117,21 @@ export const Projects: React.FC = () => {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleDirectStatusUpdate = async (projectId: number, newStatus: string) => {
+    try {
+      await updateProject(projectId, { status: newStatus });
+      loadProjects();
+    } catch (err) {
+      alert("Failed to update status");
+    }
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!confirmStatusChange) return;
+    await handleDirectStatusUpdate(confirmStatusChange.project.id, confirmStatusChange.targetStatus);
+    setConfirmStatusChange(null);
   };
 
   const filteredProjects = projects;
@@ -319,11 +335,13 @@ export const Projects: React.FC = () => {
                         value={p.status}
                         onClick={(e) => e.stopPropagation()}
                         onChange={async (e) => {
-                          try {
-                            await updateProject(p.id, { status: e.target.value });
-                            loadProjects();
-                          } catch (err) {
-                            alert("Failed to update status");
+                          const newStatus = e.target.value;
+                          if (newStatus === 'COMPLETED' && p.status !== 'COMPLETED') {
+                            setConfirmStatusChange({ project: p, targetStatus: newStatus });
+                          } else if (p.status === 'COMPLETED' && newStatus !== 'COMPLETED') {
+                            setConfirmStatusChange({ project: p, targetStatus: newStatus });
+                          } else {
+                            handleDirectStatusUpdate(p.id, newStatus);
                           }
                         }}
                         className={`appearance-none inline-flex items-center px-2 py-0.5 pr-6 rounded-full text-[10px] font-bold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors ${
@@ -492,6 +510,42 @@ export const Projects: React.FC = () => {
         onClose={() => setIsRecycleBinOpen(false)} 
         onRestore={loadProjects} 
       />
+
+      {/* Status Change Confirmation Modal */}
+      {confirmStatusChange && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200">
+            <div className="p-6 text-center">
+              <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle2 className="h-6 w-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">
+                {confirmStatusChange.targetStatus === 'COMPLETED' ? 'Complete Project' : 'Revert Completion'}
+              </h3>
+              <p className="text-sm text-slate-500 mb-6">
+                {confirmStatusChange.targetStatus === 'COMPLETED'
+                  ? `Are you sure you want to mark ${confirmStatusChange.project.name} as completed? This will finalize the project and enable the Service tab.`
+                  : `Are you sure you want to revert ${confirmStatusChange.project.name} from completed? This will reopen it for modifications.`}
+              </p>
+
+              <div className="flex items-center gap-3 justify-center">
+                <button
+                  onClick={() => setConfirmStatusChange(null)}
+                  className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmStatusChange}
+                  className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex-1"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Planning Generating Overlay */}
       {isGenerating && (
