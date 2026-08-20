@@ -12,14 +12,18 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ dynamicTasks, handleOp
 
   useEffect(() => {
     if (!timelineRef.current) return;
+    
+    // Initialize with correct scrollWidth
+    setGridWidth(Math.max(900 - 220, timelineRef.current.scrollWidth - 220));
+
     const observer = new ResizeObserver(entries => {
       for (let entry of entries) {
-        setGridWidth(Math.max(900 - 220, entry.contentRect.width - 220));
+        setGridWidth(Math.max(900 - 220, entry.target.scrollWidth - 220));
       }
     });
     observer.observe(timelineRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [dynamicTasks]);
 
   const getGanttTimelineRange = () => {
     let start = new Date();
@@ -251,32 +255,25 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ dynamicTasks, handleOp
                 }
 
                 let pathD = '';
-                const midY = (pCenterY + cCenterY) / 2;
 
                 if (depType === 'FS') {
-                  if (startX + offset <= endX - offset) {
-                    const midX = (startX + endX) / 2;
-                    pathD = `M ${startX} ${startY} H ${midX} V ${endY} H ${adjustedEndX}`;
-                  } else {
-                    const x1 = startX + offset;
-                    const x2 = endX - offset;
-                    pathD = `M ${startX} ${startY} H ${x1} V ${midY} H ${x2} V ${endY} H ${adjustedEndX}`;
-                  }
+                  const isNatural = adjustedEndX >= startX;
+                  const curveOffset = isNatural 
+                    ? (adjustedEndX - startX) / 2 
+                    : Math.max(40, Math.abs(adjustedEndX - startX) * 0.5);
+                  pathD = `M ${startX} ${startY} C ${startX + curveOffset} ${startY}, ${adjustedEndX - curveOffset} ${endY}, ${adjustedEndX} ${endY}`;
                 } else if (depType === 'SS') {
-                  const minX = Math.min(startX, endX) - offset;
-                  pathD = `M ${startX} ${startY} H ${minX} V ${endY} H ${adjustedEndX}`;
+                  const curveOffset = Math.max(40, Math.abs(adjustedEndX - startX) * 0.5);
+                  pathD = `M ${startX} ${startY} C ${startX - curveOffset} ${startY}, ${adjustedEndX - curveOffset} ${endY}, ${adjustedEndX} ${endY}`;
                 } else if (depType === 'FF') {
-                  const maxX = Math.max(startX, endX) + offset;
-                  pathD = `M ${startX} ${startY} H ${maxX} V ${endY} H ${adjustedEndX}`;
+                  const curveOffset = Math.max(40, Math.abs(adjustedEndX - startX) * 0.5);
+                  pathD = `M ${startX} ${startY} C ${startX + curveOffset} ${startY}, ${adjustedEndX + curveOffset} ${endY}, ${adjustedEndX} ${endY}`;
                 } else if (depType === 'SF') {
-                  if (startX - offset >= endX + offset) {
-                    const midX = (startX + endX) / 2;
-                    pathD = `M ${startX} ${startY} H ${midX} V ${endY} H ${adjustedEndX}`;
-                  } else {
-                    const x1 = startX - offset;
-                    const x2 = endX + offset;
-                    pathD = `M ${startX} ${startY} H ${x1} V ${midY} H ${x2} V ${endY} H ${adjustedEndX}`;
-                  }
+                  const isNatural = startX >= adjustedEndX;
+                  const curveOffset = isNatural
+                    ? (startX - adjustedEndX) / 2
+                    : Math.max(40, Math.abs(adjustedEndX - startX) * 0.5);
+                  pathD = `M ${startX} ${startY} C ${startX - curveOffset} ${startY}, ${adjustedEndX + curveOffset} ${endY}, ${adjustedEndX} ${endY}`;
                 }
 
                 return (

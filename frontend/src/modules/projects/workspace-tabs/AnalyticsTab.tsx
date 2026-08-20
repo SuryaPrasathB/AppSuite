@@ -21,16 +21,22 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ dynamicTasks }) => {
     today.setHours(0, 0, 0, 0);
 
     dynamicTasks.forEach(task => {
-      const assigneeName = task.assignee_name || 'Unassigned';
-      if (!assigneeStats[assigneeName]) {
-        assigneeStats[assigneeName] = { total: 0, completed: 0, late: 0 };
-      }
-      assigneeStats[assigneeName].total++;
+      const rawAssignees = task.assignee_name || 'Unassigned';
+      const assigneeNames = rawAssignees.split(',').map((n: string) => n.trim()).filter(Boolean);
+      if (assigneeNames.length === 0) assigneeNames.push('Unassigned');
 
       const isCompleted = task.status === 'COMPLETED';
-      if (isCompleted) {
-        assigneeStats[assigneeName].completed++;
-      }
+
+      assigneeNames.forEach((assigneeName: string) => {
+        if (!assigneeStats[assigneeName]) {
+          assigneeStats[assigneeName] = { total: 0, completed: 0, late: 0 };
+        }
+        assigneeStats[assigneeName].total++;
+
+        if (isCompleted) {
+          assigneeStats[assigneeName].completed++;
+        }
+      });
 
       if (!task.due_date) return;
       
@@ -51,12 +57,16 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ dynamicTasks }) => {
           completedOnTime++;
         } else {
           completedLate++;
-          assigneeStats[assigneeName].late++;
+          assigneeNames.forEach((assigneeName: string) => {
+            assigneeStats[assigneeName].late++;
+          });
         }
       } else {
         if (delayDays > 0) {
           pendingLate++;
-          assigneeStats[assigneeName].late++;
+          assigneeNames.forEach((assigneeName: string) => {
+            assigneeStats[assigneeName].late++;
+          });
         } else {
           pendingOnTime++;
         }

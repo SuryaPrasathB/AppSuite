@@ -22,11 +22,14 @@ import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
 import { FolderBrowserModal } from './FolderBrowserModal';
 import { useDialog } from '../../context/DialogContext';
+import { useAuth } from '../../context/AuthContext';
 import { ServiceTickets } from './ServiceTickets';
 
 export const ProjectWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { showAlert, showConfirm } = useDialog();
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole(['Administrator']);
   const [project, setProject] = useState<any>(null);
   const [staticTasks, setStaticTasks] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
@@ -141,6 +144,16 @@ export const ProjectWorkspace: React.FC = () => {
       loadData(project.id);
     } catch (err: any) {
       showAlert(err.message || 'Failed to save as template');
+    }
+  };
+
+  const handleRemoveTemplate = async () => {
+    try {
+      await updateProject(project.id, { is_template: false });
+      showAlert('Template successfully removed');
+      loadData(project.id);
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to remove template');
     }
   };
 
@@ -378,12 +391,20 @@ export const ProjectWorkspace: React.FC = () => {
                 + Add Task
               </button>
             ) : null}
-            {!project.is_template && (
+            {!project.is_template && isAdmin && (
               <button 
                 onClick={handleSaveAsTemplate}
                 className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs rounded-lg transition-colors"
               >
                 Save as Template
+              </button>
+            )}
+            {project.is_template && isAdmin && (
+              <button 
+                onClick={handleRemoveTemplate}
+                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs rounded-lg transition-colors"
+              >
+                Remove Template
               </button>
             )}
             <button 
