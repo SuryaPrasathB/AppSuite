@@ -1,1 +1,0 @@
-import json; import requests; response = requests.put('http://localhost:8000/api/projects/463', json={'is_parent': False, 'code': '433/PRJ/0826'}, headers={'Authorization': 'Bearer mock-jwt-token-for-aravind'}); print('Status:', response.status_code); print('Response:', response.text)

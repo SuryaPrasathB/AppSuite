@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Send, Trash2, MessageSquare, Clock, User } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Send, Trash2, MessageSquare, Clock, User, Paperclip, AtSign, Smile, Maximize2 } from 'lucide-react';
 import { fetchTaskComments, createTaskComment, deleteTaskComment } from './api';
 
 interface TaskCommentsModalProps {
@@ -20,6 +20,7 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen && task) {
@@ -30,6 +31,12 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
       setError(null);
     }
   }, [isOpen, task]);
+
+  useEffect(() => {
+    if (comments.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [comments]);
 
   const loadComments = async () => {
     if (!task?.id) return;
@@ -72,123 +79,144 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
     }
   };
 
+    const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen || !task) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border border-slate-100">
-        
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-              <MessageSquare className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-800 line-clamp-1">{task.title}</h3>
-              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
-                <span>Comments & Discussion</span>
-                <span>•</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                  task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
-                  task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                  task.status === 'REVIEW' ? 'bg-rose-100 text-rose-700' :
-                  'bg-slate-100 text-slate-700'
-                }`}>
-                  {task.status?.replace('_', ' ')}
-                </span>
-              </div>
+    <div ref={modalRef} className="fixed right-6 top-24 w-[420px] max-h-[calc(100vh-120px)] z-50 flex flex-col rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] border border-slate-200/60 bg-white overflow-hidden animate-in slide-in-from-right-8 fade-in duration-300">
+      
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <h3 className="text-[13px] font-bold text-slate-800 line-clamp-1">{task.title}</h3>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider ${
+                task.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                task.status === 'REVIEW' ? 'bg-rose-100 text-rose-700' :
+                'bg-slate-100 text-slate-700'
+              }`}>
+                {task.status?.replace('_', ' ')}
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium">Comments</span>
             </div>
           </div>
+        </div>
+        <div className="flex items-center gap-1">
           <button
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
+      </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {error && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">
-              {error}
-            </div>
-          )}
+      {/* Content Body */}
+      <div className="overflow-y-auto p-5 bg-[#FDFDFD] min-h-[150px]">
+        {error && (
+          <div className="p-3 mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">
+            {error}
+          </div>
+        )}
 
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
-              <Clock className="h-4 w-4 animate-spin" />
-              <span>Loading comments...</span>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
+            <Clock className="h-4 w-4 animate-spin" />
+            <span>Loading...</span>
+          </div>
+        ) : comments.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8">
+            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mb-3 border border-slate-100">
+              <MessageSquare className="h-5 w-5 text-slate-300" />
             </div>
-          ) : comments.length === 0 ? (
-            <div className="text-center py-12 px-4 border-2 border-dashed border-slate-100 rounded-2xl">
-              <MessageSquare className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-600">No comments yet</p>
-              <p className="text-xs text-slate-400 mt-1">Start the conversation by posting a note below.</p>
-            </div>
-          ) : (
-            comments.map((comment) => {
-              const dateStr = comment.created_at ? new Date(comment.created_at).toLocaleString() : '';
+            <p className="text-sm font-bold text-slate-700">Start the conversation</p>
+            <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">Leave a comment or note to keep everyone in the loop.</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {comments.map((comment) => {
+              const dateStr = comment.created_at ? new Date(comment.created_at).toLocaleString(undefined, {
+                month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric'
+              }) : '';
+              
+              const isMe = comment.user_name === 'Administrator' || comment.user_name === 'You'; // simple heuristic for demo
+
               return (
                 <div key={comment.id} className="flex gap-3 group">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-sm">
-                    {comment.user_name ? comment.user_name.charAt(0).toUpperCase() : <User className="h-4 w-4" />}
+                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0 border border-slate-100 overflow-hidden">
+                    <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(comment.user_name || 'User')}&background=random`} alt="avatar" className="w-full h-full object-cover" />
                   </div>
-                  <div className="flex-1 bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-800">{comment.user_name || 'Anonymous'}</span>
-                        {comment.user_role && (
-                          <span className="text-[10px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-medium">
-                            {comment.user_role}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-medium text-slate-400">{dateStr}</span>
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-300 hover:text-rose-600 rounded"
-                          title="Delete comment"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-0.5">
+                      <span className="text-[12px] font-bold text-slate-800 truncate">
+                        {comment.user_name || 'Anonymous'}
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400 shrink-0">{dateStr}</span>
                     </div>
-                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-normal">
-                      {comment.content}
-                    </p>
+                    <div className="relative group/bubble">
+                      <p className="text-[13px] text-slate-700 leading-relaxed font-normal whitespace-pre-wrap break-words">
+                        {comment.content}
+                      </p>
+                      <button
+                        onClick={() => handleDeleteComment(comment.id)}
+                        className="absolute -right-8 top-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-rose-600 rounded-lg shadow-sm"
+                        title="Delete comment"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
 
-        {/* Input Footer */}
-        <div className="p-4 border-t border-slate-100 bg-white">
-          <form onSubmit={handleAddComment} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Write a comment..."
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-              disabled={isSubmitting}
-            />
+      {/* Input Footer (Sleek dark design like Image 1) */}
+      <div className="p-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
+        <form onSubmit={handleAddComment} className="flex flex-col border border-slate-200 rounded-xl bg-[#1E1E24] shadow-inner transition-colors focus-within:border-slate-700 focus-within:ring-1 focus-within:ring-slate-700 overflow-hidden">
+          <input
+            type="text"
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Write a comment..."
+            className="w-full bg-transparent px-4 py-3 text-[13px] text-slate-200 placeholder-slate-400 focus:outline-none font-medium"
+            disabled={isSubmitting}
+          />
+          <div className="px-3 py-2 flex items-center justify-end border-t border-slate-700/50 bg-[#1A1A1E]">
             <button
               type="submit"
               disabled={isSubmitting || !newComment.trim()}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white disabled:text-slate-400 font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
-            >
-              <Send className="h-3.5 w-3.5" />
-              <span>Post</span>
+              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold text-[11px] uppercase tracking-wide rounded-lg transition-colors flex items-center gap-1.5 shadow-sm">
+              <Send className="h-3 w-3" />
+              Send
             </button>
-          </form>
-        </div>
-
+          </div>
+        </form>
       </div>
+
     </div>
   );
 };
+
