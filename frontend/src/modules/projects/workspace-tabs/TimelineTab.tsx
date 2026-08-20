@@ -151,7 +151,10 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ dynamicTasks, handleOp
           </div>
 
           {/* SVG Dependency Lines Overlay */}
-          <svg className="absolute inset-0 pointer-events-none w-full h-full min-w-[900px] z-20">
+          <svg 
+            className="absolute left-0 top-0 pointer-events-none h-full" 
+            style={{ width: gridWidth + 220, minWidth: '900px' }}
+          >
             <defs>
               <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />

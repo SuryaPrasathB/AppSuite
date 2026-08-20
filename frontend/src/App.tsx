@@ -6,6 +6,7 @@ import { DialogProvider } from './context/DialogContext';
 import { ToastProvider } from './context/ToastContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { AnnouncementBanner } from './components/AnnouncementBanner';
 import { Login } from './modules/store/pages/Login';
 import { Dashboard } from './modules/store/pages/Dashboard';
 import { StoreLayout } from './modules/store/pages/StoreLayout';
@@ -118,7 +119,7 @@ const AppContent: React.FC = () => {
 
   // If logged in, render the main layout with sidebar and header
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-full overflow-hidden bg-slate-50 font-sans">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
@@ -166,7 +167,12 @@ function App() {
         <DialogProvider>
           <CartProvider>
             <Router>
-              <AppContent />
+              <div className="flex flex-col h-screen overflow-hidden">
+                <AnnouncementBanner />
+                <div className="flex-1 overflow-hidden relative">
+                  <AppContent />
+                </div>
+              </div>
             </Router>
           </CartProvider>
         </DialogProvider>

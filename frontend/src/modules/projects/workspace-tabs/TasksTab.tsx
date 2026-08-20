@@ -198,7 +198,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                   {task.title}
                 </div>
                 {depsArray.length > 0 && (
-                  <div className="group/dep relative flex items-center justify-center shrink-0 cursor-help" title="Blocked by other tasks">
+                  <div className="group/dep relative flex items-center justify-center shrink-0 cursor-help">
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
                     <div className="hidden group-hover/dep:flex absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-[#1a1b1e] border border-slate-700 rounded-lg p-2 z-[60] shadow-xl whitespace-nowrap text-xs text-slate-200">
                       <div className="flex flex-col gap-1">

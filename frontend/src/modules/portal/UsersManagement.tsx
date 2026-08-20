@@ -142,8 +142,8 @@ export const UsersManagement: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-8">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto bg-slate-50 text-slate-800 font-sans p-8">
+      <div className="max-w-6xl mx-auto space-y-6 min-h-min pb-12">
         
         {/* Header section */}
         <div className="flex items-center gap-4 mb-8">

@@ -62,6 +62,7 @@ docker exec -it smart_store_backend python update_projects_parent_db.py
 docker exec -it smart_store_backend python update_task_comments_db.py
 docker exec -it smart_store_backend python add_announcements_table.py
 docker exec -it smart_store_backend python update_tickets_and_projects.py
+docker exec -it smart_store_backend python update_projects_deleted_at_db.py
 ```
 *If a script hangs or freezes for a long time, press `Ctrl + C`, restart the database (`docker restart smart_store_db`), and try running the script again to clear any database locks.*
 

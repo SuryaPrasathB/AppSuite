@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown, X, LogOut, Settings, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, Package, User as UserIcon, Sun, Bell, ChevronDown, X, LogOut, Settings, AlertTriangle, Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/apiClient';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { AnnouncementManagerModal } from './AnnouncementManagerModal';
 
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
@@ -22,6 +23,7 @@ export const Header: React.FC = () => {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const overdueDropdownRef = useRef<HTMLDivElement>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   
   const [overdueTasks, setOverdueTasks] = useState<any[]>([]);
   const [showOverdueDropdown, setShowOverdueDropdown] = useState(false);
@@ -605,6 +607,18 @@ export const Header: React.FC = () => {
                   <Settings className="h-4 w-4 text-slate-400" />
                   <span>Edit Profile</span>
                 </button>
+                {user?.role === 'Administrator' && (
+                  <button 
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowAnnouncementModal(true);
+                    }}
+                    className="px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center space-x-2 transition-colors w-full cursor-pointer"
+                  >
+                    <Megaphone className="h-4 w-4 text-slate-400" />
+                    <span>Announcements</span>
+                  </button>
+                )}
                 <div className="h-px bg-slate-100 my-1 w-full" />
                 <button 
                   onClick={() => {
@@ -622,6 +636,9 @@ export const Header: React.FC = () => {
           </div>
         )}
       </div>
+      {showAnnouncementModal && (
+        <AnnouncementManagerModal onClose={() => setShowAnnouncementModal(false)} />
+      )}
     </header>
     </div>
   );
