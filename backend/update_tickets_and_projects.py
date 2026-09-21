@@ -37,6 +37,10 @@ def update_db():
         if "creator_id" not in st_cols:
             alters.append("ALTER TABLE service_tickets ADD COLUMN creator_id INT NULL")
             alters.append("ALTER TABLE service_tickets ADD CONSTRAINT fk_st_creator FOREIGN KEY (creator_id) REFERENCES employees(id) ON DELETE SET NULL")
+        
+        # Ensure project_id is nullable
+        alters.append("ALTER TABLE service_tickets MODIFY COLUMN project_id INT NULL")
+        
         if "assignee_id" not in st_cols:
             alters.append("ALTER TABLE service_tickets ADD COLUMN assignee_id INT NULL")
             alters.append("ALTER TABLE service_tickets ADD CONSTRAINT fk_st_assignee FOREIGN KEY (assignee_id) REFERENCES employees(id) ON DELETE SET NULL")
@@ -45,6 +49,14 @@ def update_db():
             alters.append("ALTER TABLE service_tickets ADD CONSTRAINT fk_st_resolved FOREIGN KEY (resolved_by) REFERENCES employees(id) ON DELETE SET NULL")
         if "resolution_images" not in st_cols:
             alters.append("ALTER TABLE service_tickets ADD COLUMN resolution_images TEXT NULL")
+        if "history_logs" not in st_cols:
+            alters.append("ALTER TABLE service_tickets ADD COLUMN history_logs TEXT NULL")
+        if "resolution_notes" not in st_cols:
+            alters.append("ALTER TABLE service_tickets ADD COLUMN resolution_notes TEXT NULL")
+        if "resolution_time_mins" not in st_cols:
+            alters.append("ALTER TABLE service_tickets ADD COLUMN resolution_time_mins INT NULL")
+        if "closed_at" not in st_cols:
+            alters.append("ALTER TABLE service_tickets ADD COLUMN closed_at TIMESTAMP NULL")
         if "updated_at" not in st_cols:
             alters.append("ALTER TABLE service_tickets ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
             

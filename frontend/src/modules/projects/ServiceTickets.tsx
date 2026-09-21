@@ -44,6 +44,7 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
     const [tickets, setTickets] = useState<any[]>([]);
     const [projects, setProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
     
     // Create form state
     const [showForm, setShowForm] = useState(false);
@@ -186,13 +187,29 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                     </h1>
                     <p className="text-slate-500 text-sm mt-1 ml-10">Manage active complaints, issues, and service requests.</p>
                 </div>
-                <button 
-                    onClick={() => setShowForm(!showForm)}
-                    className="flex items-center bg-primary-600 text-white px-5 py-2.5 rounded-lg hover:bg-primary-700 transition-all shadow-md shadow-primary-500/30 font-semibold text-sm active:scale-95"
-                >
-                    {showForm ? <X className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                    {showForm ? 'Cancel Creation' : 'New Ticket'}
-                </button>
+                <div className="flex items-center gap-3 w-full sm:w-auto mt-4 sm:mt-0">
+                    <div className="relative w-full sm:w-64">
+                        <input
+                            type="text"
+                            placeholder="Search by ID or Title..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+                        />
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setShowForm(!showForm)}
+                        className="flex items-center bg-primary-600 text-white px-5 py-2.5 rounded-lg hover:bg-primary-700 transition-all shadow-md shadow-primary-500/30 font-semibold text-sm active:scale-95 whitespace-nowrap"
+                    >
+                        {showForm ? <X className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                        {showForm ? 'Cancel Creation' : 'New Ticket'}
+                    </button>
+                </div>
             </div>
 
             {/* Create Form Section */}
@@ -288,14 +305,14 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
             
             {/* Tickets List */}
             <div className="space-y-4">
-                {tickets.length === 0 ? (
+                {tickets.filter(t => !searchQuery || t.ticket_id?.toLowerCase().includes(searchQuery.toLowerCase()) || t.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                     <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center">
                         <CheckCircle2 className="h-12 w-12 mx-auto text-emerald-400 mb-3 opacity-50" />
                         <h3 className="text-slate-700 font-semibold text-lg">No Active Tickets</h3>
-                        <p className="text-slate-500 text-sm mt-1">All service requests and complaints are resolved.</p>
+                        <p className="text-slate-500 text-sm mt-1">No service tickets matched your search criteria.</p>
                     </div>
                 ) : (
-                    tickets.map(ticket => (
+                    tickets.filter(t => !searchQuery || t.ticket_id?.toLowerCase().includes(searchQuery.toLowerCase()) || t.title.toLowerCase().includes(searchQuery.toLowerCase())).map(ticket => (
                         <div 
                             key={ticket.id} 
                             className={`group relative overflow-hidden bg-white rounded-xl shadow-sm border transition-all duration-200 hover:shadow-md ${
@@ -313,7 +330,12 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                                 <div className="flex flex-col sm:flex-row justify-between gap-4">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
-                                            <h3 className="text-lg font-bold text-slate-800">{ticket.title}</h3>
+                                            <div className="flex items-baseline gap-2">
+                                                <h3 className="text-lg font-bold text-slate-800">{ticket.title}</h3>
+                                                {ticket.ticket_id && (
+                                                    <span className="text-sm font-medium text-slate-400">#{ticket.ticket_id}</span>
+                                                )}
+                                            </div>
                                             <span className={`px-2.5 py-1 text-[10px] uppercase font-bold tracking-wider rounded-full ${
                                                 ticket.status === 'OPEN' 
                                                     ? 'bg-red-100 text-red-700 border border-red-200' 

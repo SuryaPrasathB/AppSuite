@@ -195,6 +195,25 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                       {taskForm.due_date ? `Due: ${taskForm.due_date}` : 'Due Date'}
                     </label>
                   </div>
+                  {taskForm.status === 'COMPLETED' && taskForm.completed_at && (
+                    <div className="relative">
+                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-sm">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        Completed: {taskForm.completed_at.split('T')[0]}
+                        {(() => {
+                          if (!taskForm.due_date) return null;
+                          const due = new Date(taskForm.due_date);
+                          const completed = new Date(taskForm.completed_at);
+                          due.setHours(0,0,0,0);
+                          completed.setHours(0,0,0,0);
+                          if (completed > due) {
+                            return <span className="text-rose-600 ml-1 uppercase tracking-wide text-[10px] bg-rose-100 px-1.5 py-0.5 rounded-md border border-rose-200">Late</span>;
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               }
             />

@@ -356,6 +356,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             <DateRangePicker
               startDate={task.start_date}
               dueDate={task.due_date}
+              isOverdue={(() => {
+                if (!task.due_date || task.status === 'COMPLETED') return false;
+                const due = new Date(task.due_date);
+                const today = new Date();
+                due.setHours(0,0,0,0);
+                today.setHours(0,0,0,0);
+                return today > due;
+              })()}
               onSave={async (start, due) => {
                 await onUpdateTaskField?.(task.id, 'start_date', start);
                 await onUpdateTaskField?.(task.id, 'due_date', due);

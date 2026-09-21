@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { fetchAllDynamicTasks, updateDynamicTask } from './api';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder
+  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
+import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
@@ -18,6 +19,24 @@ export const MyTasks: React.FC = () => {
   const location = useLocation();
   const [selectedAssignee, setSelectedAssignee] = useState<string>(location.state?.filter || user?.name || 'All');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'overdue' | 'in_progress'>('all');
+
+  const todayDate = startOfDay(new Date());
+
+  const passesDateFilter = (task: any) => {
+    if (dateFilter === 'all') return true;
+    if (dateFilter === 'in_progress') return task.status === 'IN_PROGRESS';
+    
+    if (!task.due_date) return false;
+    
+    const dueDate = parseISO(task.due_date.split('T')[0]);
+    
+    if (dateFilter === 'today') return isToday(dueDate);
+    if (dateFilter === 'this_week') return isThisWeek(dueDate);
+    if (dateFilter === 'overdue') return isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
+    
+    return true;
+  };
 
   const toggleProjectCollapse = (projName: string) => {
     setCollapsedProjects(prev => ({
@@ -79,6 +98,7 @@ export const MyTasks: React.FC = () => {
 
   // Filtered tasks
   const filteredTasks = tasks.filter(t => {
+    if (!passesDateFilter(t)) return false;
     if (selectedAssignee === 'All') return true;
     if (selectedAssignee === 'Unassigned') return !t.assignee_name && (!t.assignees || t.assignees.length === 0);
     if (t.assignees && t.assignees.length > 0) {
@@ -97,7 +117,27 @@ export const MyTasks: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
       {/* Header Controls */}
-      <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs">
+      <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex flex-wrap gap-2">
+            {(['all', 'today', 'this_week', 'overdue', 'in_progress'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setDateFilter(f)}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  dateFilter === f
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                {f === 'all' ? 'All Active' : 
+                 f === 'today' ? 'Due Today' : 
+                 f === 'this_week' ? 'Due This Week' : 
+                 f === 'overdue' ? 'Overdue' : 'In Progress'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
           
           <div className="flex items-center gap-3">
@@ -115,20 +155,24 @@ export const MyTasks: React.FC = () => {
                 Kanban
               </button>
             </div>
-            <label className="text-sm font-bold text-slate-600 ml-2">Viewing as:</label>
-            <select
-              value={selectedAssignee}
-              onChange={(e) => setSelectedAssignee(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="All">All Assignees (Global)</option>
-              <option value="Unassigned">Unassigned</option>
-              <option disabled>──────</option>
-              {user?.name && <option value={user.name}>{user.name} (Me)</option>}
-              {getUniqueAssignees().filter(a => a !== user?.name).map(a => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+            {user?.role !== 'Employee' && (
+              <>
+                <label className="text-sm font-bold text-slate-600 ml-2">Viewing as:</label>
+                <select
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="All">All Assignees (Global)</option>
+                  <option value="Unassigned">Unassigned</option>
+                  <option disabled>──────</option>
+                  {user?.name && <option value={user.name}>{user.name} (Me)</option>}
+                  {getUniqueAssignees().filter(a => a !== user?.name).map(a => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -168,18 +212,24 @@ export const MyTasks: React.FC = () => {
                       
                       {!isCollapsed && (
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-xs text-slate-650">
+                          <table className="w-full table-fixed text-left border-collapse text-xs text-slate-650">
                             <thead className="bg-slate-50/50 border-b border-slate-100">
                               <tr className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                                <th className="px-5 py-3">Task</th>
-                                <th className="px-5 py-3">Status</th>
-                                <th className="px-5 py-3">Priority</th>
-                                <th className="px-5 py-3">Due Date</th>
-                                <th className="px-5 py-3">Assignee</th>
+                                <th className="px-5 py-3 w-1/3">Task</th>
+                                <th className="px-5 py-3 w-1/6">Status</th>
+                                <th className="px-5 py-3 w-1/6">Priority</th>
+                                <th className="px-5 py-3 w-1/6">Due Date</th>
+                                <th className="px-5 py-3 w-1/6">Assignee</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                               {projectTasks.map((task: any) => {
+                                let isTaskOverdue = false;
+                                if (task.due_date) {
+                                  const dueDate = parseISO(task.due_date.split('T')[0]);
+                                  isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
+                                }
+
                                 const priorityColor = 
                                   task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
                                   task.priority === 'HIGH' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
@@ -187,8 +237,16 @@ export const MyTasks: React.FC = () => {
                                   'bg-slate-100 text-slate-600 border border-slate-200';
 
                                 return (
-                                  <tr key={task.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="px-5 py-3.5 font-bold text-slate-800">{task.title}</td>
+                                  <tr key={task.id} className={`${isTaskOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50/80'} transition-colors`}>
+                                    <td className="px-5 py-3.5 font-bold text-slate-800">
+                                      {task.title}
+                                      {isTaskOverdue && (
+                                        <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                          <AlertCircle className="h-3 w-3" />
+                                          OVERDUE
+                                        </span>
+                                      )}
+                                    </td>
                                     <td className="px-5 py-3.5">
                                       <select 
                                         value={task.status} 
@@ -269,6 +327,12 @@ export const MyTasks: React.FC = () => {
                     </div>
                   ) : (
                     columnTasks.map(task => {
+                      let isTaskOverdue = false;
+                      if (task.due_date) {
+                        const dueDate = parseISO(task.due_date.split('T')[0]);
+                        isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
+                      }
+
                       const priorityColor = 
                         task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
                         task.priority === 'HIGH' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
@@ -280,12 +344,17 @@ export const MyTasks: React.FC = () => {
                           key={task.id}
                           draggable
                           onDragStart={(e) => handleDragStart(e, task.id, task.project_id)}
-                          className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:border-indigo-300 hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative"
+                          className={`${isTaskOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
                         >
                           <div className="flex justify-between items-start gap-2 mb-2">
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${priorityColor}`}>
                               {task.priority}
                             </span>
+                            {isTaskOverdue && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                <AlertCircle className="h-3 w-3" /> OVERDUE
+                              </span>
+                            )}
                           </div>
 
                           <h4 className="font-bold text-slate-800 text-sm mb-1.5 leading-snug">{task.title}</h4>

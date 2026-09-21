@@ -63,6 +63,22 @@ export async function fetchNextProjectCode() {
   return res.json();
 }
 
+export async function fetchMilestones() {
+  const res = await fetch(`${API_BASE}/milestones`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch milestones');
+  return res.json();
+}
+
+export async function createMilestone(name: string) {
+  const res = await fetch(`${API_BASE}/milestones`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to create milestone');
+  return res.json();
+}
+
 export async function fetchStandupData() {
   const res = await fetch(`${API_BASE}/dashboard/standup`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch standup data');

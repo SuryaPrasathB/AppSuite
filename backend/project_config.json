@@ -1,0 +1,23 @@
+{
+  "mandatory_documents": [
+    "BOM",
+    "Schematic",
+    "Mechanical Drawing",
+    "Test Report",
+    "Installation Report",
+    "User Manual",
+    "Photos",
+    "Technical Specification"
+  ],
+  "default_folders": [
+    "BOM",
+    "Schematic",
+    "Mechanical Drawing",
+    "Test Report",
+    "Service Report",
+    "Installation Report",
+    "User Manual",
+    "Photos",
+    "Technical Specification"
+  ]
+}

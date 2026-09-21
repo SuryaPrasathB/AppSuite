@@ -74,6 +74,7 @@ def update_db():
                 dependencies TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP NULL,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
                 FOREIGN KEY (parent_id) REFERENCES dynamic_tasks(id) ON DELETE CASCADE,
                 FOREIGN KEY (assignee_id) REFERENCES employees(id) ON DELETE SET NULL
@@ -190,6 +191,13 @@ def update_db():
             INSERT IGNORE INTO task_assignees (task_id, employee_id)
             SELECT id, assignee_id FROM dynamic_tasks WHERE assignee_id IS NOT NULL
         """)
+
+        print("Ensuring completed_at column exists on dynamic_tasks...")
+        try:
+            cursor.execute("ALTER TABLE dynamic_tasks ADD COLUMN completed_at TIMESTAMP NULL;")
+            print("Added completed_at column to dynamic_tasks.")
+        except Exception as e:
+            print(f"Ignored completed_at alter error (column likely exists): {e}")
 
         conn.commit()
         cursor.close()

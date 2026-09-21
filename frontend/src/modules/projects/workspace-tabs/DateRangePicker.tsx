@@ -5,6 +5,7 @@ import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
 interface DateRangePickerProps {
   startDate: string | null;
   dueDate: string | null;
+  isOverdue?: boolean;
   onSave: (start: string | null, due: string | null) => void;
   triggerClassName?: string;
   triggerElement?: React.ReactNode;
@@ -13,6 +14,7 @@ interface DateRangePickerProps {
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   startDate,
   dueDate,
+  isOverdue,
   onSave,
   triggerClassName = '',
   triggerElement,
@@ -250,9 +252,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       ) : (
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm ${triggerClassName}`}
+          className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm ${
+            isOverdue 
+              ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' 
+              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+          } ${triggerClassName}`}
         >
-          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+          <Calendar className={`h-3.5 w-3.5 ${isOverdue ? 'text-rose-500' : 'text-slate-400'}`} />
           <span>{getHeaderDisplay()}</span>
         </button>
       )}

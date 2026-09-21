@@ -15,6 +15,37 @@ from app.modules.projects.ai_planning import AIPlanningService
 from app.modules.projects.scheduling import SchedulingEngine
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+import json
+import os
+
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "project_config.json")
+
+def get_project_config():
+    default_config = {
+        "mandatory_documents": [
+            "BOM", "Schematic", "Mechanical Drawing",
+            "Test Report", "Installation Report", "User Manual", 
+            "Photos", "Technical Specification"
+        ],
+        "default_folders": [
+            "BOM", "Schematic", "Mechanical Drawing",
+            "Test Report", "Service Report", "Installation Report",
+            "User Manual", "Photos", "Technical Specification"
+        ]
+    }
+    try:
+        if os.path.exists(CONFIG_FILE_PATH):
+            with open(CONFIG_FILE_PATH, 'r') as f:
+                config = json.load(f)
+                return {
+                    "mandatory_documents": config.get("mandatory_documents", default_config["mandatory_documents"]),
+                    "default_folders": config.get("default_folders", default_config["default_folders"])
+                }
+    except Exception as e:
+        print(f"Error reading project_config.json: {e}")
+    
+    return default_config
 class ProjectCreate(BaseModel):
     code: str = Field(..., description="Unique project code")
     name: str = Field(..., description="Name of the project")
@@ -36,6 +67,7 @@ class ProjectCreate(BaseModel):
     is_parent: bool = False
     is_template: bool = False
     template_id: Optional[int] = None
+    milestone: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     code: Optional[str] = None
@@ -57,6 +89,7 @@ class ProjectUpdate(BaseModel):
     parent_id: Optional[int] = None
     is_parent: Optional[bool] = None
     is_template: Optional[bool] = None
+    milestone: Optional[str] = None
 
 class RelinkRequest(BaseModel):
     manual_path: Optional[str] = None
@@ -97,6 +130,37 @@ def get_next_project_num():
 @router.get("")
 def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False):
     return DBStore.get_projects(page, limit, search, status, parent_id, root_only)
+
+class MilestoneCreate(BaseModel):
+    name: str
+
+@router.get("/milestones")
+def list_milestones():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, name FROM global_milestones ORDER BY name ASC")
+        milestones = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return milestones
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/milestones")
+def create_milestone(milestone: MilestoneCreate):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO global_milestones (name) VALUES (%s)", (milestone.name,))
+        conn.commit()
+        new_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return {"id": new_id, "name": milestone.name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/next-code")
 def get_next_code():
@@ -346,10 +410,8 @@ def sync_project_directory_files(project_id: int, folder_path: str):
         db_files = DBStore.get_project_files(project_id)
         db_files_map = {(f["task_name"], f["file_name"]): f for f in db_files}
         
-        subfolders = [
-            "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-            "Test Report", "Service Report", "Installation Report",
-            "User Manual", "Photos", "Technical Specification",
+        config = get_project_config()
+        subfolders = config["default_folders"] + [
             "Software", "Firmware", "Transformer Design"
         ]
         
@@ -372,22 +434,23 @@ def sync_project_directory_files(project_id: int, folder_path: str):
                 
             task_dir = os.path.join(folder_path, matched_dir_name)
             try:
-                items = os.listdir(task_dir)
+                for root, _, files in os.walk(task_dir):
+                    for file in files:
+                        item_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(item_path, task_dir)
+                        item_name = rel_path.replace('\\', '/')
+                        
+                        tasks_with_files.add(task_name)
+                        if (task_name, item_name) not in db_files_map:
+                            try:
+                                DBStore.add_project_file(project_id, task_name, item_name, item_path)
+                            except Exception as e:
+                                print(f"Failed to auto-sync file {item_name} in DB: {e}")
+                        else:
+                            db_files_map.pop((task_name, item_name), None)
             except Exception as e:
-                print(f"Failed to list directory {task_dir}: {e}")
+                print(f"Failed to walk directory {task_dir}: {e}")
                 continue
-                
-            for item in items:
-                item_path = os.path.join(task_dir, item)
-                if os.path.isfile(item_path):
-                    tasks_with_files.add(task_name)
-                    if (task_name, item) not in db_files_map:
-                        try:
-                            DBStore.add_project_file(project_id, task_name, item, item_path)
-                        except Exception as e:
-                            print(f"Failed to auto-sync file {item} in DB: {e}")
-                    else:
-                        db_files_map.pop((task_name, item), None)
                         
         for (task_name, file_name), f_record in db_files_map.items():
             phys_path = f_record.get("file_path")
@@ -593,11 +656,8 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
         
     subfolders = []
     if not project.is_parent:
-        subfolders = [
-            "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-            "Test Report", "Service Report", "Installation Report",
-            "User Manual", "Photos", "Technical Specification"
-        ]
+        config = get_project_config()
+        subfolders = list(config["default_folders"])
         if project.has_software:
             subfolders.append("Software")
         if project.has_firmware:
@@ -654,11 +714,8 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
             
         # Enforce mandatory documents
         if not existing_proj.get("is_parent"):
-            expected_categories = [
-                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-                "Test Report", "Installation Report", "User Manual", 
-                "Photos", "Technical Specification"
-            ]
+            config = get_project_config()
+            expected_categories = list(config["mandatory_documents"])
             if existing_proj.get("has_software"):
                 expected_categories.append("Software")
             if existing_proj.get("has_firmware"):
@@ -760,11 +817,8 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     if not final_is_parent:
         final_folder_path = project_dump.get("folder_path", existing_proj.get("folder_path"))
         if final_folder_path:
-            subfolders = [
-                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-                "Test Report", "Service Report", "Installation Report",
-                "User Manual", "Photos", "Technical Specification"
-            ]
+            config = get_project_config()
+            subfolders = list(config["default_folders"])
             if project_dump.get("has_software", existing_proj.get("has_software", False)):
                 subfolders.append("Software")
             if project_dump.get("has_firmware", existing_proj.get("has_firmware", False)):
@@ -796,10 +850,8 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
         # Delete physical subfolders if they exist
         final_folder_path = project_dump.get("folder_path", existing_proj.get("folder_path"))
         if final_folder_path and os.path.exists(final_folder_path):
-            subfolders = [
-                "Activity Sheet", "BOM", "Schematic", "Mechanical Drawing",
-                "Test Report", "Service Report", "Installation Report",
-                "User Manual", "Photos", "Technical Specification",
+            config = get_project_config()
+            subfolders = config["default_folders"] + [
                 "Software", "Firmware", "Transformer Design"
             ]
             for sf in subfolders:
@@ -1332,21 +1384,33 @@ def get_my_assigned_tickets(current_user: Dict[str, Any] = Depends(get_current_u
 
 @router.post("/service-tickets")
 def create_service_ticket(ticket: TicketCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
-    ticket_data = ticket.model_dump()
-    ticket_data["creator_id"] = current_user.get("id")
-    ticket_id = DBStore.create_service_ticket(ticket_data)
-    
-    # Notify assignee if one is set
-    assignee_id = ticket_data.get("assignee_id")
-    if assignee_id and str(assignee_id).strip() != "" and int(assignee_id) != current_user.get("id"):
-        DBStore.add_notification(
-            user_id=int(assignee_id),
-            title="New Service Ticket",
-            message=f"You have been assigned a new service ticket: '{ticket_data['title']}'",
-            link="/projects/service-tickets"
-        )
+    try:
+        ticket_data = ticket.model_dump()
+        ticket_data["creator_id"] = current_user.get("id")
+        ticket_id = DBStore.create_service_ticket(ticket_data)
         
-    return {"id": ticket_id, "message": "Service ticket created successfully"}
+        # Notify assignee if one is set
+        assignee_id = ticket_data.get("assignee_id")
+        try:
+            if assignee_id and str(assignee_id).strip() not in ("", "null", "undefined", "None"):
+                a_id_int = int(assignee_id)
+                if a_id_int != current_user.get("id"):
+                    try:
+                        DBStore.add_notification(
+                            user_id=a_id_int,
+                            title="New Service Ticket",
+                            message=f"You have been assigned a new service ticket: '{ticket_data['title']}'",
+                            link="/projects/service-tickets"
+                        )
+                    except Exception as notif_e:
+                        print(f"Failed to add notification: {notif_e}")
+        except (ValueError, TypeError):
+            pass
+            
+        return {"id": ticket_id, "message": "Service ticket created successfully"}
+    except Exception as e:
+        print(f"Error creating ticket: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to create ticket: {str(e)}")
 
 @router.put("/service-tickets/{ticket_id}")
 def update_service_ticket(ticket_id: int, ticket: TicketUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -1357,16 +1421,18 @@ def update_service_ticket(ticket_id: int, ticket: TicketUpdate, current_user: Di
     if not updated:
         raise HTTPException(status_code=404, detail="Ticket not found")
         
-    # Check if assignee changed
     new_assignee = updated.get("assignee_id")
     if new_assignee and (not existing_ticket or existing_ticket.get("assignee_id") != new_assignee):
         if new_assignee != current_user.get("id"):
-            DBStore.add_notification(
-                user_id=new_assignee,
-                title="Service Ticket Assigned",
-                message=f"You have been assigned the service ticket: '{updated.get('title', 'Ticket')}'",
-                link="/projects/service-tickets"
-            )
+            try:
+                DBStore.add_notification(
+                    user_id=new_assignee,
+                    title="Service Ticket Assigned",
+                    message=f"You have been assigned to service ticket: '{updated.get('title', 'Ticket #' + str(ticket_id))}'",
+                    link="/projects/service-tickets"
+                )
+            except Exception as notif_e:
+                print(f"Failed to add notification for update: {notif_e}")
             
     return updated
 
@@ -1394,36 +1460,39 @@ async def resolve_service_ticket(
         "status": "CLOSED",
         "resolved_by": current_user.get("id")
     }
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT resolution_notes, resolution_images FROM service_tickets WHERE id = %s", (ticket_id,))
-    existing = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT resolution_notes, resolution_images FROM service_tickets WHERE id = %s", (ticket_id,))
+        existing = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    final_notes = notes
-    final_images = image_paths
-    
-    if existing:
-        if existing.get("resolution_notes"):
-            final_notes = existing["resolution_notes"] + "\n\n--- Update ---\n" + notes
-        if existing.get("resolution_images") and image_paths:
-            try:
-                existing_imgs = json.loads(existing["resolution_images"])
-                existing_imgs.extend(image_paths)
-                final_images = existing_imgs
-            except:
-                pass
-
-    update_data["resolution_notes"] = final_notes
-    if final_images:
-        update_data["resolution_images"] = json.dumps(final_images)
+        final_notes = notes
+        final_images = image_paths
         
-    updated = DBStore.update_service_ticket(ticket_id, update_data)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    return updated
+        if existing:
+            if existing.get("resolution_notes"):
+                final_notes = existing["resolution_notes"] + "\n\n--- Update ---\n" + notes
+            if existing.get("resolution_images") and image_paths:
+                try:
+                    existing_imgs = json.loads(existing["resolution_images"])
+                    existing_imgs.extend(image_paths)
+                    final_images = existing_imgs
+                except:
+                    pass
+
+        update_data["resolution_notes"] = final_notes
+        if final_images:
+            update_data["resolution_images"] = json.dumps(final_images)
+            
+        updated = DBStore.update_service_ticket(ticket_id, update_data)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        return updated
+    except Exception as e:
+        print(f"Error resolving ticket: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to resolve ticket: {str(e)}")
 
 @router.put("/{project_id}/close")
 def close_project(project_id: int):

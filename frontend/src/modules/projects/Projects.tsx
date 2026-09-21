@@ -5,13 +5,18 @@ import {
   Briefcase, User, CalendarDays, Layers, Cpu, Zap, Building2, Hash, FileCode2, Edit2, Trash2, Edit,
   CornerDownRight, ChevronRight, ChevronDown
 } from 'lucide-react';
-import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject, generateProjectPlan } from './api';
+import { fetchProjects, createProject, fetchNextProjectCode, updateProject, deleteProject, generateProjectPlan, fetchMilestones, createMilestone } from './api';
 import { useNavigate } from 'react-router-dom';
 import { ProjectFormModal } from './ProjectFormModal';
 import { RecycleBinModal } from './RecycleBinModal';
 import { useDialog } from '../../context/DialogContext';
+import { useAuth } from '../../context/AuthContext';
 
 export const Projects: React.FC = () => {
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole(['Administrator']);
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [newMilestoneModalState, setNewMilestoneModalState] = useState<{ isOpen: boolean, projectId: number | null, name: string }>({ isOpen: false, projectId: null, name: '' });
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -54,6 +59,18 @@ export const Projects: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const fetchGlobalMilestones = async () => {
+      try {
+        const data = await fetchMilestones();
+        setMilestones(data);
+      } catch (err) {
+        console.error("Failed to load milestones", err);
+      }
+    };
+    fetchGlobalMilestones();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -134,6 +151,34 @@ export const Projects: React.FC = () => {
     if (!confirmStatusChange) return;
     await handleDirectStatusUpdate(confirmStatusChange.project.id, confirmStatusChange.targetStatus);
     setConfirmStatusChange(null);
+  };
+
+  const handleMilestoneChange = async (projectId: number, currentValue: string, newValue: string) => {
+    if (newValue === 'add_new_milestone') {
+      setNewMilestoneModalState({ isOpen: true, projectId, name: '' });
+    } else {
+      try {
+        await updateProject(projectId, { milestone: newValue === '' ? null : newValue });
+        loadProjects();
+      } catch (err: any) {
+        showAlert(err.message || "Failed to update milestone");
+      }
+    }
+  };
+
+  const handleCreateMilestoneSubmit = async () => {
+    const { name, projectId } = newMilestoneModalState;
+    if (name && name.trim() && projectId) {
+      try {
+        const newMilestone = await createMilestone(name.trim());
+        setMilestones(prev => [...prev, newMilestone].sort((a, b) => a.name.localeCompare(b.name)));
+        await updateProject(projectId, { milestone: newMilestone.name });
+        loadProjects();
+        setNewMilestoneModalState({ isOpen: false, projectId: null, name: '' });
+      } catch (err: any) {
+        showAlert(err.message || "Failed to create milestone");
+      }
+    }
   };
 
   const filteredProjects = projects;
@@ -290,6 +335,7 @@ export const Projects: React.FC = () => {
                 <th className="px-6 py-4">PO Number</th>
                 <th className="px-6 py-4">Project Incharge</th>
                 <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Milestone</th>
                 <th className="px-6 py-4">Completion</th>
                 <th className="px-6 py-4">Start Date</th>
                 <th className="px-6 py-4">End Date</th>
@@ -299,7 +345,7 @@ export const Projects: React.FC = () => {
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
+                  <td colSpan={10} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
                 </tr>
               ) : hierarchicalProjects.length > 0 ? (
                 hierarchicalProjects
@@ -364,7 +410,7 @@ export const Projects: React.FC = () => {
                             handleDirectStatusUpdate(p.id, newStatus);
                           }
                         }}
-                        className={`appearance-none inline-flex items-center px-2 py-0.5 pr-6 rounded-full text-[10px] font-bold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors ${
+                        className={`appearance-none uppercase inline-flex items-center px-2 pr-6 h-6 w-[110px] rounded-full text-[10px] font-bold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors ${
                           p.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
                           p.status === 'SERVICE' ? 'bg-orange-100 text-orange-800' :
                           p.status === 'IN_PROGRESS' ? 'bg-purple-100 text-purple-800' :
@@ -389,6 +435,27 @@ export const Projects: React.FC = () => {
                           p.status === 'CANCELLED' ? 'text-slate-600' :
                           'text-blue-800'
                         }`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 relative">
+                      <select
+                        value={p.milestone || ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleMilestoneChange(p.id, p.milestone || '', e.target.value)}
+                        className="appearance-none uppercase inline-flex items-center px-2 pr-6 h-6 w-[110px] rounded-full text-[10px] font-bold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors bg-slate-100 text-slate-800 hover:bg-slate-200"
+                      >
+                        <option value="">N/A</option>
+                        {isAdmin && (
+                          <option value="add_new_milestone" className="font-bold text-indigo-600">
+                            + Add New Milestone...
+                          </option>
+                        )}
+                        {milestones.map((ms: any) => (
+                          <option key={ms.id} value={ms.name}>{ms.name}</option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-7 flex items-center">
+                        <svg className="h-3 w-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -438,7 +505,7 @@ export const Projects: React.FC = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-6 py-8 text-center text-slate-500">
                     No projects found matching the criteria.
                   </td>
                 </tr>
@@ -588,6 +655,65 @@ export const Projects: React.FC = () => {
             <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs text-indigo-700 font-bold flex items-center justify-center gap-2">
               <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
               Generating execution plan... (this can take 30-90s)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Milestone Modal */}
+      {newMilestoneModalState.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-indigo-600" />
+                Add New Milestone
+              </h3>
+              <button 
+                onClick={() => {
+                  setNewMilestoneModalState({ isOpen: false, projectId: null, name: '' });
+                  loadProjects(); // Reload to reset the select field which might still display 'add_new_milestone'
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Milestone Name
+              </label>
+              <input 
+                type="text" 
+                value={newMilestoneModalState.name}
+                onChange={(e) => setNewMilestoneModalState(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Phase 1 Delivery, Alpha Release"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newMilestoneModalState.name.trim()) {
+                    handleCreateMilestoneSubmit();
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => {
+                  setNewMilestoneModalState({ isOpen: false, projectId: null, name: '' });
+                  loadProjects(); // Reload to reset the select field
+                }}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateMilestoneSubmit}
+                disabled={!newMilestoneModalState.name.trim()}
+                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 rounded-lg transition-colors flex items-center justify-center"
+              >
+                Create Milestone
+              </button>
             </div>
           </div>
         </div>

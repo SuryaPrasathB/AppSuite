@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
-  ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, 
+  ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, List,
   Clock, Package, FileText, StickyNote, Activity,
   Briefcase, Layers, CornerDownRight, Folder, BarChart2,
   TrendingUp, Plus, CheckCircle2, FolderPlus, ShieldAlert
@@ -37,6 +37,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   
   const [subProjects, setSubProjects] = useState<any[]>([]);
+  const [subProjectView, setSubProjectView] = useState<'grid' | 'list'>('grid');
   
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
@@ -454,13 +455,31 @@ export const ProjectWorkspace: React.FC = () => {
                 <h2 className="text-lg font-bold text-slate-800">Sub-Projects ({subProjects.length})</h2>
                 <p className="text-xs text-slate-500 font-medium">All sub-project modules linked directly inside this major project folder.</p>
               </div>
-              <button
-                onClick={() => setIsSubProjectModalOpen(true)}
-                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <Plus className="h-4 w-4" />
-                Add Sub-Project
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="bg-slate-100 p-1 rounded-lg flex items-center shadow-inner">
+                  <button
+                    onClick={() => setSubProjectView('grid')}
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${subProjectView === 'grid' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Grid View"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setSubProjectView('list')}
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${subProjectView === 'list' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="List View"
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => setIsSubProjectModalOpen(true)}
+                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Sub-Project
+                </button>
+              </div>
             </div>
 
             {subProjects.length === 0 ? (
@@ -472,13 +491,13 @@ export const ProjectWorkspace: React.FC = () => {
                 </p>
                 <button
                   onClick={() => setIsSubProjectModalOpen(true)}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="h-4 w-4" />
                   Create First Sub-Project
                 </button>
               </div>
-            ) : (
+            ) : subProjectView === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {subProjects.map(sp => (
                   <Link
@@ -513,6 +532,51 @@ export const ProjectWorkspace: React.FC = () => {
                     </div>
                   </Link>
                 ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse text-xs text-slate-650">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                      <th className="px-4 py-3">Project</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">In-charge</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {subProjects.map(sp => (
+                      <tr key={sp.id} className="hover:bg-slate-50 transition-colors group">
+                        <td className="px-4 py-3">
+                          <Link to={`/projects/${sp.id}`} className="block">
+                            <div className="font-bold text-slate-800 text-sm mb-0.5 group-hover:text-purple-600 transition-colors flex items-center gap-1.5">
+                              <Folder className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                              {sp.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400">{sp.code}</div>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            sp.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                            sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                            'bg-slate-100 text-slate-700'
+                          }`}>
+                            {sp.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-700">
+                          {sp.project_incharge || 'Unassigned'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link to={`/projects/${sp.id}`} className="inline-block font-bold text-purple-600 hover:text-purple-700 hover:underline cursor-pointer">
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

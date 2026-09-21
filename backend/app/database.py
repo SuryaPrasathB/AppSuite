@@ -981,8 +981,8 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         query = """
             INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
-                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template, milestone)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project.get("code"), project.get("name"), project.get("po_number"),
@@ -997,7 +997,8 @@ class DBStore:
             project.get("date_of_delivery") or None,
             project.get("parent_id") or None,
             1 if project.get("is_parent") else 0,
-            1 if project.get("is_template") else 0
+            1 if project.get("is_template") else 0,
+            project.get("milestone")
         )
         cursor.execute(query, values)
         conn.commit()
@@ -1014,7 +1015,7 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id"]:
+        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id", "milestone"]:
             if key in data:
                 updates.append(f"{key} = %s")
                 if key in ["start_date", "end_date", "date_of_delivery", "parent_id"] and not data[key]:
@@ -1276,6 +1277,8 @@ class DBStore:
                 t['created_at'] = t['created_at'].isoformat()
             if t.get('updated_at'):
                 t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('completed_at'):
+                t['completed_at'] = t['completed_at'].isoformat()
             if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
                 t['start_date'] = t['start_date'].isoformat()
             if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
@@ -1304,6 +1307,8 @@ class DBStore:
                 t['created_at'] = t['created_at'].isoformat()
             if t.get('updated_at'):
                 t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('completed_at'):
+                t['completed_at'] = t['completed_at'].isoformat()
             if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
                 t['start_date'] = t['start_date'].isoformat()
             if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
@@ -1445,6 +1450,12 @@ class DBStore:
                 else:
                     values.append(data[key])
                     
+        if "status" in data:
+            if data["status"] == "COMPLETED":
+                updates.append("completed_at = CURRENT_TIMESTAMP")
+            else:
+                updates.append("completed_at = NULL")
+                    
         if updates:
             values.append(task_id)
             query = f"UPDATE dynamic_tasks SET {', '.join(updates)} WHERE id = %s"
@@ -1469,6 +1480,8 @@ class DBStore:
                 t['created_at'] = t['created_at'].isoformat()
             if t.get('updated_at'):
                 t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('completed_at'):
+                t['completed_at'] = t['completed_at'].isoformat()
             if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
                 t['start_date'] = t['start_date'].isoformat()
             if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
@@ -2066,6 +2079,7 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tickets:
+            t['ticket_id'] = f"SR-{str(t['id']).zfill(8)}"
             if t.get('created_at') and hasattr(t['created_at'], 'isoformat'):
                 t['created_at'] = t['created_at'].isoformat()
             if t.get('closed_at') and hasattr(t['closed_at'], 'isoformat'):
@@ -2092,15 +2106,15 @@ class DBStore:
             """
             history = [{"action": "Ticket Created", "timestamp": datetime.now().isoformat()}]
             p_id = data.get("project_id")
-            if p_id == "":
+            if p_id is not None and str(p_id).strip() in ("", "null", "undefined", "None", "0", "NaN"):
                 p_id = None
                 
             c_id = data.get("creator_id")
-            if c_id == "":
+            if c_id is not None and str(c_id).strip() in ("", "null", "undefined", "None", "NaN"):
                 c_id = None
                 
             a_id = data.get("assignee_id")
-            if a_id == "":
+            if a_id is not None and str(a_id).strip() in ("", "null", "undefined", "None", "0", "NaN"):
                 a_id = None
                 
             cursor.execute(query, (

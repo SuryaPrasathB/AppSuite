@@ -144,13 +144,13 @@ export const DailyStandup: React.FC = () => {
 
                 {/* Tasks Table */}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full table-fixed text-left border-collapse">
                     <thead>
                       <tr className="bg-white border-b border-slate-100">
-                        <th className="px-6 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Project & Task</th>
-                        <th className="px-6 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Priority</th>
-                        <th className="px-6 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Due Date</th>
+                        <th className="px-6 py-3 w-2/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Project & Task</th>
+                        <th className="px-6 py-3 w-1/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 w-1/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Priority</th>
+                        <th className="px-6 py-3 w-1/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Due Date</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
