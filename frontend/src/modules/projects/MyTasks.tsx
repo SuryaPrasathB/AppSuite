@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchAllDynamicTasks, updateDynamicTask } from './api';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle
+  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle, CheckCircle2
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
@@ -20,10 +20,13 @@ export const MyTasks: React.FC = () => {
   const [selectedAssignee, setSelectedAssignee] = useState<string>(location.state?.filter || user?.name || 'All');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'overdue' | 'in_progress'>('all');
+  const [showCompleted, setShowCompleted] = useState<boolean>(false);
 
   const todayDate = startOfDay(new Date());
 
   const passesDateFilter = (task: any) => {
+    if (!showCompleted && task.status === 'COMPLETED') return false;
+
     if (dateFilter === 'all') return true;
     if (dateFilter === 'in_progress') return task.status === 'IN_PROGRESS';
     
@@ -98,6 +101,7 @@ export const MyTasks: React.FC = () => {
 
   // Filtered tasks
   const filteredTasks = tasks.filter(t => {
+    if (!showCompleted && t.status === 'COMPLETED') return false;
     if (!passesDateFilter(t)) return false;
     if (selectedAssignee === 'All') return true;
     if (selectedAssignee === 'Unassigned') return !t.assignee_name && (!t.assignees || t.assignees.length === 0);
@@ -140,7 +144,17 @@ export const MyTasks: React.FC = () => {
         </div>
         <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-600 hover:text-slate-900 select-none bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(e) => setShowCompleted(e.target.checked)}
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>Show Completed</span>
+            </label>
+
             <div className="bg-slate-100 p-1 rounded-lg flex items-center border border-slate-200">
               <button
                 onClick={() => setView('list')}
@@ -157,7 +171,7 @@ export const MyTasks: React.FC = () => {
             </div>
             {user?.role !== 'Employee' && (
               <>
-                <label className="text-sm font-bold text-slate-600 ml-2">Viewing as:</label>
+                <label className="text-sm font-bold text-slate-600 ml-1">Viewing as:</label>
                 <select
                   value={selectedAssignee}
                   onChange={(e) => setSelectedAssignee(e.target.value)}
@@ -297,97 +311,128 @@ export const MyTasks: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-250px)] min-h-[500px]">
-          {[
-            { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-50' },
-            { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50' },
-            { key: 'REVIEW', title: 'Review', color: 'border-t-amber-500 bg-amber-50/50' },
-            { key: 'COMPLETED', title: 'Completed', color: 'border-t-emerald-500 bg-emerald-50/50' },
-          ].map(column => {
-            const columnTasks = filteredTasks.filter(t => t.status === column.key);
-            
-            return (
-              <div
-                key={column.key}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleDrop(e, column.key)}
-                className={`flex flex-col rounded-2xl border border-slate-200 ${column.color} p-4 h-full shadow-sm`}
-              >
-                <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-200">
-                  <span className="text-sm font-bold text-slate-700 uppercase tracking-wider">{column.title}</span>
-                  <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-600 text-xs rounded-full font-bold">
-                    {columnTasks.length}
-                  </span>
+        <div className="space-y-4">
+          {!showCompleted && (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDrop(e, 'COMPLETED')}
+              className="border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-700 rounded-xl px-4 py-2.5 flex items-center justify-center gap-2 text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <span>Drag a task here to mark as Completed</span>
+            </div>
+          )}
+
+          <div className={`grid grid-cols-1 ${showCompleted ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6 h-[calc(100vh-280px)] min-h-[500px]`}>
+            {[
+              { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-50' },
+              { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50' },
+              { key: 'REVIEW', title: 'Review', color: 'border-t-amber-500 bg-amber-50/50' },
+              ...(showCompleted ? [{ key: 'COMPLETED', title: 'Completed', color: 'border-t-emerald-500 bg-emerald-50/50' }] : []),
+            ].map(column => {
+              const columnTasks = filteredTasks.filter(t => t.status === column.key);
+              
+              return (
+                <div
+                  key={column.key}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => handleDrop(e, column.key)}
+                  className={`flex flex-col rounded-2xl border border-slate-200 ${column.color} p-4 h-full shadow-sm`}
+                >
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-200">
+                    <span className="text-sm font-bold text-slate-700 uppercase tracking-wider">{column.title}</span>
+                    <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-600 text-xs rounded-full font-bold">
+                      {columnTasks.length}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+                    {columnTasks.length === 0 ? (
+                      <div className="h-24 flex items-center justify-center border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
+                        No tasks
+                      </div>
+                    ) : (
+                      columnTasks.map(task => {
+                        let isTaskOverdue = false;
+                        if (task.due_date) {
+                          const dueDate = parseISO(task.due_date.split('T')[0]);
+                          isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
+                        }
+
+                        const priorityColor = 
+                          task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                          task.priority === 'HIGH' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                          task.priority === 'MEDIUM' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                          'bg-slate-100 text-slate-600 border border-slate-200';
+
+                        return (
+                          <div
+                            key={task.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, task.id, task.project_id)}
+                            className={`${isTaskOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
+                          >
+                            <div className="flex justify-between items-start gap-2 mb-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${priorityColor}`}>
+                                {task.priority}
+                              </span>
+                              {isTaskOverdue && (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                  <AlertCircle className="h-3 w-3" /> OVERDUE
+                                </span>
+                              )}
+                            </div>
+
+                            <h4 className="font-bold text-slate-800 text-sm mb-1.5 leading-snug">{task.title}</h4>
+                            <div className="mb-3">
+                              {task.project_name ? (
+                                <span className="inline-block bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider line-clamp-1">
+                                  Project: {task.project_name}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400 italic">No Project</span>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-[10px] text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {task.assignee_name && (
+                                  <span className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 font-medium">
+                                    <User className="h-2.5 w-2.5 text-slate-400" />
+                                    {task.assignee_name.split(' ')[0]}
+                                  </span>
+                                )}
+                                <select
+                                  value={task.status}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => handleUpdateStatus(task.project_id, task.id, e.target.value)}
+                                  className={`text-[9px] font-bold rounded px-1.5 py-0.5 border cursor-pointer focus:outline-none ${
+                                    task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    task.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                    task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                    'bg-slate-50 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  <option value="TODO">TO DO</option>
+                                  <option value="IN_PROGRESS">IN PROGRESS</option>
+                                  <option value="REVIEW">REVIEW</option>
+                                  <option value="COMPLETED">COMPLETED</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-
-                <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
-                  {columnTasks.length === 0 ? (
-                    <div className="h-24 flex items-center justify-center border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
-                      No tasks
-                    </div>
-                  ) : (
-                    columnTasks.map(task => {
-                      let isTaskOverdue = false;
-                      if (task.due_date) {
-                        const dueDate = parseISO(task.due_date.split('T')[0]);
-                        isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
-                      }
-
-                      const priorityColor = 
-                        task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
-                        task.priority === 'HIGH' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                        task.priority === 'MEDIUM' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
-                        'bg-slate-100 text-slate-600 border border-slate-200';
-
-                      return (
-                        <div
-                          key={task.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, task.id, task.project_id)}
-                          className={`${isTaskOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
-                        >
-                          <div className="flex justify-between items-start gap-2 mb-2">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${priorityColor}`}>
-                              {task.priority}
-                            </span>
-                            {isTaskOverdue && (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                                <AlertCircle className="h-3 w-3" /> OVERDUE
-                              </span>
-                            )}
-                          </div>
-
-                          <h4 className="font-bold text-slate-800 text-sm mb-1.5 leading-snug">{task.title}</h4>
-                          <div className="mb-3">
-                            {task.project_name ? (
-                              <span className="inline-block bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider line-clamp-1">
-                                Project: {task.project_name}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400 italic">No Project</span>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-[10px] text-slate-500">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3 text-slate-400" />
-                              {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
-                            </span>
-                            {task.assignee_name && (
-                              <span className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 font-medium">
-                                <User className="h-2.5 w-2.5 text-slate-400" />
-                                {task.assignee_name.split(' ')[0]}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
