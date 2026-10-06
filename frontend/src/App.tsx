@@ -27,6 +27,7 @@ import { StockIn } from './modules/store/pages/StockIn';
 import { IssueMaterial } from './modules/store/pages/IssueMaterial';
 import { ReturnMaterial } from './modules/store/pages/ReturnMaterial';
 import { Employees } from './modules/store/pages/Employees';
+import { Assets } from './modules/store/pages/Assets';
 import { Portal } from './modules/portal/Portal';
 import { UsersManagement } from './modules/portal/UsersManagement';
 import { BOM } from './modules/bom/BOM';
@@ -134,6 +135,7 @@ const AppContent: React.FC = () => {
             <Route path="/inventory" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Inventory /></ProtectedRoute>} />
             <Route path="/vendors" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Vendors /></ProtectedRoute>} />
             <Route path="/employees" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Employees /></ProtectedRoute>} />
+            <Route path="/assets" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Assets /></ProtectedRoute>} />
             <Route path="/purchase" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><PurchasePlanning /></ProtectedRoute>} />
             <Route path="/requests" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Requests /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Reports /></ProtectedRoute>} />

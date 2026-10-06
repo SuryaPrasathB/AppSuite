@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS projects (
     parent_id INT NULL,
     is_parent BOOLEAN DEFAULT FALSE,
     is_template BOOLEAN DEFAULT FALSE,
+    milestone VARCHAR(255) DEFAULT NULL,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -203,9 +204,27 @@ CREATE TABLE IF NOT EXISTS service_tickets (
 CREATE INDEX idx_service_tickets_project ON service_tickets(project_id);
 CREATE INDEX idx_service_tickets_status ON service_tickets(status);
 
--- 13. SEED DEFAULT USERS (Password for all is their username)
+-- 14. ASSETS TABLE
+CREATE TABLE IF NOT EXISTS assets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_code VARCHAR(100) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(100),
+    type VARCHAR(50) DEFAULT 'COMPANY',
+    status VARCHAR(50) DEFAULT 'AVAILABLE',
+    assigned_to INT NULL,
+    purchase_date DATE,
+    purchase_cost DECIMAL(12, 2),
+    serial_number VARCHAR(100),
+    location_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (assigned_to) REFERENCES employees(id) ON DELETE SET NULL,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_assets_code ON assets(asset_code);
+CREATE INDEX idx_assets_type ON assets(type);
+
+-- 13. SEED DEFAULT USERS
 INSERT INTO employees (name, role, username, password_hash) VALUES 
-('Surya (Admin)', 'Administrator', 'admin', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
-('Adarsh (Store Manager)', 'Store Manager', 'manager', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
-('Rahul (Operator)', 'Store Operator', 'operator', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u'),
-('Vikram (Purchase Team)', 'Purchase Team', 'purchaser', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u');
+('Surya', 'Administrator', 'admin', '$2b$12$Nq5m4G7lq1/r/rD8P9qX/.e.2N0y2VqN4A5U7wU8G9R/Pz/C/r5/u');

@@ -142,5 +142,12 @@ export const apiClient = {
     listActive: (limit = 5) => request<any[]>(`/announcements/active?limit=${limit}`),
     create: (body: any) => request<any>('/announcements', { method: 'POST', body: JSON.stringify(body) }),
     deactivate: (id: number | string) => request<any>(`/announcements/${id}`, { method: 'DELETE' }),
+  },
+  assets: {
+    list: () => request<any[]>('/assets'),
+    get: (id: number | string) => request<any>(`/assets/${id}`),
+    create: (body: any) => request<any>('/assets', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number | string, body: any) => request<any>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number | string) => request<any>(`/assets/${id}`, { method: 'DELETE' }),
   }
 };

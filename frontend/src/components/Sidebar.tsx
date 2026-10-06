@@ -22,7 +22,8 @@ import {
   Plus,
   Minus,
   Bookmark,
-  AlertCircle
+  AlertCircle,
+  Monitor
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -54,7 +55,7 @@ export const Sidebar: React.FC = () => {
     activeModule = 'projects';
   } else if (path.startsWith('/bom')) {
     activeModule = 'bom';
-  } else if (['/store', '/products', '/layout', '/stock-in', '/issue-material', '/return-material', '/inventory', '/vendors', '/employees', '/purchase', '/requests', '/reports'].includes(path)) {
+  } else if (['/store', '/products', '/layout', '/stock-in', '/issue-material', '/return-material', '/inventory', '/vendors', '/employees', '/assets', '/purchase', '/requests', '/reports'].includes(path)) {
     activeModule = 'store';
   }
 
@@ -95,6 +96,7 @@ export const Sidebar: React.FC = () => {
       { name: 'Store Layout', path: '/layout', icon: Warehouse },
       { name: 'Transactions', path: '/inventory', icon: History },
       { name: 'Suppliers / Vendors', path: '/vendors', icon: Truck },
+      { name: 'Assets', path: '/assets', icon: Monitor },
       { name: 'Reports', path: '/reports', icon: TrendingUp },
     ];
   }

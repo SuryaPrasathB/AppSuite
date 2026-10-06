@@ -2218,3 +2218,107 @@ class DBStore:
             cursor.close()
             conn.close()
 
+
+class AssetStore:
+    @staticmethod
+    def get_assets() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, e.name as assigned_employee_name 
+            FROM assets a 
+            LEFT JOIN employees e ON a.assigned_to = e.id
+        """)
+        assets = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for a in assets:
+            if a.get('created_at'):
+                a['created_at'] = a['created_at'].isoformat()
+            if a.get('updated_at'):
+                a['updated_at'] = a['updated_at'].isoformat()
+            if a.get('purchase_date') and hasattr(a['purchase_date'], 'isoformat'):
+                a['purchase_date'] = a['purchase_date'].isoformat()
+            if a.get('purchase_cost') is not None:
+                a['purchase_cost'] = float(a['purchase_cost'])
+        return assets
+
+    @staticmethod
+    def add_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        query = """
+            INSERT INTO assets (asset_code, name, category, type, status, assigned_to, purchase_date, purchase_cost, serial_number, location_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            asset.get("asset_code"), asset.get("name"), asset.get("category"),
+            asset.get("type", "COMPANY"), asset.get("status", "AVAILABLE"),
+            asset.get("assigned_to"), asset.get("purchase_date"),
+            asset.get("purchase_cost"), asset.get("serial_number"), asset.get("location_id")
+        )
+        cursor.execute(query, values)
+        conn.commit()
+        asset_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return AssetStore.get_asset(asset_id)
+
+    @staticmethod
+    def get_asset(asset_id: int) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT a.*, e.name as assigned_employee_name 
+            FROM assets a 
+            LEFT JOIN employees e ON a.assigned_to = e.id 
+            WHERE a.id = %s
+        """, (asset_id,))
+        asset = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if asset:
+            if asset.get('created_at'):
+                asset['created_at'] = asset['created_at'].isoformat()
+            if asset.get('updated_at'):
+                asset['updated_at'] = asset['updated_at'].isoformat()
+            if asset.get('purchase_date') and hasattr(asset['purchase_date'], 'isoformat'):
+                asset['purchase_date'] = asset['purchase_date'].isoformat()
+            if asset.get('purchase_cost') is not None:
+                asset['purchase_cost'] = float(asset['purchase_cost'])
+        return asset
+
+    @staticmethod
+    def update_asset(asset_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        updates = []
+        values = []
+        allowed_fields = ["asset_code", "name", "category", "type", "status", "assigned_to", "purchase_date", "purchase_cost", "serial_number", "location_id"]
+        for key in allowed_fields:
+            if key in data:
+                updates.append(f"{key} = %s")
+                values.append(data[key])
+                
+        if not updates:
+            return AssetStore.get_asset(asset_id)
+            
+        values.append(asset_id)
+        query = f"UPDATE assets SET {', '.join(updates)} WHERE id = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return AssetStore.get_asset(asset_id)
+
+    @staticmethod
+    def delete_asset(asset_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM assets WHERE id = %s", (asset_id,))
+        conn.commit()
+        rows = cursor.rowcount
+        cursor.close()
+        conn.close()
+        return rows > 0
