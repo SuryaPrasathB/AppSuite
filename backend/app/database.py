@@ -2167,11 +2167,57 @@ class DBStore:
                     diff_mins = int(diff.total_seconds() / 60)
                     updates.append("resolution_time_mins = %s")
                     values.append(diff_mins)
-            
+                elif data["status"] == "OPEN":
+                    updates.append("closed_at = NULL")
+                    updates.append("resolution_time_mins = NULL")
+
+            if "title" in data and data["title"] is not None and data["title"] != ticket.get("title"):
+                updates.append("title = %s")
+                values.append(data["title"])
+                history.append({"action": f"Title updated to '{data['title']}'", "timestamp": datetime.now().isoformat()})
+
+            if "description" in data and data["description"] != ticket.get("description"):
+                updates.append("description = %s")
+                values.append(data["description"])
+                history.append({"action": "Description updated", "timestamp": datetime.now().isoformat()})
+
+            if "project_id" in data:
+                p_id = data["project_id"]
+                if p_id is not None and str(p_id).strip() in ("", "null", "undefined", "None", "0", "NaN"):
+                    p_id = None
+                elif p_id is not None:
+                    try:
+                        p_id = int(p_id)
+                    except (ValueError, TypeError):
+                        p_id = None
+                if p_id != ticket.get("project_id"):
+                    updates.append("project_id = %s")
+                    values.append(p_id)
+                    history.append({"action": f"Project changed to {p_id}", "timestamp": datetime.now().isoformat()})
+                    if p_id is not None and "custom_project_name" not in data:
+                        updates.append("custom_project_name = NULL")
+
+            if "custom_project_name" in data:
+                c_name = data["custom_project_name"]
+                if c_name is not None and str(c_name).strip() in ("", "null", "undefined", "None"):
+                    c_name = None
+                if c_name != ticket.get("custom_project_name"):
+                    updates.append("custom_project_name = %s")
+                    values.append(c_name)
+                    if c_name:
+                        history.append({"action": f"Custom project name set to '{c_name}'", "timestamp": datetime.now().isoformat()})
+                        if "project_id" not in data:
+                            updates.append("project_id = NULL")
+
             if "assignee_id" in data:
                 a_id = data["assignee_id"]
-                if a_id == "":
+                if a_id is not None and str(a_id).strip() in ("", "null", "undefined", "None", "0", "NaN"):
                     a_id = None
+                elif a_id is not None:
+                    try:
+                        a_id = int(a_id)
+                    except (ValueError, TypeError):
+                        a_id = None
                 if a_id != ticket.get("assignee_id"):
                     updates.append("assignee_id = %s")
                     values.append(a_id)
@@ -2199,7 +2245,7 @@ class DBStore:
                 cursor.execute(query, tuple(values))
                 conn.commit()
             
-            cursor.execute("SELECT * FROM service_tickets WHERE id = %s", (ticket_id,))
+            cursor.execute('''SELECT st.*, COALESCE(p.name, st.custom_project_name) as project_name, COALESCE(p.code, 'MANUAL') as project_code, cr.name as creator_name, asn.name as assignee_name, res.name as resolver_name FROM service_tickets st LEFT JOIN projects p ON st.project_id = p.id LEFT JOIN employees cr ON st.creator_id = cr.id LEFT JOIN employees asn ON st.assignee_id = asn.id LEFT JOIN employees res ON st.resolved_by = res.id WHERE st.id = %s''', (ticket_id,))
             updated_ticket = cursor.fetchone()
             
             if updated_ticket:

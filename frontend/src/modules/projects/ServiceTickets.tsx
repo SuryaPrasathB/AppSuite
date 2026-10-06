@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Plus, CheckCircle2, Clock, ShieldAlert, X } from 'lucide-react';
+import { AlertCircle, Plus, CheckCircle2, Clock, ShieldAlert, X, Pencil } from 'lucide-react';
 import { Combobox } from '../../components/Combobox';
 import { apiClient } from '../../api/apiClient';
 
@@ -52,13 +52,27 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isManualProject, setIsManualProject] = useState(false);
 
+    // Edit modal state
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingTicket, setEditingTicket] = useState<any | null>(null);
+    const [editForm, setEditForm] = useState({
+        project_id: '',
+        custom_project_name: '',
+        title: '',
+        description: '',
+        assignee_id: '',
+        status: 'OPEN',
+        resolution_notes: ''
+    });
+    const [editIsManualProject, setEditIsManualProject] = useState(false);
+    const [editError, setEditError] = useState('');
+
     const [employees, setEmployees] = useState<any[]>([]);
     const [resolveModalOpen, setResolveModalOpen] = useState(false);
     const [resolvingTicketId, setResolvingTicketId] = useState<number | null>(null);
     const [resolutionNotes, setResolutionNotes] = useState('');
     const [resolutionImages, setResolutionImages] = useState<File[]>([]);
     const [resolutionError, setResolutionError] = useState('');
-
 
     useEffect(() => {
         fetchData();
@@ -110,6 +124,70 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
         } catch (error) {
             console.error('Failed to create ticket', error);
             alert("Error creating ticket");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleEditTicket = (ticket: any) => {
+        setEditingTicket(ticket);
+        const hasProjectId = Boolean(ticket.project_id);
+        setEditIsManualProject(!hasProjectId && Boolean(ticket.custom_project_name));
+        setEditForm({
+            project_id: ticket.project_id ? ticket.project_id.toString() : '',
+            custom_project_name: ticket.custom_project_name || '',
+            title: ticket.title || '',
+            description: ticket.description || '',
+            assignee_id: ticket.assignee_id ? ticket.assignee_id.toString() : '',
+            status: ticket.status || 'OPEN',
+            resolution_notes: ticket.resolution_notes || ''
+        });
+        setEditError('');
+        setEditModalOpen(true);
+    };
+
+    const handleUpdateTicket = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingTicket) return;
+
+        if (!editIsManualProject && !editForm.project_id) {
+            setEditError("Please select a project.");
+            return;
+        }
+        if (editIsManualProject && !editForm.custom_project_name.trim()) {
+            setEditError("Please enter a custom project name.");
+            return;
+        }
+        if (!editForm.title.trim()) {
+            setEditError("Please enter an issue title.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        setEditError('');
+        try {
+            const payload: any = {
+                title: editForm.title.trim(),
+                description: editForm.description,
+                assignee_id: editForm.assignee_id ? parseInt(editForm.assignee_id) : null,
+                status: editForm.status,
+                project_id: editIsManualProject ? null : (editForm.project_id ? parseInt(editForm.project_id) : null),
+                custom_project_name: editIsManualProject ? editForm.custom_project_name.trim() : null
+            };
+
+            if (editForm.status === 'CLOSED' && editForm.resolution_notes) {
+                payload.resolution_notes = editForm.resolution_notes;
+            }
+
+            await apiClient.projects.updateServiceTicket(editingTicket.id, payload);
+
+            setEditModalOpen(false);
+            setEditingTicket(null);
+            fetchData();
+            window.dispatchEvent(new Event('ticketsUpdated'));
+        } catch (error: any) {
+            console.error('Failed to update ticket', error);
+            setEditError(error?.message || "Failed to update service ticket");
         } finally {
             setIsSubmitting(false);
         }
@@ -176,6 +254,18 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
         label: `${p.code} - ${p.name}`
     }));
 
+    const filteredTickets = tickets.filter(t => {
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return (
+            t.ticket_id?.toLowerCase().includes(query) ||
+            t.title?.toLowerCase().includes(query) ||
+            t.project_name?.toLowerCase().includes(query) ||
+            t.project_code?.toLowerCase().includes(query) ||
+            t.assignee_name?.toLowerCase().includes(query)
+        );
+    });
+
     return (
         <div className="max-w-7xl mx-auto space-y-6">
             {/* Header Section */}
@@ -191,7 +281,7 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                     <div className="relative w-full sm:w-64">
                         <input
                             type="text"
-                            placeholder="Search by ID or Title..."
+                            placeholder="Search by ID, title, or project..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
@@ -305,14 +395,14 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
             
             {/* Tickets List */}
             <div className="space-y-4">
-                {tickets.filter(t => !searchQuery || t.ticket_id?.toLowerCase().includes(searchQuery.toLowerCase()) || t.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                {filteredTickets.length === 0 ? (
                     <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center">
                         <CheckCircle2 className="h-12 w-12 mx-auto text-emerald-400 mb-3 opacity-50" />
                         <h3 className="text-slate-700 font-semibold text-lg">No Active Tickets</h3>
                         <p className="text-slate-500 text-sm mt-1">No service tickets matched your search criteria.</p>
                     </div>
                 ) : (
-                    tickets.filter(t => !searchQuery || t.ticket_id?.toLowerCase().includes(searchQuery.toLowerCase()) || t.title.toLowerCase().includes(searchQuery.toLowerCase())).map(ticket => (
+                    filteredTickets.map(ticket => (
                         <div 
                             key={ticket.id} 
                             className={`group relative overflow-hidden bg-white rounded-xl shadow-sm border transition-all duration-200 hover:shadow-md ${
@@ -372,15 +462,26 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                                         </p>
                                     </div>
                                     
-                                    <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start shrink-0">
-                                        {ticket.status === 'OPEN' && (
+                                    <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start shrink-0 gap-2">
+                                        <div className="flex items-center gap-2">
                                             <button 
-                                                onClick={() => handleCloseTicket(ticket.id)}
-                                                className="bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-bold tracking-wide hover:bg-emerald-600 transition-all shadow-sm shadow-emerald-500/30"
+                                                type="button"
+                                                onClick={() => handleEditTicket(ticket)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-primary-50 hover:text-primary-600 rounded-lg border border-slate-200 hover:border-primary-200 transition-all shadow-xs"
+                                                title="Edit Ticket"
                                             >
-                                                Mark as Resolved
+                                                <Pencil className="h-3.5 w-3.5" />
+                                                Edit
                                             </button>
-                                        )}
+                                            {ticket.status === 'OPEN' && (
+                                                <button 
+                                                    onClick={() => handleCloseTicket(ticket.id)}
+                                                    className="bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold tracking-wide hover:bg-emerald-600 transition-all shadow-sm shadow-emerald-500/30"
+                                                >
+                                                    Mark as Resolved
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -390,7 +491,7 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                                             <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5 text-emerald-500" />
                                             <div>
                                                 <p className="font-semibold mb-1">Resolution Details</p>
-                                                <p className="text-emerald-700/90">{ticket.resolution_notes}</p>
+                                                <p className="text-emerald-700/90">{ticket.resolution_notes || 'No resolution notes provided.'}</p>
                                                 {ticket.resolution_images && (() => {
                                                     try {
                                                         const images = JSON.parse(ticket.resolution_images);
@@ -424,7 +525,179 @@ export const ServiceTickets = ({ projectId }: { projectId?: number }) => {
                     ))
                 )}
             </div>
-{/* Resolution Modal */}
+
+            {/* Edit Ticket Modal */}
+            {editModalOpen && editingTicket && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in overflow-y-auto">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 my-8">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-primary-50 text-primary-600 rounded-lg">
+                                    <Pencil className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800">Edit Service Ticket</h3>
+                                    <p className="text-xs text-slate-500">#{editingTicket.ticket_id || `ID: ${editingTicket.id}`}</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => { setEditModalOpen(false); setEditingTicket(null); }} 
+                                className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-200"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleUpdateTicket} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+                            {editError && (
+                                <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg border border-red-200 text-sm flex items-center">
+                                    <ShieldAlert className="h-4 w-4 shrink-0 mr-2" />
+                                    {editError}
+                                </div>
+                            )}
+
+                            {/* Project Selection */}
+                            <div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">Project</label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => {
+                                            setEditIsManualProject(!editIsManualProject);
+                                            if (!editIsManualProject) {
+                                                setEditForm(prev => ({ ...prev, project_id: '', custom_project_name: prev.custom_project_name || '' }));
+                                            } else {
+                                                setEditForm(prev => ({ ...prev, custom_project_name: '' }));
+                                            }
+                                        }}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                                    >
+                                        {editIsManualProject ? 'Select existing project' : 'Enter manually'}
+                                    </button>
+                                </div>
+                                {editIsManualProject ? (
+                                    <input 
+                                        type="text"
+                                        placeholder="Enter manual project name..."
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
+                                        value={editForm.custom_project_name}
+                                        onChange={e => setEditForm(prev => ({ ...prev, custom_project_name: e.target.value }))}
+                                    />
+                                ) : (
+                                    <Combobox 
+                                        options={projectOptions}
+                                        value={editForm.project_id}
+                                        onChange={(val) => setEditForm(prev => ({ ...prev, project_id: val }))}
+                                        placeholder="Search for a project..."
+                                    />
+                                )}
+                            </div>
+
+                            {/* Assignee */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Assign To</label>
+                                <Combobox 
+                                    options={[
+                                        { value: '', label: 'None (Unassigned)' },
+                                        ...employees.map(e => ({ value: e.id.toString(), label: e.name }))
+                                    ]}
+                                    value={editForm.assignee_id}
+                                    onChange={(val) => setEditForm(prev => ({ ...prev, assignee_id: val }))}
+                                    placeholder="Search for an employee..."
+                                />
+                            </div>
+
+                            {/* Status */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Status</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditForm(prev => ({ ...prev, status: 'OPEN' }))}
+                                        className={`py-2 px-4 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all ${
+                                            editForm.status === 'OPEN'
+                                                ? 'bg-red-50 text-red-700 border-red-300 ring-2 ring-red-200'
+                                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        Open
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditForm(prev => ({ ...prev, status: 'CLOSED' }))}
+                                        className={`py-2 px-4 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all ${
+                                            editForm.status === 'CLOSED'
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200'
+                                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        Closed / Resolved
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Issue Title */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Issue Title</label>
+                                <input 
+                                    required
+                                    type="text"
+                                    placeholder="Brief summary of the issue..."
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
+                                    value={editForm.title}
+                                    onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                                />
+                            </div>
+
+                            {/* Description */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Detailed Description</label>
+                                <textarea 
+                                    required
+                                    rows={4}
+                                    placeholder="Describe the complaint or service request in detail..."
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors resize-none"
+                                    value={editForm.description}
+                                    onChange={e => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                                />
+                            </div>
+
+                            {/* Resolution Notes (Shown if status is CLOSED) */}
+                            {editForm.status === 'CLOSED' && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1.5">Resolution Notes</label>
+                                    <textarea 
+                                        rows={3}
+                                        placeholder="Explain how this issue was resolved..."
+                                        className="w-full bg-emerald-50/40 border border-emerald-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-colors resize-none"
+                                        value={editForm.resolution_notes}
+                                        onChange={e => setEditForm(prev => ({ ...prev, resolution_notes: e.target.value }))}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="px-0 pt-3 border-t border-slate-100 flex justify-end gap-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => { setEditModalOpen(false); setEditingTicket(null); }}
+                                    className="px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isSubmitting}
+                                    className="bg-primary-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-primary-700 transition-all shadow-md shadow-primary-500/30 disabled:opacity-70 disabled:cursor-not-allowed flex items-center"
+                                >
+                                    {isSubmitting ? 'Saving Changes...' : 'Save Changes'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Resolution Modal */}
             {resolveModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">

@@ -1359,6 +1359,10 @@ class TicketCreate(BaseModel):
     description: Optional[str] = None
 
 class TicketUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    project_id: Optional[Union[int, str]] = None
+    custom_project_name: Optional[str] = None
     status: Optional[str] = None
     assignee_id: Optional[Union[int, str]] = None
     resolution_notes: Optional[str] = None
