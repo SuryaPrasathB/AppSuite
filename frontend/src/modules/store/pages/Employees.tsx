@@ -3,6 +3,7 @@ import { Users, Search, Plus, Mail, Phone, Edit2, Trash2, X, Check, AlertCircle 
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useDialog } from '../../../context/DialogContext';
+import { DEFAULT_USER_CATEGORIES, getCategoryBadgeStyle } from '../../../config/userCategories';
 
 export const Employees: React.FC = () => {
   const { hasRole } = useAuth();
@@ -47,10 +48,19 @@ export const Employees: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setEmployeeForm(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    if (name === 'role') {
+      const matched = DEFAULT_USER_CATEGORIES.find(c => c.category.toLowerCase() === value.toLowerCase());
+      setEmployeeForm(prev => ({
+        ...prev,
+        role: value,
+        department: matched && !prev.department ? matched.department : prev.department
+      }));
+    } else {
+      setEmployeeForm(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   const openAddModal = () => {
@@ -218,7 +228,14 @@ export const Employees: React.FC = () => {
 
                 <div className="space-y-2.5 text-xs text-slate-600 my-4">
                   <div className="flex items-center gap-2 font-bold text-slate-700">
-                    <span>Role: {emp.role || '-'}</span>
+                    {(() => {
+                      const badge = getCategoryBadgeStyle(emp.role);
+                      return (
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                          {emp.role || 'No Role'}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {emp.phone && (
                     <div className="flex items-center gap-2">
@@ -290,22 +307,28 @@ export const Employees: React.FC = () => {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Role</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Role / Job Category</label>
                       <input
                         type="text"
                         name="role"
-                        placeholder="e.g. Store Keeper"
+                        list="category-roles-datalist"
+                        placeholder="e.g. Testing Engineer"
                         value={employeeForm.role}
                         onChange={handleInputChange}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-medium"
                       />
+                      <datalist id="category-roles-datalist">
+                        {DEFAULT_USER_CATEGORIES.map(c => (
+                          <option key={c.category} value={c.category}>{c.department}</option>
+                        ))}
+                      </datalist>
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Department</label>
                       <input
                         type="text"
                         name="department"
-                        placeholder="e.g. Inventory"
+                        placeholder="e.g. Quality & Testing"
                         value={employeeForm.department}
                         onChange={handleInputChange}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"

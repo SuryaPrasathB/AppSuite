@@ -149,5 +149,16 @@ export const apiClient = {
     create: (body: any) => request<any>('/assets', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number | string) => request<any>(`/assets/${id}`, { method: 'DELETE' }),
+  },
+  features: {
+    list: () => request<any[]>('/features'),
+    update: (key: string, enabled: boolean) => request<any>(`/features/${key}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+    toggle: (key: string) => request<any>(`/features/${key}/toggle`, { method: 'POST' }),
+  },
+  userCategories: {
+    list: () => request<any[]>('/config/user-categories'),
+    create: (body: any) => request<any>('/config/user-categories', { method: 'POST', body: JSON.stringify(body) }),
+    delete: (name: string) => request<any>(`/config/user-categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   }
 };
+

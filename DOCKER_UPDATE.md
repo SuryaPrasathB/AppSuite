@@ -31,8 +31,8 @@ You only need to transfer two items to your Server PC:
 
 ### 4. Run Database Migrations on the Server PC
 Since new features often come with database changes, you need to apply these updates to your server's database. After loading the new images and starting the containers, run the migration scripts inside the backend container:
-
 ```bash
+docker exec -it smart_store_backend python update_assets_db.py
 docker exec -it smart_store_backend python update_tickets_and_projects.py
 docker exec -it smart_store_backend python update_notifications_db.py
 docker exec -it smart_store_backend python update_projects_deleted_at_db.py
@@ -70,6 +70,7 @@ If your update includes database schema changes (like adding new tables or colum
 
 To run your migration scripts, execute them inside the running backend container:
 ```bash
+docker exec -it smart_store_backend python update_assets_db.py
 docker exec -it smart_store_backend python db_update.py
 docker exec -it smart_store_backend python update_projects_parent_db.py
 docker exec -it smart_store_backend python update_task_comments_db.py

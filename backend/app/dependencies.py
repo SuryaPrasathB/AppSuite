@@ -28,3 +28,25 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
+def get_current_user_optional(authorization: Optional[str] = Header(None)) -> Optional[Dict[str, Any]]:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization.replace("Bearer ", "")
+    if not token.startswith("mock-jwt-token-for-"):
+        return None
+
+    username = token.replace("mock-jwt-token-for-", "")
+    from app.database import get_db_connection
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, username, role, name FROM employees WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return user
+    except Exception:
+        return None
+

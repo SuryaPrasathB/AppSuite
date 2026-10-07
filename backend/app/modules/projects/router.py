@@ -10,7 +10,8 @@ from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from app.database import DBStore, get_db_connection
 from app.config import settings
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_user_optional
+from app.features import Features
 from app.modules.projects.ai_planning import AIPlanningService
 from app.modules.projects.scheduling import SchedulingEngine
 
@@ -128,8 +129,16 @@ def get_next_project_num():
     return max_num + 1 if max_num > 0 else 1
 
 @router.get("")
-def list_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False):
-    return DBStore.get_projects(page, limit, search, status, parent_id, root_only)
+def list_projects(
+    page: int = 1,
+    limit: int = 100,
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    parent_id: Optional[int] = None,
+    root_only: bool = False,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)
+):
+    return DBStore.get_projects(page, limit, search, status, parent_id, root_only, current_user=current_user)
 
 class MilestoneCreate(BaseModel):
     name: str
@@ -507,14 +516,23 @@ def browse_folders(path: Optional[str] = None):
     }
 
 @router.get("/{project_id}")
-def get_project(project_id: int):
+def get_project(project_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)):
     projects = DBStore.get_all_projects_unpaginated()
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    if Features.is_enabled("RESTRICT_PROJECT_ACCESS_TO_INVOLVED_USERS"):
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        is_involved = Features.user_is_involved_in_project(current_user, project_id, cursor)
+        cursor.close()
+        conn.close()
+        if not is_involved:
+            raise HTTPException(status_code=403, detail="Access denied: You are not assigned to or involved in this project.")
     
     # Auto sync directory files before returning details
-    if proj.get("folder_path"):
+    if proj.get("folder_path") and Features.is_enabled("AUTO_SYNC_PROJECT_FILES"):
         sync_project_directory_files(project_id, proj.get("folder_path"))
 
     tasks = DBStore.get_project_tasks(project_id)

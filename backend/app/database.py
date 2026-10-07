@@ -4,6 +4,7 @@ import mysql.connector
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from app.config import settings
+from app.features import Features
 import bcrypt
 
 def get_db_connection():
@@ -855,12 +856,18 @@ class DBStore:
 
     # PROJECTS METHODS
     @staticmethod
-    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False) -> Dict[str, Any]:
+    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False, current_user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
         where_clauses = ["p.deleted_at IS NULL"]
         params = []
+
+        # Apply project access restriction feature
+        inv_sql, inv_params = Features.get_project_involvement_condition(current_user)
+        if inv_sql != "1=1":
+            where_clauses.append(inv_sql)
+            params.extend(inv_params)
 
         if search:
             where_clauses.append("(p.name LIKE %s OR p.code LIKE %s OR p.client_name LIKE %s)")
@@ -944,15 +951,25 @@ class DBStore:
         }
 
     @staticmethod
-    def get_all_projects_unpaginated() -> List[Dict[str, Any]]:
+    def get_all_projects_unpaginated(current_user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
+
+        where_clauses = ["p.deleted_at IS NULL"]
+        params = []
+
+        inv_sql, inv_params = Features.get_project_involvement_condition(current_user)
+        if inv_sql != "1=1":
+            where_clauses.append(inv_sql)
+            params.extend(inv_params)
+
+        where_str = " WHERE " + " AND ".join(where_clauses)
+        cursor.execute(f"""
             SELECT p.*, parent_proj.name as parent_name, parent_proj.client_name as parent_client_name
             FROM projects p
             LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
-            WHERE p.deleted_at IS NULL
-        """)
+            {where_str}
+        """, tuple(params))
         projects = cursor.fetchall()
         cursor.close()
         conn.close()

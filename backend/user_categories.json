@@ -1,0 +1,86 @@
+[
+  {
+    "category": "Testing Engineer",
+    "department": "Quality & Testing",
+    "description": "Performs routine, functional, HV, insulation, dielectric, and FAT/SAT testing on control panels.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Mechanical Designer",
+    "department": "Mechanical Engineering",
+    "description": "Designs 3D enclosure structures, sheet metal fabrication drawings, busbar clearances, and GA layouts.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Electrical Designer",
+    "department": "Electrical Engineering",
+    "description": "Prepares electrical schematics, SLD diagrams, control circuit layouts, terminal charts, and BOM specifications.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Development Engineer",
+    "department": "R&D / Systems",
+    "description": "Develops embedded systems, firmware, custom electronics, communication gateways, and IoT modules.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Electrician",
+    "department": "Production & Assembly",
+    "description": "Executes main power cabling, busbar assembly, MCCB/switchgear installation, and physical terminations.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Automation / PLC Programmer",
+    "department": "Automation & Controls",
+    "description": "Programs PLCs, HMIs, SCADA systems, VFD drives, and field communication networks (Modbus, Profinet).",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Commissioning Engineer",
+    "department": "Field & Site Services",
+    "description": "Conducts on-site panel installation, energization, site acceptance testing (SAT), and client handover.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Quality Assurance (QA/QC) Engineer",
+    "department": "Quality Assurance",
+    "description": "Maintains ISO standards, inspects incoming raw materials, audits panel assembly, and signs test certs.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "HR",
+    "department": "Human Resources",
+    "description": "Manages human resource operations, employee onboarding, attendance, safety compliance, and records.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Project Manager",
+    "department": "Project Management",
+    "description": "Coordinates project scheduling, resource allocation, customer milestone delivery, and tracking.",
+    "access_level": "Employee"
+  },
+  {
+    "category": "Store Manager",
+    "department": "Store & Warehouse",
+    "description": "Oversees inventory stock levels, warehouse bins, goods receipts, and warehouse logistics.",
+    "access_level": "Store Manager"
+  },
+  {
+    "category": "Store Operator",
+    "department": "Store & Warehouse",
+    "description": "Handles daily stock-in, material issue for BOMs, physical transfers, and inventory counts.",
+    "access_level": "Store Operator"
+  },
+  {
+    "category": "Purchase Team",
+    "department": "Procurement",
+    "description": "Manages supplier RFQs, purchase orders, component procurement, and vendor relations.",
+    "access_level": "Purchase Team"
+  },
+  {
+    "category": "Administrator",
+    "department": "Management",
+    "description": "Full system administrator access to all modules, users, configurations, and settings.",
+    "access_level": "Administrator"
+  }
+]

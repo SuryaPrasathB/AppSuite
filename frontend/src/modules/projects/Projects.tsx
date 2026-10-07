@@ -13,7 +13,7 @@ import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 
 export const Projects: React.FC = () => {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const isAdmin = hasRole(['Administrator']);
   const [milestones, setMilestones] = useState<any[]>([]);
   const [newMilestoneModalState, setNewMilestoneModalState] = useState<{ isOpen: boolean, projectId: number | null, name: string }>({ isOpen: false, projectId: null, name: '' });
@@ -255,6 +255,21 @@ export const Projects: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {!isAdmin && (
+        <div className="bg-indigo-50 border border-indigo-200/80 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-indigo-950 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
+            <span className="font-bold">Project Access Filter Active</span>
+            <span className="text-indigo-600 hidden sm:inline">
+              — Displaying only projects where you are assigned as In-charge, Task Assignee, or Service Ticket Assignee.
+            </span>
+          </div>
+          <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-md uppercase tracking-wider whitespace-nowrap">
+            {user?.role || 'Staff Member'}
+          </span>
+        </div>
+      )}
+
       {/* Filters Bar & Actions */}
       <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 flex-1">

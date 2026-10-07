@@ -25,6 +25,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.modules.features_router import router as features_router
+
 # Register routers under /api
 app.include_router(auth.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
@@ -39,6 +41,7 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(bom.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(announcements, prefix="/api/announcements", tags=["Announcements"])
+app.include_router(features_router, prefix="/api")
 
 async def recycle_bin_cleanup_task():
     while True:

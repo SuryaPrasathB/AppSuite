@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type UserRole = 'Administrator' | 'Store Manager' | 'Store Operator' | 'Purchase Team' | 'Employee';
+export type StandardRole = 'Administrator' | 'Store Manager' | 'Store Operator' | 'Purchase Team' | 'Employee';
+export type UserRole = StandardRole | string;
 
 interface User {
   id?: number;
@@ -61,7 +62,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hasRole = React.useCallback((roles: UserRole[]) => {
     if (!user) return false;
-    return roles.includes(user.role);
+    // Exact role match
+    if (roles.includes(user.role)) return true;
+    
+    // Administrator has access to all capabilities
+    if (user.role === 'Administrator') return true;
+
+    // If 'Employee' is in allowed roles, then any staff or engineering category is granted access
+    if (roles.includes('Employee')) {
+      return true;
+    }
+
+    return false;
   }, [user]);
 
   return (

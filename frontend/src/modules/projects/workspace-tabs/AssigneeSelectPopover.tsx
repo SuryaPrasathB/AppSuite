@@ -197,7 +197,12 @@ export const AssigneeSelectPopover: React.FC<AssigneeSelectPopoverProps> = ({
                   tabIndex={-1}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0"
                 />
-                <span className="truncate flex-1">{emp.name}</span>
+                <span className="truncate flex-1 font-semibold">{emp.name}</span>
+                {emp.role && (
+                  <span className="text-[10px] text-slate-500 font-normal truncate max-w-[120px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                    {emp.role}
+                  </span>
+                )}
               </div>
             );
           })
