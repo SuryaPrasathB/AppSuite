@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/apiClient';
+import { UserPresenceMenu } from '../../components/UserPresenceMenu';
 
 export const Portal: React.FC = () => {
   const navigate = useNavigate();
@@ -125,7 +126,7 @@ export const Portal: React.FC = () => {
   if (hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
     modules.push({
       id: 'store',
-      title: 'SmartStore Manager',
+      title: 'Smart Store',
       description: 'Access warehouse inventory logs, process physical stock issues, view layouts, and manage suppliers/vendors.',
       icon: Warehouse,
       color: 'from-emerald-600 to-teal-500',
@@ -139,7 +140,7 @@ export const Portal: React.FC = () => {
   if (hasRole(['Administrator'])) {
     modules.push({
       id: 'users',
-      title: 'User Management',
+      title: 'System Management',
       description: 'Create and manage user accounts, assign roles, and handle access control across the enterprise portal.',
       icon: Users,
       color: 'from-slate-700 to-slate-900',
@@ -170,7 +171,7 @@ export const Portal: React.FC = () => {
       <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header */}
-      <header className="px-8 h-20 flex items-center justify-between border-b border-slate-200/80 bg-white/70 backdrop-blur-md z-10">
+      <header className="px-8 h-20 flex items-center justify-between border-b border-slate-200/80 bg-white/70 backdrop-blur-md relative z-50">
         <div className="flex items-center gap-3">
           <div className="bg-primary-600 p-2.5 rounded-xl text-white shadow-lg shadow-primary-500/25">
             <Warehouse className="h-6 w-6" />
@@ -198,7 +199,7 @@ export const Portal: React.FC = () => {
             </button>
             
             {showNotifications && (
-              <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-[100] overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
                   <h3 className="font-bold text-slate-800 text-sm">Notifications</h3>
                   {unreadCount > 0 && (
@@ -243,22 +244,12 @@ export const Portal: React.FC = () => {
             )}
           </div>
           
-          <div className="text-right">
-            <span className="text-xs text-slate-400 block font-medium">Signed in as</span>
-            <span className="text-sm font-bold text-slate-700">{user?.username || 'Operator'}</span>
-          </div>
-          <button 
-            onClick={logout}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 transition-all duration-200 shadow-xs cursor-pointer"
-          >
-            <LogOut className="h-4 w-4 text-slate-400 group-hover:text-red-655" />
-            Logout
-          </button>
+          <UserPresenceMenu />
         </div>
       </header>
 
       {/* Main Grid */}
-      <main className="max-w-[1600px] mx-auto px-6 py-6 flex-1 overflow-y-auto z-10 w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <main className="max-w-[1600px] mx-auto px-6 py-6 flex-1 overflow-y-auto relative z-0 w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="min-h-full flex flex-col justify-center py-4">
           <div className="text-center mb-10">
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-805 sm:text-4xl">

@@ -25,7 +25,18 @@ export const Login: React.FC = () => {
 
     try {
       const res = await apiClient.auth.login({ username, password });
-      login(res.username, res.role as UserRole, res.token, res.name, res.id, res.email, res.department);
+      login(
+        res.username, 
+        res.role as UserRole, 
+        res.token, 
+        res.name, 
+        res.id, 
+        res.email, 
+        res.department,
+        res.last_login_at,
+        res.presence_status,
+        res.status_message
+      );
       success(`Welcome back, ${res.username}!`, "Login Successful");
     } catch (err: any) {
       const errMsg = err.message || "Authentication failed. Please check your credentials.";

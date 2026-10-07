@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Users, User, Search, Plus, Edit2, Trash2, X, Check, AlertCircle, 
   ArrowLeft, Key, Mail, Phone, Sliders, Briefcase, ShieldCheck, 
-  ToggleLeft, ToggleRight, Info, CheckCircle2, RefreshCw
+  ToggleLeft, ToggleRight, Info, CheckCircle2, RefreshCw,
+  Clock, MessageSquare, Activity
 } from 'lucide-react';
 import { apiClient } from '../../api/apiClient';
 import { useAuth } from '../../context/AuthContext';
@@ -265,12 +266,100 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (u.username && u.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (u.role && u.role.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (u.department && u.department.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Presence Filter State
+  const [presenceFilter, setPresenceFilter] = useState<'all' | 'online' | 'away' | 'busy' | 'offline'>('all');
+
+  const formatRelativePresence = (u: any) => {
+    const status = u.computed_status || u.presence_status || 'offline';
+    const secondsAgo = u.seconds_since_seen;
+
+    if (status === 'online') {
+      return {
+        dot: 'bg-emerald-500 ring-emerald-200',
+        label: 'Online',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        timeText: 'Active now'
+      };
+    }
+    if (status === 'away') {
+      let timeText = 'Away';
+      if (secondsAgo) {
+        const mins = Math.floor(secondsAgo / 60);
+        timeText = mins > 0 ? `Idle for ${mins}m` : 'Away';
+      }
+      return {
+        dot: 'bg-amber-400 ring-amber-200',
+        label: 'Away',
+        badge: 'bg-amber-50 text-amber-700 border-amber-200',
+        timeText
+      };
+    }
+    if (status === 'busy') {
+      return {
+        dot: 'bg-rose-500 ring-rose-200',
+        label: 'Busy / In Task',
+        badge: 'bg-rose-50 text-rose-700 border-rose-200',
+        timeText: 'Do not disturb'
+      };
+    }
+    // Offline
+    let timeText = 'Offline';
+    if (secondsAgo) {
+      const mins = Math.floor(secondsAgo / 60);
+      const hrs = Math.floor(mins / 60);
+      const days = Math.floor(hrs / 24);
+      if (days > 0) timeText = `Last seen ${days}d ago`;
+      else if (hrs > 0) timeText = `Last seen ${hrs}h ago`;
+      else if (mins > 0) timeText = `Last seen ${mins}m ago`;
+      else timeText = 'Last seen recently';
+    } else if (u.last_seen_at) {
+      timeText = 'Last seen ' + new Date(u.last_seen_at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } else {
+      timeText = 'Never seen';
+    }
+    return {
+      dot: 'bg-slate-300 ring-slate-100',
+      label: 'Offline',
+      badge: 'bg-slate-100 text-slate-600 border-slate-200',
+      timeText
+    };
+  };
+
+  const formatLoginDate = (dateStr?: string) => {
+    if (!dateStr) return 'Never logged in';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return `Today at ${time}`;
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    if (d.toDateString() === yest.toDateString()) return `Yesterday at ${time}`;
+    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+  };
+
+  const onlineCount = users.filter(u => (u.computed_status || u.presence_status) === 'online').length;
+  const awayCount = users.filter(u => (u.computed_status || u.presence_status) === 'away').length;
+  const busyCount = users.filter(u => (u.computed_status || u.presence_status) === 'busy').length;
+  const offlineCount = users.filter(u => {
+    const s = u.computed_status || u.presence_status;
+    return !s || s === 'offline';
+  }).length;
+
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = 
+      (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.username && u.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.role && u.role.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.department && u.department.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    if (!matchesSearch) return false;
+
+    if (presenceFilter === 'all') return true;
+    const computed = u.computed_status || u.presence_status || 'offline';
+    return computed === presenceFilter;
+  });
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 text-slate-800 font-sans p-8">
@@ -293,7 +382,7 @@ export const UsersManagement: React.FC = () => {
                   Admin Console
                 </span>
               </div>
-              <p className="text-sm text-slate-500 font-medium">Manage user accounts, professional electrical roles, and modular feature toggles.</p>
+              <p className="text-sm text-slate-500 font-medium">Manage user accounts, professional electrical roles, live availability, and modular feature toggles.</p>
             </div>
           </div>
 
@@ -340,8 +429,8 @@ export const UsersManagement: React.FC = () => {
         {activeTab === 'users' && (
           <div className="space-y-4">
             {/* Toolbar */}
-            <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex flex-col sm:flex-row justify-between gap-4">
-              <div className="relative w-full sm:max-w-md">
+            <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              <div className="relative flex-1 max-w-md">
                 <input
                   type="text"
                   placeholder="Search by name, role, department, or username..."
@@ -351,11 +440,70 @@ export const UsersManagement: React.FC = () => {
                 />
                 <Search className="absolute left-3.5 top-3 h-4.5 w-4.5 text-slate-400" />
               </div>
+
+              {/* Live Presence Quick Filter Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setPresenceFilter('all')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    presenceFilter === 'all' 
+                      ? 'bg-slate-900 text-white shadow-xs' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  All ({users.length})
+                </button>
+                <button
+                  onClick={() => setPresenceFilter('online')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    presenceFilter === 'online' 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/70'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Online ({onlineCount})
+                </button>
+                <button
+                  onClick={() => setPresenceFilter('away')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    presenceFilter === 'away' 
+                      ? 'bg-amber-500 text-white shadow-xs' 
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/70'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  Away ({awayCount})
+                </button>
+                <button
+                  onClick={() => setPresenceFilter('busy')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    presenceFilter === 'busy' 
+                      ? 'bg-rose-600 text-white shadow-xs' 
+                      : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200/70'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  Busy ({busyCount})
+                </button>
+                <button
+                  onClick={() => setPresenceFilter('offline')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    presenceFilter === 'offline' 
+                      ? 'bg-slate-600 text-white shadow-xs' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
+                  Offline ({offlineCount})
+                </button>
+              </div>
+
               <button
                 onClick={openAddModal}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap self-end md:self-auto"
               >
-                <Plus className="h-4.5 w-4.5" />
+                <Plus className="h-4 w-4" />
                 Create New User
               </button>
             </div>
@@ -373,6 +521,8 @@ export const UsersManagement: React.FC = () => {
                       <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
                         <th className="p-4 font-bold">User</th>
                         <th className="p-4 font-bold">Category / Role</th>
+                        <th className="p-4 font-bold">Status & Presence</th>
+                        <th className="p-4 font-bold">Last Login</th>
                         <th className="p-4 font-bold">Department</th>
                         <th className="p-4 font-bold">Contact</th>
                         <th className="p-4 font-bold text-right">Actions</th>
@@ -382,20 +532,56 @@ export const UsersManagement: React.FC = () => {
                       {filteredUsers.length > 0 ? (
                         filteredUsers.map((u) => {
                           const badge = getCategoryBadgeStyle(u.role);
+                          const pres = formatRelativePresence(u);
                           return (
                             <tr key={u.id} className="hover:bg-slate-50 transition-colors group">
                               <td className="p-4">
-                                <div className="flex flex-col">
-                                  <span className="font-bold text-slate-900">{u.name}</span>
-                                  <span className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
-                                    <User className="h-3 w-3" /> @{u.username || 'N/A'}
-                                  </span>
+                                <div className="flex items-center gap-3">
+                                  {/* Avatar with live status dot */}
+                                  <div className="relative shrink-0">
+                                    <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-bold text-xs uppercase shadow-2xs">
+                                      {(u.name || u.username || 'U').substring(0, 2)}
+                                    </div>
+                                    <span 
+                                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-white shadow-2xs ${pres.dot}`}
+                                      title={pres.label}
+                                    />
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-bold text-slate-900 truncate">{u.name}</span>
+                                    <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                      @{u.username || 'N/A'}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               <td className="p-4">
                                 <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold border ${badge.bg} ${badge.text} ${badge.border} whitespace-nowrap`}>
                                   {u.role || 'Unassigned'}
                                 </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${pres.badge}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${pres.dot}`} />
+                                    {pres.label}
+                                  </span>
+                                  <span className="text-[11px] text-slate-400 font-medium">
+                                    {pres.timeText}
+                                  </span>
+                                  {u.status_message && (
+                                    <span className="text-[11px] text-slate-600 italic bg-slate-100/80 px-2 py-0.5 rounded-md flex items-center gap-1 mt-0.5 max-w-44 truncate" title={u.status_message}>
+                                      <MessageSquare className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span className="truncate">{u.status_message}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span className="whitespace-nowrap">{formatLoginDate(u.last_login_at)}</span>
+                                </div>
                               </td>
                               <td className="p-4 text-sm text-slate-600 font-medium">
                                 {u.department || '—'}
@@ -434,8 +620,8 @@ export const UsersManagement: React.FC = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={5} className="p-8 text-center text-slate-400 font-medium text-sm">
-                            No users matched your query.
+                          <td colSpan={7} className="p-8 text-center text-slate-400 font-medium text-sm">
+                            No users matched your query or selected presence filter.
                           </td>
                         </tr>
                       )}

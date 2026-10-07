@@ -752,13 +752,41 @@ class DBStore:
     def get_employees() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees ORDER BY name ASC")
+        cursor.execute("""
+            SELECT id, name, role, phone, email, department, username, created_at,
+                   last_login_at, last_seen_at, presence_status, status_message,
+                   TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS seconds_since_seen,
+                   TIMESTAMPDIFF(SECOND, last_login_at, NOW()) AS seconds_since_login
+            FROM employees 
+            ORDER BY name ASC
+        """)
         employees = cursor.fetchall()
         cursor.close()
         conn.close()
         for emp in employees:
             if emp.get('created_at'):
                 emp['created_at'] = emp['created_at'].isoformat()
+            if emp.get('last_login_at'):
+                emp['last_login_at'] = emp['last_login_at'].isoformat()
+            if emp.get('last_seen_at'):
+                emp['last_seen_at'] = emp['last_seen_at'].isoformat()
+
+            seconds = emp.get('seconds_since_seen')
+            raw_presence = (emp.get('presence_status') or 'offline').lower()
+
+            if seconds is None:
+                emp['computed_status'] = 'offline'
+            elif raw_presence == 'busy' and seconds < 600:
+                emp['computed_status'] = 'busy'
+            elif raw_presence == 'offline':
+                emp['computed_status'] = 'offline'
+            elif seconds <= 180:  # within 3 minutes
+                emp['computed_status'] = 'online'
+            elif seconds <= 600:  # between 3 and 10 minutes
+                emp['computed_status'] = 'away'
+            else:
+                emp['computed_status'] = 'offline'
+
         return employees
 
     @staticmethod
@@ -839,19 +867,81 @@ class DBStore:
         return True
 
     @staticmethod
+    def update_user_heartbeat(user_id: int, presence_status: Optional[str] = None, status_message: Optional[str] = None) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if presence_status and status_message is not None:
+            cursor.execute("UPDATE employees SET last_seen_at = NOW(), presence_status = %s, status_message = %s WHERE id = %s", (presence_status, status_message, user_id))
+        elif presence_status:
+            cursor.execute("UPDATE employees SET last_seen_at = NOW(), presence_status = %s WHERE id = %s", (presence_status, user_id))
+        elif status_message is not None:
+            cursor.execute("UPDATE employees SET last_seen_at = NOW(), status_message = %s WHERE id = %s", (status_message, user_id))
+        else:
+            # If offline, wake to online; if already away or busy, keep that status
+            cursor.execute("UPDATE employees SET last_seen_at = NOW(), presence_status = IF(presence_status = 'offline', 'online', presence_status) WHERE id = %s", (user_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def update_user_presence(user_id: int, presence_status: str, status_message: Optional[str] = None) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if status_message is not None:
+            cursor.execute("UPDATE employees SET presence_status = %s, status_message = %s, last_seen_at = NOW() WHERE id = %s", (presence_status, status_message, user_id))
+        else:
+            cursor.execute("UPDATE employees SET presence_status = %s, last_seen_at = NOW() WHERE id = %s", (presence_status, user_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def set_user_offline(user_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE employees SET presence_status = 'offline', last_seen_at = NOW() WHERE id = %s", (user_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
     def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, role, username, password_hash, email, department FROM employees WHERE username = %s", (username,))
+        cursor.execute("""
+            SELECT id, name, role, username, password_hash, email, department,
+                   last_login_at, last_seen_at, presence_status, status_message
+            FROM employees WHERE username = %s
+        """, (username,))
         user = cursor.fetchone()
-        cursor.close()
-        conn.close()
         
         if user and user.get("password_hash"):
             # Check password
             if bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
                 del user["password_hash"]
+                # Update last_login_at and set to online
+                update_cursor = conn.cursor()
+                update_cursor.execute("""
+                    UPDATE employees 
+                    SET last_login_at = NOW(), last_seen_at = NOW(), presence_status = 'online' 
+                    WHERE id = %s
+                """, (user["id"],))
+                conn.commit()
+                update_cursor.close()
+                cursor.close()
+                conn.close()
+
+                user["last_login_at"] = datetime.now().isoformat()
+                user["last_seen_at"] = datetime.now().isoformat()
+                user["presence_status"] = "online"
+                user["computed_status"] = "online"
                 return user
+
+        cursor.close()
+        conn.close()
         return None
 
     # PROJECTS METHODS

@@ -22,7 +22,11 @@ def update_db():
         
         alter_statements = [
             "ALTER TABLE employees ADD COLUMN username VARCHAR(255) UNIQUE;",
-            "ALTER TABLE employees ADD COLUMN password_hash VARCHAR(255);"
+            "ALTER TABLE employees ADD COLUMN password_hash VARCHAR(255);",
+            "ALTER TABLE employees ADD COLUMN last_login_at TIMESTAMP NULL;",
+            "ALTER TABLE employees ADD COLUMN last_seen_at TIMESTAMP NULL;",
+            "ALTER TABLE employees ADD COLUMN presence_status VARCHAR(20) DEFAULT 'offline';",
+            "ALTER TABLE employees ADD COLUMN status_message VARCHAR(150) NULL;"
         ]
         
         print("Running ALTER statements...")

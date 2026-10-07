@@ -49,6 +49,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const apiClient = {
   auth: {
     login: (body: any) => request<any>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    heartbeat: (body?: any) => request<any>('/auth/heartbeat', { method: 'POST', body: JSON.stringify(body || {}) }),
+    updateStatus: (body: { presence_status: string; status_message?: string; user_id?: number }) => 
+      request<any>('/auth/status', { method: 'POST', body: JSON.stringify(body) }),
+    logout: (body?: any) => request<any>('/auth/logout', { method: 'POST', body: JSON.stringify(body || {}) }),
   },
   dashboard: {
     getStats: () => request<any>('/dashboard/stats'),
