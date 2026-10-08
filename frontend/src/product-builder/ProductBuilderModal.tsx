@@ -20,8 +20,10 @@ import {
   ADDITIONAL_FIELDS,
   getCategorySchema,
   PRODUCT_CATEGORY_SCHEMAS,
+  getStoreFields,
   STORE_FIELDS,
 } from './schemas';
+import { Features } from '../config/features';
 import {
   buildMetadataDescription,
   ItemCodeGenerator,
@@ -166,6 +168,59 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [isStoreMandatory, setIsStoreMandatory] = useState<boolean>(() => {
+    return Features.MANDATORY_STORE_INFORMATION;
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    apiClient.features.list().then((flags) => {
+      if (!mounted || !Array.isArray(flags)) return;
+      flags.forEach((f) => {
+        if (f.key in Features) {
+          (Features as any)[f.key] = f.enabled;
+        }
+      });
+      const flag = flags.find((f) => f.key === 'MANDATORY_STORE_INFORMATION');
+      if (flag) {
+        setIsStoreMandatory(flag.enabled);
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [open]);
+
+  const handleToggleStoreMandatory = async () => {
+    const nextVal = !isStoreMandatory;
+    setIsStoreMandatory(nextVal);
+    Features.MANDATORY_STORE_INFORMATION = nextVal;
+    try {
+      await apiClient.features.update('MANDATORY_STORE_INFORMATION', nextVal);
+      setToast({
+        message: `Store information is now ${nextVal ? 'mandatory' : 'optional'}.`,
+        type: 'success',
+      });
+      if (!nextVal) {
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next.rack;
+          delete next.shelf;
+          delete next.warehouse;
+          delete next.minimumStock;
+          delete next.reorderLevel;
+          delete next.unit;
+          return next;
+        });
+      }
+    } catch {
+      setIsStoreMandatory(!nextVal);
+      Features.MANDATORY_STORE_INFORMATION = !nextVal;
+      setToast({
+        message: 'Failed to update feature setting.',
+        type: 'error',
+      });
+    }
+  };
+
   const schema = useMemo(() => getCategorySchema(categoryId), [categoryId]);
   const supplierField = useMemo<ProductFieldSchema>(
     () => ({
@@ -178,9 +233,10 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
     () => [supplierField, ...ADDITIONAL_FIELDS.slice(1)],
     [supplierField],
   );
+  const storeFields = useMemo(() => getStoreFields(isStoreMandatory), [isStoreMandatory]);
   const allFields = useMemo(
-    () => [...schema.fields, ...STORE_FIELDS, ...additionalFields],
-    [schema, additionalFields],
+    () => [...schema.fields, ...storeFields, ...additionalFields],
+    [schema, storeFields, additionalFields],
   );
 
   const getFieldWithOptions = (field: ProductFieldSchema) => {
@@ -201,8 +257,8 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   }, [schema.fields, customOptions]);
 
   const storeFieldsWithOptions = useMemo(() => {
-    return STORE_FIELDS.map(getFieldWithOptions);
-  }, [customOptions]);
+    return storeFields.map(getFieldWithOptions);
+  }, [storeFields, customOptions]);
 
   const additionalFieldsWithOptions = useMemo(() => {
     return additionalFields.map(getFieldWithOptions);
@@ -453,6 +509,7 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
       image_url: imageUrl,
       vendor_ids: supplierId ? [supplierId] : [],
       preferred_vendor_id: supplierId || null,
+      manufacturer: values.manufacturer || '',
       standard_cost: Number(values.standardCost) || 0,
       latest_cost: 0,
       average_cost: 0,
@@ -714,15 +771,31 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
               <Section
                 number={3}
                 title="Store Information"
+                optional={!isStoreMandatory}
                 action={
-                  <button
-                    type="button"
-                    onClick={() => setShowMapPicker(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-755 hover:bg-blue-105 transition-colors shadow-xs"
-                  >
-                    <MapPin className="h-3.5 w-3.5" />
-                    Open Store Map
-                  </button>
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleToggleStoreMandatory}
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors shadow-2xs cursor-pointer"
+                      title="Toggle mandatory requirement for store information in features"
+                    >
+                      <span className="text-slate-400">Mandatory:</span>
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                        isStoreMandatory ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {isStoreMandatory ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowMapPicker(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-755 hover:bg-blue-105 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      Open Store Map
+                    </button>
+                  </div>
                 }
               >
                 <div className="grid gap-4 md:grid-cols-3">

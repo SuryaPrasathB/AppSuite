@@ -166,6 +166,20 @@ class DBStore:
                 }
                 for pl in all_pls if pl["product_id"] == p["id"]
             ]
+
+            if not p.get('manufacturer') and p.get('description'):
+                try:
+                    desc_data = json.loads(p['description'])
+                    if isinstance(desc_data, dict):
+                        mfg = (
+                            desc_data.get('specifications', {}).get('manufacturer') or
+                            desc_data.get('additional', {}).get('manufacturer') or
+                            ''
+                        )
+                        if mfg:
+                            p['manufacturer'] = mfg
+                except Exception:
+                    pass
             
         return products
 
@@ -178,6 +192,20 @@ class DBStore:
             INSERT INTO products (code, name, description, category, unit, min_quantity, max_quantity, barcode, qr_code, image_url, manufacturer, link, standard_cost, latest_cost, average_cost, currency)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
+        if not product.get("manufacturer") and product.get("description"):
+            try:
+                desc_data = json.loads(product["description"])
+                if isinstance(desc_data, dict):
+                    mfg = (
+                        desc_data.get("specifications", {}).get("manufacturer") or
+                        desc_data.get("additional", {}).get("manufacturer") or
+                        ""
+                    )
+                    if mfg:
+                        product["manufacturer"] = mfg
+            except Exception:
+                pass
+
         values = (
             product.get("code"), product.get("name"), product.get("description"),
             product.get("category"), product.get("unit", "pcs"), 
@@ -264,6 +292,20 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        if ("manufacturer" not in data or not data.get("manufacturer")) and data.get("description"):
+            try:
+                desc_data = json.loads(data["description"])
+                if isinstance(desc_data, dict):
+                    mfg = (
+                        desc_data.get("specifications", {}).get("manufacturer") or
+                        desc_data.get("additional", {}).get("manufacturer") or
+                        ""
+                    )
+                    if mfg:
+                        data["manufacturer"] = mfg
+            except Exception:
+                pass
+
         updates = []
         values = []
         fields = ["code", "name", "description", "category", "unit", "min_quantity", "max_quantity", "barcode", "qr_code", "image_url", "manufacturer", "link", "standard_cost", "latest_cost", "average_cost", "currency"]
@@ -1377,7 +1419,7 @@ class DBStore:
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
             WHERE t.project_id = %s
-            ORDER BY t.id ASC
+            ORDER BY t.sort_order ASC, t.id ASC
         """, (project_id,))
         tasks = cursor.fetchall()
         DBStore._enrich_task_assignees(cursor, tasks)
@@ -1406,7 +1448,7 @@ class DBStore:
             FROM dynamic_tasks dt
             LEFT JOIN employees e ON dt.assignee_id = e.id
             LEFT JOIN projects p ON dt.project_id = p.id
-            ORDER BY dt.created_at DESC
+            ORDER BY dt.sort_order ASC, dt.id ASC
         """
         cursor.execute(query)
         tasks = cursor.fetchall()

@@ -52,6 +52,11 @@ class Features:
     # Feature 10: Automatic directory file synchronization
     AUTO_SYNC_PROJECT_FILES: bool = True
 
+    # Feature 11: Mandatory store information when creating items
+    # When True: Store information (Rack, Shelf, Warehouse, etc.) is strictly required when creating items.
+    # When False: Store information is optional when creating items.
+    MANDATORY_STORE_INFORMATION: bool = False
+
     # Roles considered privileged (bypass involvement checks when ADMIN_BYPASS_RESTRICTIONS is True)
     UNRESTRICTED_ROLES = ["Administrator", "Store Manager"]
 
@@ -116,6 +121,12 @@ class Features:
             "description": "Automatically indexes files from network / local project directory when opening a workspace.",
             "category": "Filesystem",
             "default": True
+        },
+        "MANDATORY_STORE_INFORMATION": {
+            "name": "Mandatory Store Information for New Items",
+            "description": "Requires rack, shelf, warehouse, and stock thresholds when creating new items. When disabled, store information is optional.",
+            "category": "Store & Inventory",
+            "default": False
         }
     }
 

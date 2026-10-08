@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle } from 'lucide-react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
@@ -38,6 +38,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const inlineTitleInputRef = useRef<HTMLInputElement>(null);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
 
   const [openAssigneeTaskId, setOpenAssigneeTaskId] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -57,6 +58,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleSelectTask = (taskId: number) => {
+    setSelectedTasks(prev => 
+      prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
+    );
   };
 
   const handleRowDragStart = (e: React.DragEvent, taskId: number) => {
@@ -187,6 +194,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               >
                 <GripVertical className="h-3.5 w-3.5" />
               </div>
+              <input 
+                type="checkbox" 
+                checked={selectedTasks.includes(task.id)} 
+                onChange={(e) => { e.stopPropagation(); toggleSelectTask(task.id); }}
+                className="cursor-pointer shrink-0 w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
               {isSubtask ? (
                 <Circle className="h-3.5 w-3.5 text-slate-300 shrink-0" />
               ) : (
@@ -291,7 +304,23 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             </div>
           </td>
 
-          <td className="py-2.5 px-4">
+          <td className="py-2.5 px-4 relative group/date">
+            {task.due_date && (project?.date_of_delivery || project?.end_date) && (() => {
+               const pDate = new Date(project.date_of_delivery || project.end_date).getTime();
+               const tDate = new Date(task.due_date).getTime();
+               // Flag if task due date is after or within 2 days of project end date
+               if (tDate >= pDate - (2 * 24 * 60 * 60 * 1000)) {
+                 return (
+                   <span 
+                     className="text-rose-500 font-bold absolute -left-2 top-3 cursor-help text-lg leading-none" 
+                     title="Date modified past or near planned project due date"
+                   >
+                     *
+                   </span>
+                 );
+               }
+               return null;
+            })()}
             <DateRangePicker
               startDate={task.start_date}
               dueDate={task.due_date}
@@ -308,6 +337,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 await onUpdateTaskField?.(task.id, 'due_date', due);
               }}
             />
+          </td>
+
+          <td className="py-2.5 px-4">
+            <span className="text-xs font-semibold text-slate-500">
+              {task.completed_at ? new Date(task.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+            </span>
           </td>
 
           <td className="py-2.5 px-4">
@@ -583,11 +618,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 <div className="mt-1">
                   <table className="w-full text-left table-fixed">
                     <colgroup>
-                      <col className="w-[35%]" />
+                      <col className="w-[30%]" />
                       <col className="w-[15%]" />
-                      <col className="w-[18%]" />
+                      <col className="w-[15%]" />
                       <col className="w-[10%]" />
-                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
                       <col className="w-[10%]" />
                     </colgroup>
                     {groupIdx === 0 && (
@@ -596,6 +632,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                           <th className="py-2 pl-8 pr-4">Name</th>
                           <th className="py-2 px-4">Assignee</th>
                           <th className="py-2 px-4">Due date</th>
+                          <th className="py-2 px-4">Actual Completed</th>
                           <th className="py-2 px-4">Priority</th>
                           <th className="py-2 px-4">Status</th>
                           <th className="py-2 px-4">Comments</th>
@@ -622,7 +659,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                                 if (inlineTitle.trim()) {
                                   onCreateQuickTask({ title: inlineTitle.trim(), status: group.key });
                                   setInlineTitle('');
-                                  setActiveInlineAddStatus(null);
                                 }
                               }} className="flex items-center gap-2 max-w-md">
                                 <input
@@ -630,7 +666,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                                   type="text"
                                   value={inlineTitle}
                                   onChange={(e) => setInlineTitle(e.target.value)}
-                                  placeholder={`Add new task... (Press Enter)`}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') {
+                                      setActiveInlineAddStatus(null);
+                                    }
+                                  }}
+                                  placeholder={`Add new task... (Press Enter, Esc to cancel)`}
                                   className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                                   autoFocus
                                 />
@@ -667,6 +708,41 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           );
         })}
       </div>
+
+      {selectedTasks.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5">
+          <span className="text-sm font-bold text-slate-700 px-2">{selectedTasks.length} tasks selected</span>
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+            <span className="text-xs font-semibold text-slate-500">Assign to:</span>
+            <select
+              onChange={async (e) => {
+                if (e.target.value) {
+                  const assigneeId = e.target.value === 'unassigned' ? null : parseInt(e.target.value, 10);
+                  const isMultiple = selectedTasks.length > 3;
+                  if (isMultiple) setIsSubmitting(true);
+                  try {
+                    await Promise.all(selectedTasks.map(id => onUpdateTaskField?.(id, 'assignee_id', assigneeId)));
+                    setSelectedTasks([]);
+                  } finally {
+                    if (isMultiple) setIsSubmitting(false);
+                  }
+                }
+              }}
+              className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-700 focus:outline-none cursor-pointer"
+              value=""
+            >
+              <option value="" disabled>Select Assignee</option>
+              <option value="unassigned">Unassigned</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={() => setSelectedTasks([])} className="p-1 hover:bg-slate-100 rounded text-slate-400 ml-2" title="Clear selection">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

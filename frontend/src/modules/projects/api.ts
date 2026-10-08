@@ -395,5 +395,12 @@ export async function relinkProjectFolder(projectId: number, manualPath?: string
   }
   return res.json();
 }
-
-
+export async function reorderDynamicTasks(projectId: number, tasks: { id: number, sort_order: number }[]) {
+  const response = await fetch(`${API_BASE}/${projectId}/dynamic-tasks/reorder`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(tasks)
+  });
+  if (!response.ok) throw new Error('Failed to reorder tasks');
+  return response.json();
+}

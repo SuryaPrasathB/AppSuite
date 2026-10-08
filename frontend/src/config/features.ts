@@ -43,6 +43,9 @@ export class Features {
   // Feature 10: Automatic directory file synchronization
   static AUTO_SYNC_PROJECT_FILES: boolean = true;
 
+  // Feature 11: Mandatory store information when creating items
+  static MANDATORY_STORE_INFORMATION: boolean = false;
+
   /**
    * Helper to check if a user is involved in a project client-side
    */

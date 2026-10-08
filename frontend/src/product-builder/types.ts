@@ -66,6 +66,7 @@ export interface ProductBuilderPayload {
   image_url: string;
   vendor_ids: number[];
   preferred_vendor_id: number | null;
+  manufacturer?: string;
   standard_cost: number;
   latest_cost: number;
   average_cost: number;

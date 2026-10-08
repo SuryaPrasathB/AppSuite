@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
-  uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask, fetchProjects, relinkProjectFolder
+  uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask, fetchProjects, relinkProjectFolder,
+  reorderDynamicTasks
 } from './api';
 import { ProjectFormModal } from './ProjectFormModal';
 import { TasksTab } from './workspace-tabs/TasksTab';
@@ -334,8 +335,15 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
-  const handleReorderTasks = (newTasks: any[]) => {
+  const handleReorderTasks = async (newTasks: any[]) => {
     setDynamicTasks(newTasks);
+    const updates = newTasks.map((t, index) => ({ id: t.id, sort_order: index }));
+    try {
+      await reorderDynamicTasks(project.id, updates);
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to persist task order');
+      loadData(project.id, true);
+    }
   };
 
   return (

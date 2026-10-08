@@ -19,11 +19,13 @@ import {
   Database,
   Search,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Building2
 } from 'lucide-react';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
 import { LocationSelectorModal } from '../../../components/LocationSelectorModal';
+import { getProductManufacturer, getProductPartNumber } from '../../../utils/productUtils';
 
 interface StockInItem {
   id: string; // React key
@@ -67,10 +69,16 @@ export const StockIn: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredProducts = useMemo(() => {
-    return productsList.filter(p => 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      p.code.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return productsList;
+    return productsList.filter(p => {
+      const mfg = getProductManufacturer(p);
+      const partNo = getProductPartNumber(p);
+      return p.name.toLowerCase().includes(q) || 
+             p.code.toLowerCase().includes(q) ||
+             (mfg && mfg.toLowerCase().includes(q)) ||
+             (partNo && partNo.toLowerCase().includes(q));
+    });
   }, [productsList, searchQuery]);
 
   // Map selector state
@@ -384,22 +392,36 @@ export const StockIn: React.FC = () => {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {filteredProducts.map(p => (
-            <div key={p.id} className="p-3 bg-white hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg group transition-all flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-slate-800">{p.name}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{p.code}</p>
+          {filteredProducts.map(p => {
+            const mfg = getProductManufacturer(p);
+            return (
+              <div key={p.id} className="p-3 bg-white hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg group transition-all flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <p className="text-sm font-bold text-slate-800 leading-snug">{p.name}</p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs">
+                    <span className="font-mono text-slate-500 font-medium">{p.code}</span>
+                    {mfg && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200/80 truncate max-w-[150px]">
+                          <Building2 className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          {mfg}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => handleAddItem(p)}
+                  className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-blue-600 hover:text-white shrink-0 ml-1 cursor-pointer"
+                  title="Add to Stock In"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
               </div>
-              <button 
-                type="button"
-                onClick={() => handleAddItem(p)}
-                className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-blue-600 hover:text-white"
-                title="Add to Stock In"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
           {filteredProducts.length === 0 && (
             <div className="p-8 text-center text-slate-400 text-sm">
               No products found.

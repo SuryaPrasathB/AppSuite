@@ -16,10 +16,12 @@ import {
   Eye,
   MoreVertical,
   Settings,
-  Trash2
+  Trash2,
+  Building2
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exportToExcel } from '../../../utils/exportUtils';
+import { getProductManufacturer, getProductPartNumber } from '../../../utils/productUtils';
 import { ProductBuilderModal } from '../../../product-builder/ProductBuilderModal';
 import { ProductDetailsModal } from '../../../product-builder/ProductDetailsModal';
 
@@ -37,6 +39,7 @@ export const Products: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedManufacturer, setSelectedManufacturer] = useState('');
   
   const [selectedStatus, setSelectedStatus] = useState<string>(() => {
     return searchParams.get('status') || '';
@@ -166,6 +169,7 @@ export const Products: React.FC = () => {
     const headers = [
       "Code",
       "Name",
+      "Manufacturer",
       "Category",
       "Description",
       "Unit",
@@ -189,6 +193,7 @@ export const Products: React.FC = () => {
       const row = [
         escapeCSV(p.code),
         escapeCSV(p.name),
+        escapeCSV(getProductManufacturer(p)),
         escapeCSV(p.category),
         escapeCSV(p.description),
         escapeCSV(p.unit),
@@ -212,15 +217,29 @@ export const Products: React.FC = () => {
   };
 
   const categories = Array.from(new Set(products.map((p: any) => p.category)));
+  const manufacturers = Array.from(
+    new Set(
+      products
+        .map((p: any) => getProductManufacturer(p))
+        .filter((m: string) => m && m.trim().length > 0)
+    )
+  ).sort();
 
   // Filter products
   const filteredProducts = (products as any[]).filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.code.toLowerCase().includes(searchQuery.toLowerCase());
+    const mfg = getProductManufacturer(p);
+    const partNo = getProductPartNumber(p);
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q ||
+                          p.name.toLowerCase().includes(q) || 
+                          p.code.toLowerCase().includes(q) ||
+                          (partNo && partNo.toLowerCase().includes(q)) ||
+                          (mfg && mfg.toLowerCase().includes(q));
     const matchesCategory = selectedCategory === '' || p.category === selectedCategory;
     const matchesStatus = selectedStatus === '' || p.status === selectedStatus;
+    const matchesManufacturer = selectedManufacturer === '' || mfg === selectedManufacturer;
     
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategory && matchesStatus && matchesManufacturer;
   });
 
   // KPI Calculations
@@ -343,6 +362,17 @@ export const Products: React.FC = () => {
           </select>
 
           <select
+            value={selectedManufacturer}
+            onChange={(e) => setSelectedManufacturer(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:bg-white transition-all font-medium"
+          >
+            <option value="">All Manufacturers</option>
+            {manufacturers.map(mfg => (
+              <option key={mfg} value={mfg}>{mfg}</option>
+            ))}
+          </select>
+
+          <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:bg-white transition-all"
@@ -426,19 +456,20 @@ export const Products: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs text-slate-600">
               <thead>
-                <tr className="bg-slate-50 text-slate-505 font-bold uppercase tracking-wider border-b border-slate-200">
-                  <th className="px-6 py-4">Item Code</th>
-                  <th className="px-6 py-4">Item Name</th>
-                  <th className="px-6 py-4">Category</th>
-                  <th className="px-6 py-4">Unit</th>
-                  <th className="px-6 py-4">Cost</th>
-                  <th className="px-6 py-4">Current Stock</th>
-                  <th className="px-6 py-4">Reserved</th>
-                  <th className="px-6 py-4">Available</th>
-                  <th className="px-6 py-4">Min. Stock</th>
-                  <th className="px-6 py-4 whitespace-nowrap">Location</th>
-                  <th className="px-6 py-4 whitespace-nowrap">Status</th>
-                  <th className="px-6 py-4 text-right whitespace-nowrap">Actions</th>
+                <tr className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200 text-[11px]">
+                  <th className="px-4 py-3.5 whitespace-nowrap">Item Code</th>
+                  <th className="px-4 py-3.5 min-w-[280px]">Item Name</th>
+                  <th className="px-4 py-3.5 min-w-[150px] whitespace-nowrap">Manufacturer</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap">Category</th>
+                  <th className="px-3.5 py-3.5 whitespace-nowrap text-center">Unit</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-right">Cost</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-center">Current Stock</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-center">Reserved</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-center">Available</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-center">Min. Stock</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap">Location</th>
+                  <th className="px-4 py-3.5 whitespace-nowrap text-center">Status</th>
+                  <th className="px-4 py-3.5 text-right whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -449,46 +480,66 @@ export const Products: React.FC = () => {
                     
                     const reserved = prod.reserved_quantity || 0;
                     const available = Math.max(0, (prod.current_quantity || 0) - reserved);
+                    const mfg = getProductManufacturer(prod);
+                    const partNo = getProductPartNumber(prod);
 
                     return (
                       <tr key={prod.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-mono text-blue-650 font-bold flex items-center gap-3 whitespace-nowrap">
-                          <div className="h-8 w-8 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-                            {prod.image_url ? (
-                              <img src={prod.image_url} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <Package className="h-4 w-4 text-slate-400" />
-                            )}
+                        <td className="px-4 py-3.5 font-mono text-blue-600 font-bold whitespace-nowrap">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-8 w-8 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                              {prod.image_url ? (
+                                <img src={prod.image_url} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <Package className="h-4 w-4 text-slate-400" />
+                              )}
+                            </div>
+                            <span>{prod.code}</span>
                           </div>
-                          <span>{prod.code}</span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-3.5 min-w-[280px]">
                           <div 
-                            className="cursor-pointer hover:text-primary-600 group transition-colors text-left"
+                            className="cursor-pointer group text-left"
                             onClick={() => {
                               setActiveDetailsProduct(prod);
                               setDetailsModalOpen(true);
                             }}
                           >
-                            <span className="font-bold text-slate-805 block">{prod.name}</span>
-                            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">Part No: {prod.barcode || 'N/A'}</span>
+                            <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors block text-[13px] leading-snug">
+                              {prod.name}
+                            </span>
+                            {partNo ? (
+                              <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+                                Part No: <span className="font-mono text-slate-500 font-semibold">{partNo}</span>
+                              </span>
+                            ) : null}
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="bg-slate-100 border border-slate-200 text-slate-655 font-bold px-2 py-0.5 rounded text-[10px] whitespace-nowrap">
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {mfg ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs font-semibold border border-slate-200">
+                              <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                              {mfg}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className="bg-slate-100 border border-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] whitespace-nowrap">
                             {prod.category}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-slate-500 font-semibold whitespace-nowrap">{prod.unit || 'pcs'}</td>
-                        <td className="px-6 py-4 text-slate-600 font-bold whitespace-nowrap">{prod.currency || 'INR'} {prod.standard_cost ?? '0.00'}</td>
-                        <td className={`px-6 py-4 font-black whitespace-nowrap ${(prod.current_quantity ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        <td className="px-3.5 py-3.5 text-slate-500 font-semibold whitespace-nowrap text-center">{prod.unit || 'pcs'}</td>
+                        <td className="px-4 py-3.5 text-slate-700 font-bold whitespace-nowrap text-right">{prod.currency || 'INR'} {prod.standard_cost ?? '0.00'}</td>
+                        <td className={`px-4 py-3.5 font-black whitespace-nowrap text-center ${(prod.current_quantity ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>
                           {prod.current_quantity ?? 0}
                         </td>
-                        <td className="px-6 py-4 font-black text-amber-500 whitespace-nowrap">{reserved}</td>
-                        <td className="px-6 py-4 font-black text-green-600 whitespace-nowrap">{available}</td>
-                        <td className="px-6 py-4 font-bold text-slate-500 whitespace-nowrap">{prod.min_quantity}</td>
-                        <td className="px-6 py-4 text-slate-600 font-semibold whitespace-nowrap">{locationText}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-4 py-3.5 font-black text-amber-500 whitespace-nowrap text-center">{reserved}</td>
+                        <td className="px-4 py-3.5 font-black text-green-600 whitespace-nowrap text-center">{available}</td>
+                        <td className="px-4 py-3.5 font-bold text-slate-500 whitespace-nowrap text-center">{prod.min_quantity}</td>
+                        <td className="px-4 py-3.5 text-slate-600 font-semibold whitespace-nowrap">{locationText}</td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-center">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap ${
                             prod.status === 'HEALTHY' ? 'bg-green-50 text-green-700' :
                             prod.status === 'LOW_STOCK' ? 'bg-orange-50 text-orange-700' :
@@ -502,14 +553,15 @@ export const Products: React.FC = () => {
                             {prod.status === 'HEALTHY' ? 'In Stock' : prod.status === 'LOW_STOCK' ? 'Low Stock' : 'Out of Stock'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end space-x-1">
                             <button
                               onClick={() => {
                                 setActiveDetailsProduct(prod);
                                 setDetailsModalOpen(true);
                               }}
-                              className="p-1.5 bg-slate-55 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                              className="p-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                              title="View Details"
                             >
                               <Eye className="h-4 w-4" />
                             </button>
@@ -517,7 +569,8 @@ export const Products: React.FC = () => {
                               <>
                                 <button
                                   onClick={() => openEditModal(prod)}
-                                  className="p-1.5 bg-slate-55 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                                  className="p-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors cursor-pointer inline-flex"
+                                  title="Edit Product"
                                 >
                                   <MoreVertical className="h-4 w-4" />
                                 </button>
@@ -540,7 +593,7 @@ export const Products: React.FC = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={11} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={13} className="px-6 py-12 text-center text-slate-400">
                       No matching products found in the catalog.
                     </td>
                   </tr>

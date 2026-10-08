@@ -5,6 +5,7 @@ import { apiClient } from '../api/apiClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AnnouncementManagerModal } from './AnnouncementManagerModal';
 import { UserPresenceMenu } from './UserPresenceMenu';
+import { getProductManufacturer } from '../utils/productUtils';
 
 export const Header: React.FC = () => {
   const { user, logout, updatePresenceStatus } = useAuth();
@@ -200,13 +201,16 @@ export const Header: React.FC = () => {
       setFilteredProducts([]);
       return;
     }
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
     const filtered = products.filter(
-      p => 
-        (p.name || '').toLowerCase().includes(q) || 
-        (p.code || '').toLowerCase().includes(q) ||
-        (p.category || '').toLowerCase().includes(q) ||
-        (p.barcode || '').toLowerCase().includes(q)
+      p => {
+        const mfg = getProductManufacturer(p);
+        return (p.name || '').toLowerCase().includes(q) || 
+               (p.code || '').toLowerCase().includes(q) ||
+               (p.category || '').toLowerCase().includes(q) ||
+               (p.barcode || '').toLowerCase().includes(q) ||
+               (mfg || '').toLowerCase().includes(q);
+      }
     );
     setFilteredProducts(filtered);
   }, [query, products]);
@@ -368,7 +372,13 @@ export const Header: React.FC = () => {
               >
                 <div>
                   <div className="font-semibold text-slate-800 text-sm">{prod.name}</div>
-                  <div className="text-xs text-slate-400">{prod.code} | {prod.category}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    <span>{prod.code}</span>
+                    {getProductManufacturer(prod) ? (
+                      <span className="text-slate-600 font-medium"> · {getProductManufacturer(prod)}</span>
+                    ) : null}
+                    <span> · {prod.category}</span>
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-medium text-slate-650">Stock: {prod.current_quantity} {prod.unit}</div>

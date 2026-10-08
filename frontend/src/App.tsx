@@ -88,9 +88,24 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   return <>{children}</>;
 };
 
+import { Features } from './config/features';
+import { apiClient } from './api/apiClient';
+
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    apiClient.features.list().then((flags) => {
+      if (Array.isArray(flags)) {
+        flags.forEach((f) => {
+          if (f.key in Features) {
+            (Features as any)[f.key] = f.enabled;
+          }
+        });
+      }
+    }).catch(() => {});
+  }, [user]);
 
   if (isLoading) {
     return (

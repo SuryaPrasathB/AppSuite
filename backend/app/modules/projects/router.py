@@ -1127,6 +1127,27 @@ def check_circular_dependencies(project_id: int, task_id: Optional[int], new_dep
             if has_cycle(node, visited, set()):
                 raise HTTPException(status_code=400, detail="Circular dependency detected")
 
+class TaskReorder(BaseModel):
+    id: int
+    sort_order: int
+
+@router.put("/{project_id}/dynamic-tasks/reorder")
+def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_user: Dict[str, Any] = Depends(get_current_user)):
+    from app.database import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        for task in tasks:
+            cursor.execute("UPDATE dynamic_tasks SET sort_order = %s WHERE id = %s AND project_id = %s", (task.sort_order, task.id, project_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+    return {"status": "success"}
+
 @router.post("/{project_id}/dynamic-tasks")
 def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
     validate_task_dates(task.start_date, task.due_date)
