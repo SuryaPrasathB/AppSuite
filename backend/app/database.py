@@ -764,6 +764,10 @@ class DBStore:
         cursor.close()
         conn.close()
         for emp in employees:
+            if not emp.get('last_seen_at') and emp.get('last_login_at'):
+                emp['last_seen_at'] = emp['last_login_at']
+                emp['seconds_since_seen'] = emp.get('seconds_since_login')
+
             if emp.get('created_at'):
                 emp['created_at'] = emp['created_at'].isoformat()
             if emp.get('last_login_at'):

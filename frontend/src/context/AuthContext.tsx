@@ -163,9 +163,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        lastActivityRef.current = Date.now();
+        if (user.presence_status === 'away' && !isManuallySetRef.current) {
+          updatePresenceStatus('online');
+        } else {
+          apiClient.auth.heartbeat({
+            user_id: user.id,
+            presence_status: user.presence_status || 'online',
+            status_message: user.status_message
+          }).catch(() => {});
+        }
+      }
+    };
+
     window.addEventListener('mousemove', onUserAction, { passive: true });
     window.addEventListener('keydown', onUserAction, { passive: true });
     window.addEventListener('click', onUserAction, { passive: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Periodic heartbeat every 45 seconds
     const interval = setInterval(async () => {
@@ -198,6 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.removeEventListener('mousemove', onUserAction);
       window.removeEventListener('keydown', onUserAction);
       window.removeEventListener('click', onUserAction);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [user?.id, user?.presence_status, user?.status_message, updateUser]);
 

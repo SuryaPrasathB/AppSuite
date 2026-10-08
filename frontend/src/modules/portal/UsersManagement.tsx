@@ -23,6 +23,8 @@ export const UsersManagement: React.FC = () => {
   // Users State
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -66,17 +68,50 @@ export const UsersManagement: React.FC = () => {
     fetchCategories();
   }, [hasRole, navigate]);
 
-  const fetchData = async () => {
+  // Real-time presence polling every 15 seconds when on Users tab
+  useEffect(() => {
+    if (activeTab !== 'users') return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchData(false);
+      }
+    }, 15000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [activeTab]);
+
+  const fetchData = async (isManual = false) => {
     try {
-      setLoading(true);
+      if (isManual) {
+        setIsRefreshing(true);
+      } else if (users.length === 0) {
+        setLoading(true);
+      }
       const data = await apiClient.employees.list();
       const sorted = Array.isArray(data) ? [...data].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : data;
       setUsers(sorted);
+      setLastUpdated(new Date());
       setError(null);
     } catch (err) {
-      setError("Failed to fetch users directory.");
+      if (users.length === 0) {
+        setError("Failed to fetch users directory.");
+      }
     } finally {
       setLoading(false);
+      if (isManual) {
+        setTimeout(() => setIsRefreshing(false), 450);
+      }
     }
   };
 
@@ -325,10 +360,10 @@ export const UsersManagement: React.FC = () => {
     };
   };
 
-  const formatLoginDate = (dateStr?: string) => {
-    if (!dateStr) return 'Never logged in';
+  const formatExactDate = (dateStr?: string) => {
+    if (!dateStr) return '';
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '—';
+    if (isNaN(d.getTime())) return '';
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
     const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -337,6 +372,48 @@ export const UsersManagement: React.FC = () => {
     yest.setDate(yest.getDate() - 1);
     if (d.toDateString() === yest.toDateString()) return `Yesterday at ${time}`;
     return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+  };
+
+  const getLastSeenDetails = (u: any) => {
+    const isOnline = (u.computed_status || u.presence_status) === 'online' || (u.seconds_since_seen != null && u.seconds_since_seen <= 180);
+    const seenDateStr = u.last_seen_at || u.last_login_at;
+
+    if (isOnline) {
+      return {
+        isOnline: true,
+        primaryText: 'Active now',
+        exactText: seenDateStr ? formatExactDate(seenDateStr) : 'Current session'
+      };
+    }
+
+    if (!seenDateStr) {
+      return {
+        isOnline: false,
+        primaryText: 'Never active',
+        exactText: null
+      };
+    }
+
+    let primaryText = '';
+    const secondsAgo = u.seconds_since_seen ?? Math.max(0, Math.floor((Date.now() - new Date(seenDateStr).getTime()) / 1000));
+    
+    if (secondsAgo !== undefined && secondsAgo !== null && !isNaN(secondsAgo)) {
+      const mins = Math.floor(secondsAgo / 60);
+      const hrs = Math.floor(mins / 60);
+      const days = Math.floor(hrs / 24);
+      if (days > 0) primaryText = `${days}d ago`;
+      else if (hrs > 0) primaryText = `${hrs}h ago`;
+      else if (mins > 0) primaryText = `${mins}m ago`;
+      else primaryText = 'Just now';
+    } else {
+      primaryText = 'Recently';
+    }
+
+    return {
+      isOnline: false,
+      primaryText,
+      exactText: formatExactDate(seenDateStr)
+    };
   };
 
   const onlineCount = users.filter(u => (u.computed_status || u.presence_status) === 'online').length;
@@ -499,13 +576,43 @@ export const UsersManagement: React.FC = () => {
                 </button>
               </div>
 
-              <button
-                onClick={openAddModal}
-                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap self-end md:self-auto"
-              >
-                <Plus className="h-4 w-4" />
-                Create New User
-              </button>
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <button
+                  onClick={() => fetchData(true)}
+                  disabled={isRefreshing}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-200 cursor-pointer shadow-xs disabled:opacity-60"
+                  title="Refresh users and live presence (Also syncs automatically every 15s)"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-indigo-600' : 'text-slate-500'}`} />
+                  <span>Refresh</span>
+                </button>
+
+                <button
+                  onClick={openAddModal}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create New User
+                </button>
+              </div>
+            </div>
+
+            {/* Live Sync Status & Count Bar */}
+            <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Presence Sync (15s)
+                </span>
+                {lastUpdated && (
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+              </div>
+              <span className="text-slate-500 text-xs font-medium">
+                Showing {filteredUsers.length} of {users.length} users
+              </span>
             </div>
 
             {/* User Grid */}
@@ -522,7 +629,7 @@ export const UsersManagement: React.FC = () => {
                         <th className="p-4 font-bold">User</th>
                         <th className="p-4 font-bold">Category / Role</th>
                         <th className="p-4 font-bold">Status & Presence</th>
-                        <th className="p-4 font-bold">Last Login</th>
+                        <th className="p-4 font-bold">Last Seen</th>
                         <th className="p-4 font-bold">Department</th>
                         <th className="p-4 font-bold">Contact</th>
                         <th className="p-4 font-bold text-right">Actions</th>
@@ -533,6 +640,7 @@ export const UsersManagement: React.FC = () => {
                         filteredUsers.map((u) => {
                           const badge = getCategoryBadgeStyle(u.role);
                           const pres = formatRelativePresence(u);
+                          const seen = getLastSeenDetails(u);
                           return (
                             <tr key={u.id} className="hover:bg-slate-50 transition-colors group">
                               <td className="p-4">
@@ -578,10 +686,39 @@ export const UsersManagement: React.FC = () => {
                                 </div>
                               </td>
                               <td className="p-4">
-                                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                  <span className="whitespace-nowrap">{formatLoginDate(u.last_login_at)}</span>
-                                </div>
+                                {seen.isOnline ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                                      <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                      </span>
+                                      <span className="whitespace-nowrap">Active now</span>
+                                    </div>
+                                    {seen.exactText && (
+                                      <span className="text-[11px] text-slate-400 pl-3.5 whitespace-nowrap">
+                                        {seen.exactText}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : seen.primaryText === 'Never active' ? (
+                                  <div className="flex items-center gap-1.5 text-xs text-slate-400 italic">
+                                    <Clock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                                    <span className="whitespace-nowrap">Never active</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                      <span className="whitespace-nowrap">{seen.primaryText}</span>
+                                    </div>
+                                    {seen.exactText && (
+                                      <span className="text-[11px] text-slate-400 pl-5 whitespace-nowrap">
+                                        {seen.exactText}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </td>
                               <td className="p-4 text-sm text-slate-600 font-medium">
                                 {u.department || '—'}

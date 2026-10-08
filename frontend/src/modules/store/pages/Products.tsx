@@ -95,7 +95,14 @@ export const Products: React.FC = () => {
   useEffect(() => {
     const statusParam = searchParams.get('status') || '';
     setSelectedStatus(prev => prev !== statusParam ? statusParam : prev);
-  }, [searchParams]);
+
+    if (searchParams.get('action') === 'add') {
+      if (hasRole(['Administrator'])) {
+        setAddModalOpen(true);
+      }
+      navigate('/products', { replace: true });
+    }
+  }, [searchParams, hasRole, navigate]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleProductBuilderSave = async (payload: any) => {
