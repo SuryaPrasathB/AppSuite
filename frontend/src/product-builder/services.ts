@@ -56,7 +56,7 @@ export const ItemCodeGenerator = {
       }
     });
 
-    return schema.codeTemplate
+    let baseCode = schema.codeTemplate
       .replace(TOKEN_PATTERN, (_, key: string) => {
         if (key === 'categoryCode') return codeToken(schema.id);
         if (key === 'codePrefix') return codeToken(schema.codePrefix);
@@ -64,6 +64,26 @@ export const ItemCodeGenerator = {
       })
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '');
+
+    const partNumber = codeToken(values.partNumber || values.manufacturerPartNumber || values.catalogNumber || '');
+    
+    if (partNumber) {
+      if (!baseCode.includes(partNumber)) {
+        baseCode += `-${partNumber}`;
+      }
+    } else {
+      const name = ProductNameGenerator.generate(schema, values);
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        const char = name.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash;
+      }
+      const shortHash = Math.abs(hash).toString(16).substring(0, 4).toUpperCase().padStart(4, '0');
+      baseCode += `-${shortHash}`;
+    }
+
+    return baseCode.replace(/^-+|-+$/g, '');
   },
 };
 
