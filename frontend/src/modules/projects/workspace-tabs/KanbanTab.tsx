@@ -383,7 +383,7 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
         <p className="text-xs text-slate-500">Drag handle to reorder tasks or move between columns.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 h-full min-h-[50vh]">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 min-h-0">
         {[
           { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-100/50 text-slate-700' },
           { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50 text-indigo-600' },
@@ -409,14 +409,27 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
               onDrop={(e) => handleDropOnColumn(e, column.key)}
               className={`flex flex-col rounded-2xl border ${
                 isOverCol ? 'border-indigo-400 bg-indigo-50/30 ring-2 ring-indigo-400/20' : 'border-slate-200'
-              } ${column.color} p-3 h-full transition-all duration-200`}
+              } ${column.color} p-3 h-full max-h-full overflow-hidden transition-all duration-200`}
             >
               <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
                 <span className="text-sm font-bold uppercase tracking-wider">{column.title}</span>
                 <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded-full font-bold">{columnTasks.length}</span>
               </div>
 
-              <div className="flex-1 space-y-2.5 overflow-y-auto custom-scrollbar pr-1 min-h-[120px]">
+              <div 
+                className="flex-1 space-y-2.5 overflow-y-auto custom-scrollbar pr-1 min-h-[120px]"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  const buffer = 80;
+                  const speed = 15;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  if (e.clientY > rect.top && e.clientY < rect.top + buffer) {
+                    e.currentTarget.scrollTop -= speed;
+                  } else if (e.clientY < rect.bottom && e.clientY > rect.bottom - buffer) {
+                    e.currentTarget.scrollTop += speed;
+                  }
+                }}
+              >
                 {columnTasks.length === 0 ? (
                   <div className="h-24 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium transition-colors hover:border-indigo-300">
                     <GripVertical className="h-4 w-4 mb-1 text-slate-300" />

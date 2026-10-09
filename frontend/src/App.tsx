@@ -139,7 +139,7 @@ const AppContent: React.FC = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0">
+        <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0 flex flex-col">
           <Routes>
             <Route path="/store" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Dashboard /></ProtectedRoute>} />
             <Route path="/layout" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><StoreLayout /></ProtectedRoute>} />

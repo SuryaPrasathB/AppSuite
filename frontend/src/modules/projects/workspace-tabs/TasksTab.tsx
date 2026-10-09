@@ -295,6 +295,16 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     setDragOverTarget(null);
   };
 
+  const handleRowDrag = (e: React.DragEvent) => {
+    const buffer = 80;
+    const speed = 15;
+    if (e.clientY > 0 && e.clientY < buffer) {
+      window.scrollBy(0, -speed);
+    } else if (e.clientY > 0 && e.clientY > window.innerHeight - buffer) {
+      window.scrollBy(0, speed);
+    }
+  };
+
   const handleRowDragOver = (e: React.DragEvent, targetTask: any) => {
     e.preventDefault();
     e.stopPropagation();
@@ -396,6 +406,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
         <tr 
           draggable
           onDragStart={(e) => handleRowDragStart(e, task.id)}
+          onDrag={handleRowDrag}
           onDragEnd={handleRowDragEnd}
           onDragOver={(e) => handleRowDragOver(e, task)}
           onDrop={(e) => handleRowDrop(e, task)}

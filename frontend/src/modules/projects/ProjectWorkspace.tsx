@@ -420,7 +420,7 @@ export const ProjectWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col bg-slate-50 -m-6 min-h-[calc(100vh-104px)]">
+    <div className="flex flex-col bg-slate-50 -m-6 flex-1 min-h-0">
       {/* Workspace Header */}
       <div className="bg-white border-b border-slate-200 `px-6` py-2 sticky -top-6 z-20 shadow-sm">
         <div className="flex items-center justify-between mb-2">
@@ -528,7 +528,7 @@ export const ProjectWorkspace: React.FC = () => {
       </div>
 
       {/* Workspace Content Area */}
-      <div className="p-6 pt-1 relative flex-1">
+      <div className="p-6 pt-1 relative flex-1 min-h-0 flex flex-col">
         {activeTab === 'sub_projects' && (
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
@@ -786,7 +786,7 @@ export const ProjectWorkspace: React.FC = () => {
         )}
 
         {activeTab === 'kanban' && (
-          <div className="h-full relative">
+          <div className="flex-1 min-h-0 relative flex flex-col">
              <div className="absolute top-0 right-2 z-20">
                <button onClick={() => handleOpenEditTask()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm">
                  + Add Task

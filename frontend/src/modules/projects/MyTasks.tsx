@@ -353,7 +353,20 @@ export const MyTasks: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+                  <div 
+                    className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      const buffer = 80;
+                      const speed = 15;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      if (e.clientY > rect.top && e.clientY < rect.top + buffer) {
+                        e.currentTarget.scrollTop -= speed;
+                      } else if (e.clientY < rect.bottom && e.clientY > rect.bottom - buffer) {
+                        e.currentTarget.scrollTop += speed;
+                      }
+                    }}
+                  >
                     {columnTasks.length === 0 ? (
                       <div className="h-24 flex items-center justify-center border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
                         No tasks
