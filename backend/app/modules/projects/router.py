@@ -517,7 +517,7 @@ def browse_folders(path: Optional[str] = None):
 
 @router.get("/{project_id}")
 def get_project(project_id: int, current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)):
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -553,7 +553,7 @@ from fastapi.responses import FileResponse
 
 @router.post("/{project_id}/relink")
 def relink_project_folder(project_id: int, req: RelinkRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")

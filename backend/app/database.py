@@ -811,11 +811,11 @@ class DBStore:
                 emp['seconds_since_seen'] = emp.get('seconds_since_login')
 
             if emp.get('created_at'):
-                emp['created_at'] = emp['created_at'].isoformat()
+                emp['created_at'] = emp['created_at'].isoformat() + 'Z'
             if emp.get('last_login_at'):
-                emp['last_login_at'] = emp['last_login_at'].isoformat()
+                emp['last_login_at'] = emp['last_login_at'].isoformat() + 'Z'
             if emp.get('last_seen_at'):
-                emp['last_seen_at'] = emp['last_seen_at'].isoformat()
+                emp['last_seen_at'] = emp['last_seen_at'].isoformat() + 'Z'
 
             seconds = emp.get('seconds_since_seen')
             raw_presence = (emp.get('presence_status') or 'offline').lower()

@@ -91,13 +91,16 @@ export const UsersManagement: React.FC = () => {
     };
   }, [activeTab]);
 
+  const isFirstFetch = React.useRef(true);
+  
   const fetchData = async (isManual = false) => {
     try {
       if (isManual) {
         setIsRefreshing(true);
-      } else if (users.length === 0) {
+      } else if (isFirstFetch.current) {
         setLoading(true);
       }
+      isFirstFetch.current = false;
       const data = await apiClient.employees.list();
       const sorted = Array.isArray(data) ? [...data].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : data;
       setUsers(sorted);
