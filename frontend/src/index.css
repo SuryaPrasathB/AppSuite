@@ -59,6 +59,21 @@
   animation: pulse-highlight-bin 1.2s infinite;
 }
 
+@keyframes slide-in-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast-in {
+  animation: slide-in-toast 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Custom scrollbar for premium feel */
 ::-webkit-scrollbar {
   width: 6px;

@@ -25,6 +25,7 @@ import { FolderBrowserModal } from './FolderBrowserModal';
 import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
 import { ServiceTickets } from './ServiceTickets';
+import { useToast } from '../../context/ToastContext';
 
 export const ProjectWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +33,7 @@ export const ProjectWorkspace: React.FC = () => {
   const navigate = useNavigate();
   const { showAlert, showConfirm } = useDialog();
   const { hasRole } = useAuth();
+  const { success, error: showError } = useToast();
   const isAdmin = hasRole(['Administrator']);
   const [project, setProject] = useState<any>(null);
   const [staticTasks, setStaticTasks] = useState<any[]>([]);
@@ -149,8 +151,10 @@ export const ProjectWorkspace: React.FC = () => {
       await updateProject(project.id, formData);
       setIsEditModalOpen(false);
       loadData(project.id);
+      success('Project updated successfully', 'Success');
     } catch (err: any) {
       showAlert(err.message || 'Failed to update project');
+      showError(err.message || 'Failed to update project', 'Error');
     }
   };
 
@@ -207,12 +211,14 @@ export const ProjectWorkspace: React.FC = () => {
       setUploadingTask(taskName);
       await uploadTaskFile(project.id, taskName, files);
       await loadData(project.id);
+      success(`File(s) uploaded to ${taskName}`, 'Success');
       if (previewFile) {
         URL.revokeObjectURL(previewFile.objectUrl);
         setPreviewFile(null);
       }
     } catch (err: any) {
       showAlert(err.message || "Failed to upload file");
+      showError(err.message || "Failed to upload file", 'Error');
     } finally {
       setUploadingTask(null);
     }
@@ -295,12 +301,18 @@ export const ProjectWorkspace: React.FC = () => {
       blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null
     };
     try {
-      if (editingTask) await updateDynamicTask(project.id, editingTask.id, payload);
-      else await createDynamicTask(project.id, payload);
+      if (editingTask) {
+        await updateDynamicTask(project.id, editingTask.id, payload);
+        success('Task updated successfully', 'Success');
+      } else {
+        await createDynamicTask(project.id, payload);
+        success('Task created successfully', 'Success');
+      }
       setIsTaskFormOpen(false);
       loadData(project.id, true);
     } catch (err: any) {
       showAlert(err.message || "Failed to save task");
+      showError(err.message || "Failed to save task", 'Error');
     }
   };
 
@@ -308,10 +320,28 @@ export const ProjectWorkspace: React.FC = () => {
     const confirmed = await showConfirm("Are you sure you want to delete this task?");
     if (!confirmed) return;
     try {
+      const taskToDelete = dynamicTasks.find(t => t.id === taskId);
       await deleteDynamicTask(project.id, taskId);
       loadData(project.id, true);
-    } catch (err) {
+      
+      success('Task deleted', undefined, 5000, async () => {
+        if (taskToDelete) {
+          const payload = {
+            ...taskToDelete,
+            dependencies: Array.isArray(taskToDelete.dependencies) && taskToDelete.dependencies.length > 0 ? JSON.stringify(taskToDelete.dependencies) : null,
+            blocking: Array.isArray(taskToDelete.blocking) && taskToDelete.blocking.length > 0 ? JSON.stringify(taskToDelete.blocking) : null
+          };
+          delete payload.id;
+          delete payload.created_at;
+          delete payload.updated_at;
+          
+          await createDynamicTask(project.id, payload);
+          loadData(project.id, true);
+        }
+      });
+    } catch (err: any) {
       showAlert("Failed to delete task");
+      showError(err.message || "Failed to delete task", 'Error');
     }
   };
 
@@ -324,28 +354,56 @@ export const ProjectWorkspace: React.FC = () => {
       };
       await createDynamicTask(project.id, payload);
       await loadData(project.id, true);
+      success('Task created successfully', 'Success');
     } catch (err: any) {
       showAlert(err.message || "Failed to create quick task");
+      showError(err.message || "Failed to create task", 'Error');
     }
   };
 
   const handleUpdateTaskStatus = async (taskId: number, newStatus: string) => {
     try {
+      const taskBefore = dynamicTasks.find(t => t.id === taskId);
+      const oldStatus = taskBefore ? taskBefore.status : null;
+      
       await updateDynamicTask(project.id, taskId, { status: newStatus });
       setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+      
+      success(`Task status updated`, 'Success', 3000, async () => {
+        if (oldStatus) {
+          await updateDynamicTask(project.id, taskId, { status: oldStatus });
+          setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: oldStatus } : t));
+          loadData(project.id, true);
+        }
+      });
     } catch (err: any) {
       showAlert(err.message || "Failed to update status");
+      showError(err.message || "Failed to update status", 'Error');
       loadData(project.id, true);
     }
   };
 
   const handleUpdateTaskField = async (taskId: number, field: string, value: any) => {
     try {
+      const taskBefore = dynamicTasks.find(t => t.id === taskId);
+      const oldValue = taskBefore ? taskBefore[field] : null;
+
       await updateDynamicTask(project.id, taskId, { [field]: value });
       setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value } : t));
       await loadData(project.id, true);
+      
+      if (field !== 'assignee_id' && field !== 'assignee_ids') {
+        success(`Task ${field.replace('_', ' ')} updated`, 'Success', 3000, async () => {
+          if (oldValue !== undefined) {
+            await updateDynamicTask(project.id, taskId, { [field]: oldValue });
+            setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: oldValue } : t));
+            loadData(project.id, true);
+          }
+        });
+      }
     } catch (err: any) {
       showAlert(err.message || `Failed to update task ${field}`);
+      showError(err.message || `Failed to update task ${field}`, 'Error');
       loadData(project.id, true);
     }
   };

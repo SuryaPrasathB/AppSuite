@@ -74,7 +74,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
           e.preventDefault();
           setIsOpen(!isOpen);
         }}
-        className="cursor-pointer relative inline-block"
+        className="cursor-pointer relative inline-flex items-center"
       >
         {triggerElement}
       </div>

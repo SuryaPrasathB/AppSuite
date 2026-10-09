@@ -11,9 +11,11 @@ import { ProjectFormModal } from './ProjectFormModal';
 import { RecycleBinModal } from './RecycleBinModal';
 import { useDialog } from '../../context/DialogContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 
 export const Projects: React.FC = () => {
   const { hasRole, user } = useAuth();
+  const { success, error: showError } = useToast();
   const isAdmin = hasRole(['Administrator']);
   const [milestones, setMilestones] = useState<any[]>([]);
   const [newMilestoneModalState, setNewMilestoneModalState] = useState<{ isOpen: boolean, projectId: number | null, name: string }>({ isOpen: false, projectId: null, name: '' });
@@ -103,11 +105,13 @@ export const Projects: React.FC = () => {
   const handleDeleteProject = async () => {
     if (!deleteConfirmProject) return;
     try {
-      await deleteProject(deleteConfirmProject.id, deleteSubprojects); // Use state for deleting sub-projects
+      await deleteProject(deleteConfirmProject.id, deleteSubprojects);
       setDeleteConfirmProject(null);
       loadProjects();
+      success('Project deleted successfully', 'Success');
     } catch (err: any) {
       showAlert(err.message || "Failed to delete project");
+      showError(err.message || "Failed to delete project", 'Error');
     }
   };
 
@@ -116,12 +120,15 @@ export const Projects: React.FC = () => {
       let savedProject = null;
       if (editProjectId) {
         savedProject = await updateProject(editProjectId, formData);
+        success('Project updated successfully', 'Success');
       } else {
         if (formData.isAiPlanning) {
           setIsGenerating(true);
           savedProject = await generateProjectPlan(formData);
+          success('AI Project Plan generated successfully', 'Success');
         } else {
           savedProject = await createProject(formData);
+          success('Project created successfully', 'Success');
         }
       }
       
@@ -133,6 +140,7 @@ export const Projects: React.FC = () => {
       return savedProject;
     } catch (err: any) {
       showAlert(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`);
+      showError(err.message || `Failed to ${editProjectId ? 'update' : 'create'} project`, 'Error');
     } finally {
       setIsGenerating(false);
     }
@@ -140,10 +148,21 @@ export const Projects: React.FC = () => {
 
   const handleDirectStatusUpdate = async (projectId: number, newStatus: string) => {
     try {
+      const projectBefore = projects.find(p => p.id === projectId);
+      const oldStatus = projectBefore ? projectBefore.status : null;
+
       await updateProject(projectId, { status: newStatus });
       loadProjects();
+      
+      success('Project status updated', 'Success', 3000, async () => {
+        if (oldStatus) {
+          await updateProject(projectId, { status: oldStatus });
+          loadProjects();
+        }
+      });
     } catch (err: any) {
       showAlert(err.message || "Failed to update status");
+      showError(err.message || "Failed to update status", 'Error');
     }
   };
 
@@ -160,8 +179,14 @@ export const Projects: React.FC = () => {
       try {
         await updateProject(projectId, { milestone: newValue === '' ? null : newValue });
         loadProjects();
+        
+        success('Project milestone updated', 'Success', 3000, async () => {
+          await updateProject(projectId, { milestone: currentValue === '' ? null : currentValue });
+          loadProjects();
+        });
       } catch (err: any) {
         showAlert(err.message || "Failed to update milestone");
+        showError(err.message || "Failed to update milestone", 'Error');
       }
     }
   };

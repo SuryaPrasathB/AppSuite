@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search } from 'lucide-react';
 
 interface AssigneeSelectPopoverProps {
@@ -128,11 +129,52 @@ export const AssigneeSelectPopover: React.FC<AssigneeSelectPopoverProps> = ({
     }
   };
 
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current?.parentElement) {
+      const updateCoords = () => {
+        const rect = containerRef.current!.parentElement!.getBoundingClientRect();
+        let top = rect.bottom + window.scrollY + 4;
+        let left = rect.left + window.scrollX;
+        
+        if (align === 'right') {
+          left = rect.right + window.scrollX - 256; // 256px is w-64
+        }
+        
+        // Prevent going off screen left
+        if (left < window.scrollX + 10) {
+          left = window.scrollX + 10;
+        }
+        
+        // Adjust if off screen bottom (approx height 288px max-h-72)
+        if (rect.bottom + 288 > window.innerHeight) {
+          top = rect.top + window.scrollY - 288 - 4;
+        }
+        
+        setCoords({ top, left });
+      };
+      
+      updateCoords();
+      window.addEventListener('resize', updateCoords);
+      window.addEventListener('scroll', updateCoords, true);
+      return () => {
+        window.removeEventListener('resize', updateCoords);
+        window.removeEventListener('scroll', updateCoords, true);
+      };
+    }
+  }, [align]);
+
   return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2.5 max-h-72 flex flex-col`}
-    >
+    <>
+      <div ref={containerRef} style={{ display: 'none' }} />
+      {coords && createPortal(
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ top: coords.top, left: coords.left }}
+          className="absolute w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-[9999] p-2.5 max-h-72 flex flex-col"
+        >
       {/* Header */}
       <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between shrink-0 select-none">
         <span>Assignees</span>
@@ -224,6 +266,9 @@ export const AssigneeSelectPopover: React.FC<AssigneeSelectPopoverProps> = ({
           <span>close</span>
         </span>
       </div>
-    </div>
+    </div>,
+    document.body
+  )}
+  </>
   );
 };
