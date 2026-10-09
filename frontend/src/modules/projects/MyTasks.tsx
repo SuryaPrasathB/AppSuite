@@ -4,12 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle, CheckCircle2
 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
 import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'kanban'>('list');
@@ -251,7 +252,13 @@ export const MyTasks: React.FC = () => {
                                   'bg-slate-100 text-slate-600 border border-slate-200';
 
                                 return (
-                                  <tr key={task.id} className={`${isTaskOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50/80'} transition-colors`}>
+                                  <tr key={task.id} 
+                                      onDoubleClick={() => {
+                                        if (task.project_id) {
+                                          navigate(`/projects/${task.project_id}`, { state: { openTaskId: task.id } });
+                                        }
+                                      }}
+                                      className={`${isTaskOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50/80'} transition-colors cursor-pointer`}>
                                     <td className="px-5 py-3.5 font-bold text-slate-800">
                                       {task.title}
                                       {isTaskOverdue && (
@@ -370,6 +377,11 @@ export const MyTasks: React.FC = () => {
                             key={task.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, task.id, task.project_id)}
+                            onDoubleClick={() => {
+                              if (task.project_id) {
+                                navigate(`/projects/${task.project_id}`, { state: { openTaskId: task.id } });
+                              }
+                            }}
                             className={`${isTaskOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
                           >
                             <div className="flex justify-between items-start gap-2 mb-2">

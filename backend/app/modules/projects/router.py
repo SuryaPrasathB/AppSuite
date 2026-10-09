@@ -371,7 +371,7 @@ def get_standup_dashboard(current_user: Dict[str, Any] = Depends(get_current_use
         all_employees = []
         
     all_tasks = DBStore.get_all_dynamic_tasks()
-    all_projects = DBStore.get_all_projects_unpaginated()
+    all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     
     project_map = {p["id"]: p["code"] + " - " + p["name"] for p in all_projects}
 
@@ -624,7 +624,7 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
             mmyy = datetime.now().strftime("%m%y")
             project.code = f"{next_num}/PRJ/{mmyy}"
         
-    existing = [p for p in DBStore.get_all_projects_unpaginated() if p["code"] == project.code]
+    existing = [p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["code"] == project.code]
     if existing:
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
     
@@ -643,7 +643,7 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
 
     parent_project = None
     if project.parent_id:
-        all_projects = DBStore.get_all_projects_unpaginated()
+        all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
         parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
         if not parent_project:
             raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
@@ -714,7 +714,7 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
 
 @router.put("/{project_id}")
 def update_project(project_id: int, project: ProjectUpdate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     existing_proj = next((p for p in projects if p["id"] == project_id), None)
     if not existing_proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -757,7 +757,7 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     
     if was_parent and not is_now_parent:
         # Check if it has sub-projects
-        all_projects = DBStore.get_all_projects_unpaginated()
+        all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
         sub_projects = [p for p in all_projects if p.get("parent_id") == project_id]
         if sub_projects:
             raise HTTPException(status_code=400, detail="Cannot convert a Major Project to Standalone because it has existing sub-projects.")
@@ -884,7 +884,7 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
 
 @router.post("/{project_id}/upload")
 async def upload_project_file(project_id: int, task_name: str = Form(...), files: List[UploadFile] = File(...), current_user: Dict[str, Any] = Depends(get_current_user)):
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -1000,7 +1000,7 @@ def delete_project(project_id: int, delete_subprojects: bool = False, current_us
     if current_user.get("role") != "Administrator":
         raise HTTPException(status_code=403, detail="Only Administrators can delete projects")
 
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -1180,7 +1180,7 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
             print("Error processing blocking field on create:", e)
     
     notify_user_ids = new_task.get("assignee_ids") or ([] if not new_task.get("assignee_id") else [new_task["assignee_id"]])
-    proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+    proj = next((p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["id"] == project_id), None)
     proj_name = proj["name"] if proj else f"Project {project_id}"
     for uid in notify_user_ids:
         if uid and uid != current_user["id"]:
@@ -1205,7 +1205,7 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
         raise HTTPException(status_code=404, detail="Task not found")
 
     is_admin_or_pm = current_user["role"] in ["Administrator", "Store Manager"]
-    projects = DBStore.get_all_projects_unpaginated()
+    projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
     if proj and current_user["name"] == proj.get("project_incharge"):
         is_admin_or_pm = True
@@ -1264,7 +1264,7 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     updated_assignee_ids = updated.get("assignee_ids") or []
     for uid in updated_assignee_ids:
         if uid and str(uid) not in existing_assignee_ids and uid != current_user["id"]:
-            proj = next((p for p in DBStore.get_all_projects_unpaginated() if p["id"] == project_id), None)
+            proj = next((p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["id"] == project_id), None)
             proj_name = proj["name"] if proj else f"Project {project_id}"
             title = existing_task.get("title", "Task")
             DBStore.add_notification(

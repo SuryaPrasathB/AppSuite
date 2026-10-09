@@ -45,7 +45,7 @@ def main():
     
     # Get existing project codes to prevent duplicates
     try:
-        existing_projects = DBStore.get_all_projects_unpaginated()
+        existing_projects = DBStore.get_all_projects_unpaginated(current_user={'role': 'Administrator'})
         existing_codes = {p["code"].upper() for p in existing_projects}
     except Exception as e:
         print(f"Error connecting to database to fetch existing projects: {e}")

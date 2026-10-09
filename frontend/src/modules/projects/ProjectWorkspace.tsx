@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, List,
   Clock, Package, FileText, StickyNote, Activity,
@@ -28,6 +28,8 @@ import { ServiceTickets } from './ServiceTickets';
 
 export const ProjectWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { showAlert, showConfirm } = useDialog();
   const { hasRole } = useAuth();
   const isAdmin = hasRole(['Administrator']);
@@ -98,6 +100,19 @@ export const ProjectWorkspace: React.FC = () => {
       loadData(parseInt(id));
     }
   }, [id]);
+
+  useEffect(() => {
+    if (dynamicTasks.length > 0 && location.state?.openTaskId) {
+      const task = dynamicTasks.find(t => t.id === location.state.openTaskId);
+      if (task) {
+        if (activeTab !== 'tasks' && activeTab !== 'kanban') {
+          setActiveTab('tasks');
+        }
+        handleOpenEditTask(task);
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    }
+  }, [dynamicTasks, location.state, location.pathname, navigate, activeTab]);
 
   const tabs = project?.is_parent ? [
     { id: 'sub_projects', name: `Sub-Projects (${subProjects.length})`, icon: Layers },
@@ -347,42 +362,42 @@ export const ProjectWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50 -m-6">
+    <div className="flex flex-col bg-slate-50 -m-6 min-h-[calc(100vh-104px)]">
       {/* Workspace Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <Link to="/projects" className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800">
-              <ChevronLeft className="h-5 w-5" />
+      <div className="bg-white border-b border-slate-200 `px-6` py-2 sticky -top-6 z-20 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <Link to="/projects" className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800">
+              <ChevronLeft className="h-4 w-4" />
             </Link>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shadow-inner">
-                <Briefcase className="h-5 w-5" />
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center shadow-inner shrink-0">
+                <Briefcase className="h-4 w-4" />
               </div>
-              <div>
+              <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-slate-800 leading-tight">{project.name}</h1>
+                  <h1 className="text-sm font-bold text-slate-800 leading-tight">{project.name}</h1>
                   {project.is_template && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
                       TEMPLATE
                     </span>
                   )}
                 </div>
-                {project.parent_id && project.parent_name && (
-                  <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-1">
-                    <CornerDownRight className="h-3.5 w-3.5" />
-                    <span>Sub-project of Major Project:</span>
-                    <Link to={`/projects/${project.parent_id}`} className="underline font-bold hover:text-blue-800 transition-colors">
-                      {project.parent_name}
-                    </Link>
-                  </div>
-                )}
-                <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
-                  <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600">{project.code}</span>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium">
+                  {project.parent_id && project.parent_name && (
+                    <>
+                      <Link to={`/projects/${project.parent_id}`} className="text-blue-600 hover:text-blue-800 transition-colors font-bold flex items-center gap-0.5">
+                        <CornerDownRight className="h-3 w-3" />
+                        {project.parent_name}
+                      </Link>
+                      <span>•</span>
+                    </>
+                  )}
+                  <span className="font-mono text-slate-600">{project.code}</span>
                   <span>•</span>
                   <span>{project.client_name || 'Internal'}</span>
                   <span>•</span>
-                  <span className={`px-2 py-0.5 rounded font-bold ${
+                  <span className={`px-1.5 py-px rounded font-bold ${
                     project.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
                     project.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
                     'bg-slate-100 text-slate-700'
@@ -391,11 +406,11 @@ export const ProjectWorkspace: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {!project.is_parent ? (
               <button 
                 onClick={() => handleOpenEditTask()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-md transition-colors shadow-sm"
               >
                 + Add Task
               </button>
@@ -403,28 +418,28 @@ export const ProjectWorkspace: React.FC = () => {
             {!project.is_template && isAdmin && (
               <button 
                 onClick={handleSaveAsTemplate}
-                className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs rounded-lg transition-colors"
+                className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs rounded-md transition-colors"
               >
-                Save as Template
+                Save Template
               </button>
             )}
             {project.is_template && isAdmin && (
               <button 
                 onClick={handleRemoveTemplate}
-                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs rounded-lg transition-colors"
+                className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs rounded-md transition-colors"
               >
                 Remove Template
               </button>
             )}
             <button 
               onClick={handleRelinkFolder}
-              className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-lg transition-colors"
+              className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-md transition-colors"
             >
               Relink Folder
             </button>
             <button 
               onClick={() => setIsEditModalOpen(true)}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-md transition-colors"
             >
               Edit Project
             </button>
@@ -440,13 +455,13 @@ export const ProjectWorkspace: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl font-bold text-sm transition-all border-b-2 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg font-bold text-xs transition-all border-b-2 ${
                   isActive 
                     ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50 shadow-sm' 
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5" />
                 {tab.name}
               </button>
             );
@@ -455,7 +470,7 @@ export const ProjectWorkspace: React.FC = () => {
       </div>
 
       {/* Workspace Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 relative">
+      <div className="p-6 pt-1 relative flex-1">
         {activeTab === 'sub_projects' && (
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between">

@@ -157,8 +157,10 @@ export const GlobalTimeline: React.FC = () => {
   const updateHoverDate = (e: React.MouseEvent) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scrollLeft = timelineRef.current.scrollLeft;
+    const scrollTop = timelineRef.current.scrollTop;
+    const x = e.clientX - rect.left + scrollLeft;
+    const y = e.clientY - rect.top + scrollTop;
     const timelineX = x - 250; // 250px is the left sidebar width
     
     if (timelineX < 0) {
@@ -455,7 +457,12 @@ export const GlobalTimeline: React.FC = () => {
             </div>
           ) : (
             <div 
-              className="overflow-x-auto overflow-y-auto custom-scrollbar relative flex-1 h-full select-none cursor-crosshair"
+              className="overflow-x-auto overflow-y-auto custom-scrollbar relative flex-1 h-full select-none cursor-crosshair grid"
+              ref={timelineRef}
+              style={{ 
+                gridTemplateColumns: `250px repeat(${timelineDays}, minmax(${zoomLevel === 'day' ? '30px' : zoomLevel === 'week' ? '15px' : '8px'}, 1fr))`,
+                gridTemplateRows: `auto repeat(${viewMode === 'project' ? filteredProjects.length : filteredEmployees.length}, auto)`
+              }}
               onMouseDown={(e) => {
                 setIsDraggingDate(true);
                 updateHoverDate(e);
@@ -474,15 +481,7 @@ export const GlobalTimeline: React.FC = () => {
                 setHoverDate(null);
               }}
             >
-              <div 
-                className="min-w-[900px] grid relative min-h-full"
-                ref={timelineRef}
-                style={{ 
-                  gridTemplateColumns: `250px repeat(${timelineDays}, minmax(${zoomLevel === 'day' ? '30px' : zoomLevel === 'week' ? '15px' : '8px'}, 1fr))`,
-                  gridTemplateRows: `auto repeat(${viewMode === 'project' ? filteredProjects.length : filteredEmployees.length}, auto)`
-                }}
-              >
-                {renderTimelineHeader()}
+              {renderTimelineHeader()}
 
                 {/* Today Line Indicator */}
                 {daysArray.findIndex(d => d.toDateString() === new Date().toDateString()) !== -1 && (
@@ -512,7 +511,6 @@ export const GlobalTimeline: React.FC = () => {
                 )}
 
                 {viewMode === 'project' ? renderProjectRows() : renderEmployeeRows()}
-              </div>
             </div>
           )}
         </div>
