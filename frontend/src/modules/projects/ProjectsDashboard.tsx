@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Sector } from 'recharts';
 import { TaskStatusModal } from './TaskStatusModal';
+import { isTaskOverdue } from './taskUtils';
 
 export const ProjectsDashboard: React.FC = () => {
   const [stats, setStats] = useState<any>(null);
@@ -110,7 +111,7 @@ export const ProjectsDashboard: React.FC = () => {
         
         <div className={`text-xs font-medium w-20 text-right ${
           task.due_date ? 
-            (new Date(task.due_date) < new Date() ? 'text-rose-500' : 'text-emerald-500') 
+            (isTaskOverdue(task) ? 'text-rose-500 font-bold' : 'text-emerald-500') 
             : 'text-slate-400'
         }`}>
           {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, { weekday: 'short' }) : 'No Date'}

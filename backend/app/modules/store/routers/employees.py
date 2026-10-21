@@ -5,9 +5,18 @@ from app.database import DBStore
 router = APIRouter()
 
 @router.get("/employees")
-def get_employees():
+def get_employees(include_workload: bool = False):
     try:
+        if include_workload:
+            return DBStore.get_employees_with_workload()
         return DBStore.get_employees()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/employees/workload")
+def get_employees_workload():
+    try:
+        return DBStore.get_employees_with_workload()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -43,7 +43,9 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ dynamicTasks }) => {
       const dueDate = new Date(task.due_date);
       dueDate.setHours(0, 0, 0, 0);
       
-      const finishDate = task.updated_at && isCompleted ? new Date(task.updated_at) : today;
+      const finishDate = isCompleted
+        ? (task.completed_at ? new Date(task.completed_at) : (task.updated_at ? new Date(task.updated_at) : today))
+        : today;
       finishDate.setHours(0, 0, 0, 0);
       
       // Calculate delay

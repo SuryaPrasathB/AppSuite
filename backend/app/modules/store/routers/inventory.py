@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.database import DBStore
 
 router = APIRouter(prefix="/inventory", tags=["Inventory Transaction System"])
@@ -224,3 +224,43 @@ def adjust(req: StockAdjustmentRequest):
     }
     created_tx = DBStore.add_transaction(tx)
     return {"message": "Stock adjustment recorded successfully", "transaction": created_tx, "new_quantity": new_qty}
+
+class StockDraftRequest(BaseModel):
+    draft_type: str  # 'STOCK_IN' or 'STOCK_OUT'
+    reference_no: Optional[str] = None
+    title: Optional[str] = None
+    user_name: Optional[str] = "Storekeeper"
+    user_role: Optional[str] = "Storekeeper"
+    total_items: Optional[int] = 0
+    total_quantity: Optional[float] = 0.0
+    data: Dict[str, Any]
+
+@router.get("/drafts")
+def get_drafts(draft_type: Optional[str] = None):
+    return DBStore.get_stock_drafts(draft_type)
+
+@router.get("/drafts/{draft_id}")
+def get_draft(draft_id: int):
+    draft = DBStore.get_stock_draft(draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return draft
+
+@router.post("/drafts")
+def create_draft(req: StockDraftRequest):
+    return DBStore.save_stock_draft(req.model_dump())
+
+@router.put("/drafts/{draft_id}")
+def update_draft(draft_id: int, req: StockDraftRequest):
+    draft = DBStore.get_stock_draft(draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return DBStore.save_stock_draft(req.model_dump(), draft_id=draft_id)
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(draft_id: int):
+    deleted = DBStore.delete_stock_draft(draft_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return {"message": "Draft deleted successfully"}
+

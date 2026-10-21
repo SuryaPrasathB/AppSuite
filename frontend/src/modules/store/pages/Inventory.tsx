@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../../api/apiClient';
 import { exportToExcel, printTable } from '../../../utils/exportUtils';
+import { StockDraft } from '../components/DraftsModal';
 import {
   History,
   ArrowDownLeft,
@@ -14,12 +15,21 @@ import {
   FileText,
   X,
   Printer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock,
+  Trash2,
+  ArrowRight,
+  Package,
+  AlertCircle
 } from 'lucide-react';
 
 export const Inventory: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   
+  const initialTab = searchParams.get('tab') === 'drafts' ? 'drafts' : 'transactions';
+  const [activeTab, setActiveTab] = useState<'transactions' | 'drafts'>(initialTab);
+
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +38,21 @@ export const Inventory: React.FC = () => {
   const [historySearch, setHistorySearch] = useState('');
   const [historyFilterAction, setHistoryFilterAction] = useState('');
 
+  // Drafts state
+  const [drafts, setDrafts] = useState<StockDraft[]>([]);
+  const [draftsTypeFilter, setDraftsTypeFilter] = useState<'ALL' | 'STOCK_IN' | 'STOCK_OUT'>('ALL');
+  const [draftsSearch, setDraftsSearch] = useState('');
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<number | null>(null);
+
   // Selected bulk transaction modal state
   const [selectedBulkTx, setSelectedBulkTx] = useState<any | null>(null);
 
   useEffect(() => {
     fetchTransactions();
+    fetchDrafts();
   }, []);
+
   const fetchTransactions = async () => {
     try {
       setLoading(true);
@@ -44,6 +63,50 @@ export const Inventory: React.FC = () => {
       setError("Failed to load inventory transactions history.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDrafts = async () => {
+    try {
+      setLoadingDrafts(true);
+      const data = await apiClient.inventory.getDrafts();
+      setDrafts(data || []);
+    } catch (err) {
+      console.error("Failed to load drafts:", err);
+    } finally {
+      setLoadingDrafts(false);
+    }
+  };
+
+  const handleTabChange = (tab: 'transactions' | 'drafts') => {
+    setActiveTab(tab);
+    if (tab === 'drafts') {
+      searchParams.set('tab', 'drafts');
+    } else {
+      searchParams.delete('tab');
+    }
+    setSearchParams(searchParams);
+  };
+
+  const handleDeleteDraft = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this draft? This cannot be undone.")) {
+      setDeletingDraftId(id);
+      try {
+        await apiClient.inventory.deleteDraft(id);
+        await fetchDrafts();
+      } catch (err: any) {
+        alert(err.message || "Failed to delete draft.");
+      } finally {
+        setDeletingDraftId(null);
+      }
+    }
+  };
+
+  const handleResumeDraft = (draft: StockDraft) => {
+    if (draft.draft_type === 'STOCK_IN') {
+      navigate(`/stock-in?draftId=${draft.id}`);
+    } else {
+      navigate(`/issue-material?draftId=${draft.id}`);
     }
   };
 
@@ -66,6 +129,20 @@ export const Inventory: React.FC = () => {
     const matchesAction = historyFilterAction === '' || t.action === historyFilterAction;
     return matchesSearch && matchesAction;
   });
+
+  const filteredDrafts = drafts.filter(draft => {
+    if (draftsTypeFilter !== 'ALL' && draft.draft_type !== draftsTypeFilter) return false;
+    if (!draftsSearch.trim()) return true;
+    const q = draftsSearch.toLowerCase();
+    const ref = (draft.reference_no || '').toLowerCase();
+    const title = (draft.title || '').toLowerCase();
+    const user = (draft.user_name || '').toLowerCase();
+    const dataStr = JSON.stringify(draft.data || {}).toLowerCase();
+    return ref.includes(q) || title.includes(q) || user.includes(q) || dataStr.includes(q);
+  });
+
+  const stockInDraftsCount = drafts.filter(d => d.draft_type === 'STOCK_IN').length;
+  const stockOutDraftsCount = drafts.filter(d => d.draft_type === 'STOCK_OUT').length;
 
   if (loading) {
     return (
@@ -107,9 +184,66 @@ export const Inventory: React.FC = () => {
         </div>
       </div>
 
-      <div className="space-y-4">
-        {/* Filter Bar */}
-        <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between">
+      {/* Navigation Tabs (Transactions vs Drafts) */}
+      <div className="flex border-b border-slate-200 gap-8 text-sm font-bold">
+        <button
+          onClick={() => handleTabChange('transactions')}
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === 'transactions'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <History className="h-4.5 w-4.5" />
+          <span>Completed Transactions</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 font-extrabold">
+            {transactions.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('drafts')}
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === 'drafts'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Clock className="h-4.5 w-4.5" />
+          <span>Saved Drafts</span>
+          {drafts.length > 0 ? (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500 text-white font-extrabold animate-pulse">
+              {drafts.length}
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500 font-extrabold">
+              0
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Tab Content 1: Completed Transactions */}
+      {activeTab === 'transactions' && (
+        <div className="space-y-4">
+          {/* Draft Notification Banner */}
+          {drafts.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 px-4 flex items-center justify-between text-xs shadow-xs">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                <span>You have <strong>{drafts.length}</strong> uncommitted stock movement draft(s) waiting for review.</span>
+              </div>
+              <button
+                onClick={() => handleTabChange('drafts')}
+                className="px-3 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-md font-bold text-amber-800 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                View Saved Drafts <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Filter Bar */}
+          <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:max-w-xs">
             <input
               type="text"
@@ -243,6 +377,190 @@ export const Inventory: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Tab Content 2: Saved Drafts View */}
+      {activeTab === 'drafts' && (
+        <div className="space-y-4">
+          {/* Filter Bar for Drafts */}
+          <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setDraftsTypeFilter('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  draftsTypeFilter === 'ALL'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                All Drafts ({drafts.length})
+              </button>
+              <button
+                onClick={() => setDraftsTypeFilter('STOCK_IN')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  draftsTypeFilter === 'STOCK_IN'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5" />
+                Stock In ({stockInDraftsCount})
+              </button>
+              <button
+                onClick={() => setDraftsTypeFilter('STOCK_OUT')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  draftsTypeFilter === 'STOCK_OUT'
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+                }`}
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                Stock Out ({stockOutDraftsCount})
+              </button>
+            </div>
+
+            <div className="relative w-full sm:max-w-xs">
+              <input
+                type="text"
+                placeholder="Search drafts by ref, name, details..."
+                value={draftsSearch}
+                onChange={(e) => setDraftsSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
+              />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            </div>
+          </div>
+
+          {/* Drafts List Table */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+            {loadingDrafts ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+            ) : filteredDrafts.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs text-slate-600">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                      <th className="px-6 py-4">Draft Reference</th>
+                      <th className="px-6 py-4">Type</th>
+                      <th className="px-6 py-4">Recipient / Source Details</th>
+                      <th className="px-6 py-4">Items & Qty</th>
+                      <th className="px-6 py-4">Saved By</th>
+                      <th className="px-6 py-4">Last Modified</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {filteredDrafts.map((draft) => {
+                      const isStockIn = draft.draft_type === 'STOCK_IN';
+                      const itemsList = draft.data?.items || [];
+                      const sourceOrTarget = isStockIn 
+                        ? (draft.data?.supplierName || draft.title || 'Supplier Intake')
+                        : (draft.data?.recipient || (draft.data?.employee ? `${draft.data.employee}${draft.data.project ? ` (${draft.data.project})` : ''}` : draft.title || 'Material Dispatch'));
+
+                      return (
+                        <tr key={draft.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-6 py-4 text-slate-800 font-mono font-bold whitespace-nowrap">
+                            {draft.reference_no || `DRAFT-${draft.id}`}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              isStockIn 
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                : 'bg-orange-100 text-orange-800 border border-orange-200'
+                            }`}>
+                              {isStockIn ? <ArrowDownLeft className="h-3 w-3" /> : <ArrowUpRight className="h-3 w-3" />}
+                              {isStockIn ? 'Stock In Draft' : 'Stock Out Draft'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-slate-800">{sourceOrTarget}</div>
+                            {draft.data?.notes && (
+                              <div className="text-[11px] text-slate-400 italic truncate max-w-xs mt-0.5">
+                                "{draft.data.notes}"
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="font-bold text-slate-900 text-sm">
+                              {draft.total_quantity} units
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {draft.total_items} items in list
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <UserIcon className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="font-semibold text-slate-700">{draft.user_name || 'Storekeeper'}</span>
+                              <span className="text-[9px] text-slate-400 uppercase font-semibold">({draft.user_role || 'Staff'})</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-500 font-mono whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                              {new Date(draft.updated_at).toLocaleString()}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleResumeDraft(draft)}
+                                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                title="Resume and complete this draft"
+                              >
+                                <span>Resume</span>
+                                <ArrowRight className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDraft(draft.id)}
+                                disabled={deletingDraftId === draft.id}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete draft"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-16 px-4">
+                <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400 mb-4">
+                  <Package className="h-7 w-7" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-700">No Saved Drafts Available</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
+                  {draftsSearch
+                    ? 'No drafts matched your search query.'
+                    : 'When you save an in-progress Stock In or Stock Out as draft, it will be listed here so you can resume it whenever you are ready.'}
+                </p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={() => navigate('/stock-in')}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowDownLeft className="h-3.5 w-3.5" />
+                    New Stock In
+                  </button>
+                  <button
+                    onClick={() => navigate('/issue-material')}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                    New Stock Out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Dispatch Bill Details Modal */}
       {selectedBulkTx && (

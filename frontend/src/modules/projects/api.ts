@@ -318,8 +318,9 @@ export async function deleteTaskComment(projectId: number, taskId: number, comme
   return res.json();
 }
 
-export async function fetchEmployees() {
-  const res = await fetch(`/api/employees`, { headers: getAuthHeaders() });
+export async function fetchEmployees(includeWorkload = false) {
+  const url = includeWorkload ? `/api/employees?include_workload=true` : `/api/employees`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch employees');
   return res.json();
 }
@@ -337,6 +338,27 @@ export async function createProjectNote(projectId: number, data: any) {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to create note');
+  return res.json();
+}
+
+
+
+
+
+
+
+
+
+
+export async function fetchProjectDescriptionHistory(projectId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/description-history`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch project description history');
+  return res.json();
+}
+
+export async function fetchTaskDescriptionHistory(projectId: number, taskId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/tasks/${taskId}/description-history`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch task description history');
   return res.json();
 }
 
@@ -395,7 +417,7 @@ export async function relinkProjectFolder(projectId: number, manualPath?: string
   }
   return res.json();
 }
-export async function reorderDynamicTasks(projectId: number, tasks: { id: number, sort_order: number }[]) {
+export async function reorderDynamicTasks(projectId: number, tasks: { id: number, sort_order: number, parent_id?: number | null, status?: string }[]) {
   const response = await fetch(`${API_BASE}/${projectId}/dynamic-tasks/reorder`, {
     method: 'PUT',
     headers: getAuthHeaders(),

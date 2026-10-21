@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { fetchAllDynamicTasks, updateDynamicTask } from './api';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle, CheckCircle2
+  CheckSquare, Calendar, User, ChevronDown, ChevronRight, Folder, AlertCircle, CheckCircle2, MessageSquare
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
 import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
+import { TaskCommentsModal } from './TaskCommentsModal';
+import { isTaskOverdue } from './taskUtils';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
@@ -14,6 +16,7 @@ export const MyTasks: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'kanban'>('list');
+  const [activeCommentTask, setActiveCommentTask] = useState<any | null>(null);
   const { showAlert } = useDialog();
 
   // Filter state
@@ -67,8 +70,10 @@ export const MyTasks: React.FC = () => {
 
   const handleUpdateStatus = async (projectId: number, taskId: number, newStatus: string) => {
     try {
+      const taskBefore = tasks.find(t => t.id === taskId);
+      const newCompletedAt = newStatus === 'COMPLETED' ? (taskBefore?.completed_at || new Date().toISOString()) : null;
       await updateDynamicTask(projectId, taskId, { status: newStatus });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus, completed_at: newCompletedAt } : t));
     } catch (err: any) {
       showAlert(err.message || "Failed to update status");
     }
@@ -230,20 +235,17 @@ export const MyTasks: React.FC = () => {
                           <table className="w-full table-fixed text-left border-collapse text-xs text-slate-650">
                             <thead className="bg-slate-50/50 border-b border-slate-100">
                               <tr className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                                <th className="px-5 py-3 w-1/3">Task</th>
-                                <th className="px-5 py-3 w-1/6">Status</th>
-                                <th className="px-5 py-3 w-1/6">Priority</th>
-                                <th className="px-5 py-3 w-1/6">Due Date</th>
-                                <th className="px-5 py-3 w-1/6">Assignee</th>
+                                <th className="px-5 py-3 w-[30%]">Task</th>
+                                <th className="px-5 py-3 w-[15%]">Status</th>
+                                <th className="px-5 py-3 w-[15%]">Priority</th>
+                                <th className="px-5 py-3 w-[15%]">Due Date</th>
+                                <th className="px-5 py-3 w-[15%]">Assignee</th>
+                                <th className="px-5 py-3 w-[10%] text-right">Comments</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                               {projectTasks.map((task: any) => {
-                                let isTaskOverdue = false;
-                                if (task.due_date) {
-                                  const dueDate = parseISO(task.due_date.split('T')[0]);
-                                  isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
-                                }
+                                const isLateOrOverdue = isTaskOverdue(task);
 
                                 const priorityColor = 
                                   task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
@@ -258,13 +260,13 @@ export const MyTasks: React.FC = () => {
                                           navigate(`/projects/${task.project_id}`, { state: { openTaskId: task.id } });
                                         }
                                       }}
-                                      className={`${isTaskOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50/80'} transition-colors cursor-pointer`}>
+                                      className={`${isLateOrOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-slate-50/80'} transition-colors cursor-pointer`}>
                                     <td className="px-5 py-3.5 font-bold text-slate-800">
                                       {task.title}
-                                      {isTaskOverdue && (
-                                        <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                      {isLateOrOverdue && (
+                                        <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded border border-red-200">
                                           <AlertCircle className="h-3 w-3" />
-                                          OVERDUE
+                                          {task.status === 'COMPLETED' ? 'COMPLETED LATE' : 'OVERDUE'}
                                         </span>
                                       )}
                                     </td>
@@ -275,6 +277,7 @@ export const MyTasks: React.FC = () => {
                                         onChange={(e) => handleUpdateStatus(task.project_id, task.id, e.target.value)}
                                         className={`appearance-none inline-flex items-center px-3 py-1.5 pr-8 rounded-full text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors ${
                                           task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          task.status === 'BLOCKED' ? 'bg-red-50 text-red-700 border-red-200' :
                                           task.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
                                           task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                           'bg-slate-50 text-slate-700 border-slate-200'
@@ -284,6 +287,7 @@ export const MyTasks: React.FC = () => {
                                         <option value="TODO">TO DO</option>
                                         <option value="IN_PROGRESS">IN PROGRESS</option>
                                         <option value="REVIEW">REVIEW</option>
+                                        <option value="BLOCKED">BLOCKED</option>
                                         <option value="COMPLETED">COMPLETED</option>
                                       </select>
                                     </td>
@@ -292,7 +296,7 @@ export const MyTasks: React.FC = () => {
                                         {task.priority}
                                       </span>
                                     </td>
-                                    <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">
+                                    <td className={`px-5 py-3.5 whitespace-nowrap ${isLateOrOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
                                       {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '—'}
                                     </td>
                                     <td className="px-5 py-3.5 whitespace-nowrap">
@@ -302,6 +306,23 @@ export const MyTasks: React.FC = () => {
                                           {task.assignee_name}
                                         </span>
                                       ) : '—'}
+                                    </td>
+                                    <td className="px-5 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveCommentTask(task)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-100 cursor-pointer group/cmt"
+                                        title="View & add comments"
+                                      >
+                                        <MessageSquare className="h-3.5 w-3.5 text-slate-400 group-hover/cmt:text-indigo-600 transition-colors" />
+                                        <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full ${
+                                          (task.comment_count || 0) > 0 
+                                            ? 'bg-indigo-100 text-indigo-700 font-extrabold' 
+                                            : 'text-slate-400 group-hover/cmt:text-indigo-600'
+                                        }`}>
+                                          {task.comment_count || 0}
+                                        </span>
+                                      </button>
                                     </td>
                                   </tr>
                                 );
@@ -330,11 +351,12 @@ export const MyTasks: React.FC = () => {
             </div>
           )}
 
-          <div className={`grid grid-cols-1 ${showCompleted ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6 h-[calc(100vh-280px)] min-h-[500px]`}>
+          <div className={`grid grid-cols-1 ${showCompleted ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-6 h-[calc(100vh-280px)] min-h-[500px]`}>
             {[
               { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-50' },
               { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50' },
               { key: 'REVIEW', title: 'Review', color: 'border-t-amber-500 bg-amber-50/50' },
+              { key: 'BLOCKED', title: 'Blocked', color: 'border-t-red-500 bg-red-50/50' },
               ...(showCompleted ? [{ key: 'COMPLETED', title: 'Completed', color: 'border-t-emerald-500 bg-emerald-50/50' }] : []),
             ].map(column => {
               const columnTasks = filteredTasks.filter(t => t.status === column.key);
@@ -373,11 +395,7 @@ export const MyTasks: React.FC = () => {
                       </div>
                     ) : (
                       columnTasks.map(task => {
-                        let isTaskOverdue = false;
-                        if (task.due_date) {
-                          const dueDate = parseISO(task.due_date.split('T')[0]);
-                          isTaskOverdue = isBefore(dueDate, todayDate) && task.status !== 'COMPLETED';
-                        }
+                        const isLateOrOverdue = isTaskOverdue(task);
 
                         const priorityColor = 
                           task.priority === 'CRITICAL' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
@@ -395,17 +413,33 @@ export const MyTasks: React.FC = () => {
                                 navigate(`/projects/${task.project_id}`, { state: { openTaskId: task.id } });
                               }
                             }}
-                            className={`${isTaskOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
+                            className={`${isLateOrOverdue ? 'bg-red-50/50 border-red-300' : 'bg-white border-slate-200'} border p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative`}
                           >
                             <div className="flex justify-between items-start gap-2 mb-2">
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${priorityColor}`}>
                                 {task.priority}
                               </span>
-                              {isTaskOverdue && (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                                  <AlertCircle className="h-3 w-3" /> OVERDUE
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveCommentTask(task);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                                  title="View & add comments"
+                                >
+                                  <MessageSquare className="h-3 w-3" />
+                                  <span className={`text-[10px] font-bold ${(task.comment_count || 0) > 0 ? 'text-indigo-600 font-extrabold' : ''}`}>
+                                    {task.comment_count || 0}
+                                  </span>
+                                </button>
+                                {isLateOrOverdue && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded border border-red-200">
+                                    <AlertCircle className="h-3 w-3" /> {task.status === 'COMPLETED' ? 'LATE' : 'OVERDUE'}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             <h4 className="font-bold text-slate-800 text-sm mb-1.5 leading-snug">{task.title}</h4>
@@ -420,8 +454,8 @@ export const MyTasks: React.FC = () => {
                             </div>
                             
                             <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-[10px] text-slate-500">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3 text-slate-400" />
+                              <span className={`flex items-center gap-1 ${isLateOrOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
+                                <Calendar className={`h-3 w-3 ${isLateOrOverdue ? 'text-red-500' : 'text-slate-400'}`} />
                                 {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
                               </span>
                               <div className="flex items-center gap-2">
@@ -437,6 +471,7 @@ export const MyTasks: React.FC = () => {
                                   onChange={(e) => handleUpdateStatus(task.project_id, task.id, e.target.value)}
                                   className={`text-[9px] font-bold rounded px-1.5 py-0.5 border cursor-pointer focus:outline-none ${
                                     task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    task.status === 'BLOCKED' ? 'bg-red-50 text-red-700 border-red-200' :
                                     task.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
                                     task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                     'bg-slate-50 text-slate-600 border-slate-200'
@@ -445,6 +480,7 @@ export const MyTasks: React.FC = () => {
                                   <option value="TODO">TO DO</option>
                                   <option value="IN_PROGRESS">IN PROGRESS</option>
                                   <option value="REVIEW">REVIEW</option>
+                                  <option value="BLOCKED">BLOCKED</option>
                                   <option value="COMPLETED">COMPLETED</option>
                                 </select>
                               </div>
@@ -460,6 +496,15 @@ export const MyTasks: React.FC = () => {
           </div>
         </div>
       )}
+
+      <TaskCommentsModal
+        task={activeCommentTask}
+        isOpen={!!activeCommentTask}
+        onClose={() => setActiveCommentTask(null)}
+        onCommentsUpdated={() => {
+          loadTasks();
+        }}
+      />
     </div>
   );
 };

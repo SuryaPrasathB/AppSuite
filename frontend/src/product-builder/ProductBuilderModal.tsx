@@ -22,6 +22,10 @@ import {
   PRODUCT_CATEGORY_SCHEMAS,
   getStoreFields,
   STORE_FIELDS,
+  DEFAULT_ZONES,
+  DEFAULT_RACKS,
+  DEFAULT_SHELVES,
+  DEFAULT_BINS,
 } from './schemas';
 import { Features } from '../config/features';
 import {
@@ -172,6 +176,8 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
     return Features.MANDATORY_STORE_INFORMATION;
   });
 
+  const [storeLocations, setStoreLocations] = useState<any[]>([]);
+
   useEffect(() => {
     let mounted = true;
     apiClient.features.list().then((flags) => {
@@ -186,6 +192,13 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
         setIsStoreMandatory(flag.enabled);
       }
     }).catch(() => {});
+
+    apiClient.layout.locations().then((locs) => {
+      if (mounted && Array.isArray(locs)) {
+        setStoreLocations(locs);
+      }
+    }).catch(() => {});
+
     return () => { mounted = false; };
   }, [open]);
 
@@ -257,8 +270,54 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   }, [schema.fields, customOptions]);
 
   const storeFieldsWithOptions = useMemo(() => {
-    return storeFields.map(getFieldWithOptions);
-  }, [storeFields, customOptions]);
+    const dbZones = storeLocations.map((l) => l.zone).filter(Boolean);
+    const dbRacks = storeLocations.map((l) => l.rack).filter(Boolean);
+    const dbShelves = storeLocations.map((l) => l.shelf).filter(Boolean);
+    const dbBins = storeLocations.map((l) => l.bin).filter(Boolean);
+
+    const allZones = Array.from(new Set([...DEFAULT_ZONES, ...dbZones]));
+
+    const racksInZone = values.zone
+      ? storeLocations.filter((l) => l.zone === values.zone).map((l) => l.rack)
+      : [];
+    const allRacks = Array.from(new Set([
+      ...racksInZone,
+      ...DEFAULT_RACKS,
+      ...dbRacks,
+    ]));
+
+    const shelvesInRack = values.rack
+      ? storeLocations.filter((l) => l.rack === values.rack).map((l) => l.shelf)
+      : [];
+    const allShelves = Array.from(new Set([
+      ...shelvesInRack,
+      ...DEFAULT_SHELVES,
+      ...dbShelves,
+    ]));
+
+    const binsInLoc = storeLocations
+      .filter((l) => (!values.rack || l.rack === values.rack) && (!values.shelf || l.shelf === values.shelf))
+      .map((l) => l.bin);
+    const allBins = Array.from(new Set([
+      ...binsInLoc,
+      ...DEFAULT_BINS,
+      ...dbBins,
+    ]));
+
+    return storeFields.map((field) => {
+      const fieldCopy = { ...field };
+      if (field.key === 'zone') {
+        fieldCopy.options = allZones.map((z) => ({ label: z, value: z }));
+      } else if (field.key === 'rack') {
+        fieldCopy.options = allRacks.map((r) => ({ label: r, value: r }));
+      } else if (field.key === 'shelf') {
+        fieldCopy.options = allShelves.map((s) => ({ label: s, value: s }));
+      } else if (field.key === 'bin') {
+        fieldCopy.options = allBins.map((b) => ({ label: b, value: b }));
+      }
+      return getFieldWithOptions(fieldCopy);
+    });
+  }, [storeFields, storeLocations, values.zone, values.rack, values.shelf, customOptions]);
 
   const additionalFieldsWithOptions = useMemo(() => {
     return additionalFields.map(getFieldWithOptions);
@@ -345,7 +404,15 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   };
 
   const handleValueChange = (key: string, value: string) => {
-    setValues((current) => ({ ...current, [key]: value }));
+    let nextValues: ProductBuilderValues = { ...values, [key]: value };
+    if (key === 'rack' && value && !values.zone) {
+      const locMatch = storeLocations.find((l) => l.rack?.toLowerCase() === value.toLowerCase());
+      const zoneToSet = locMatch?.zone || getZoneAndAisleForRack(value).zoneName;
+      if (zoneToSet) {
+        nextValues.zone = zoneToSet;
+      }
+    }
+    setValues(nextValues);
     setAutofilledFields((current) => {
       if (!current.has(key)) return current;
       const next = new Set(current);
@@ -517,7 +584,13 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
     });
   };
 
-  const location = [values.warehouse, values.zone, values.rack && `Rack ${values.rack}`, values.shelf && `Shelf ${values.shelf}`, values.bin && `Bin ${values.bin}`]
+  const location = [
+    values.warehouse,
+    values.zone,
+    values.rack && (values.rack.startsWith('Rack') ? values.rack : `Rack ${values.rack}`),
+    values.shelf && (values.shelf.startsWith('Shelf') ? values.shelf : `Shelf ${values.shelf}`),
+    values.bin && (values.bin.startsWith('Bin') ? values.bin : `Bin ${values.bin}`),
+  ]
     .filter(Boolean)
     .join(' · ');
 

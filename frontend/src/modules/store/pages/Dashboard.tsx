@@ -10,7 +10,8 @@ import {
   ArrowLeftRight,
   MapPin,
   Plus,
-  Boxes
+  Boxes,
+  Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -81,6 +82,7 @@ export const Dashboard: React.FC = () => {
   // Lists for dropdowns and KPI computations
   const [productsList, setProductsList] = useState<ProductItem[]>([]);
   const [locationsList, setLocationsList] = useState<LocationItem[]>([]);
+  const [draftsCount, setDraftsCount] = useState(0);
 
   useEffect(() => {
     fetchStats();
@@ -102,11 +104,14 @@ export const Dashboard: React.FC = () => {
 
   const fetchDataDropdowns = async () => {
     try {
-      const prods = await apiClient.products.list();
+      const [prods, locs, drafts] = await Promise.all([
+        apiClient.products.list().catch(() => []),
+        apiClient.reports.locations().catch(() => []),
+        apiClient.inventory.getDrafts().catch(() => [])
+      ]);
       setProductsList(prods);
-      
-      const locs = await apiClient.reports.locations();
       setLocationsList(locs);
+      setDraftsCount(drafts?.length || 0);
     } catch (err) {}
   };
 
@@ -334,8 +339,18 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Quick Actions (Left 2/3) */}
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
-          <div>
+          <div className="flex justify-between items-center">
             <h3 className="font-bold text-slate-850 text-sm">Quick Actions</h3>
+            {draftsCount > 0 && (
+              <button
+                onClick={() => navigate('/inventory?tab=drafts')}
+                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="View uncommitted drafts"
+              >
+                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                <span>{draftsCount} Saved Draft{draftsCount > 1 ? 's' : ''}</span>
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">

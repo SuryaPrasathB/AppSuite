@@ -3,8 +3,9 @@ import re
 import shutil
 import json
 import time
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
-from fastapi.responses import FileResponse
+import asyncio
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
@@ -14,6 +15,7 @@ from app.dependencies import get_current_user, get_current_user_optional
 from app.features import Features
 from app.modules.projects.ai_planning import AIPlanningService
 from app.modules.projects.scheduling import SchedulingEngine
+from app.modules.projects.events import project_event_manager
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -709,6 +711,8 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
             DBStore.add_dynamic_task(saved_project["id"], new_task)
 
     DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
+    if project.description and project.description.strip():
+        DBStore.record_description_change("project", saved_project["id"], None, project.description.strip(), current_user["id"])
 
     return saved_project
 
@@ -825,9 +829,33 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
 
     updated = DBStore.update_project(project_id, project_dump)
 
-    # Log activity
-    if project.status and project.status != existing_proj["status"]:
+    # Log activities
+    if project.description is not None:
+        old_desc = (existing_proj.get("description") or "").strip()
+        new_desc = (project.description or "").strip()
+        if old_desc != new_desc:
+            DBStore.record_description_change("project", project_id, existing_proj.get("description"), project.description, current_user["id"])
+            DBStore.add_project_activity(project_id, "PROJECT_DESCRIPTION_UPDATED", "Updated project description", current_user["id"])
+
+    if project.status and project.status != existing_proj.get("status"):
         DBStore.add_project_activity(project_id, "STATUS_CHANGED", f"Project status changed to {project.status}", current_user["id"])
+
+    proj_date_changes = []
+    if project.start_date is not None and project.start_date != (existing_proj.get("start_date") or None):
+        proj_date_changes.append(f"Start date: {project.start_date or 'None'}")
+    if project.date_of_delivery is not None and project.date_of_delivery != (existing_proj.get("date_of_delivery") or None):
+        proj_date_changes.append(f"Delivery date: {project.date_of_delivery or 'None'}")
+    if proj_date_changes:
+        DBStore.add_project_activity(project_id, "PROJECT_DATES_UPDATED", f"Updated project timeline ({', '.join(proj_date_changes)})", current_user["id"])
+
+    if project.project_incharge and project.project_incharge != existing_proj.get("project_incharge"):
+        DBStore.add_project_activity(project_id, "PROJECT_MANAGER_UPDATED", f"Project in-charge changed to {project.project_incharge}", current_user["id"])
+
+    if project.name and project.name != existing_proj.get("name"):
+        DBStore.add_project_activity(project_id, "PROJECT_RENAMED", f"Project renamed to '{project.name}'", current_user["id"])
+
+    if project.milestone is not None and project.milestone != existing_proj.get("milestone"):
+        DBStore.add_project_activity(project_id, "PROJECT_MILESTONE_UPDATED", f"Project milestone updated to '{project.milestone}'", current_user["id"])
 
     # Ensure necessary folders exist if it's now a standalone/sub-project
     # e.g., if it was a Major Project and changed to Standalone, or if has_software was checked.
@@ -880,6 +908,7 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
                     except Exception as e:
                         print(f"Failed to delete folder {sf_path}: {e}")
 
+    project_event_manager.broadcast(project_id, "PROJECT_UPDATED", {"user_id": current_user["id"]})
     return updated
 
 @router.post("/{project_id}/upload")
@@ -934,6 +963,7 @@ async def upload_project_file(project_id: int, task_name: str = Form(...), files
     # Update task status
     DBStore.update_project_task(project_id, task_name, "COMPLETED")
     DBStore.add_project_activity(project_id, "FILE_UPLOADED", f"Uploaded files for task: {task_name}", current_user["id"])
+    project_event_manager.broadcast(project_id, "FILES_UPDATED", {"task_name": task_name, "user_id": current_user["id"]})
     
     return {"uploaded_files": saved_files}
 
@@ -993,6 +1023,7 @@ def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, A
         raise HTTPException(status_code=500, detail="Failed to delete file record from database")
 
     DBStore.add_project_activity(project_id, "FILE_DELETED", f"Deleted file: {file_record['file_name']}", current_user["id"])
+    project_event_manager.broadcast(project_id, "FILES_UPDATED", {"file_id": file_id, "user_id": current_user["id"]})
     return {"message": "File deleted successfully"}
 
 @router.delete("/{project_id}")
@@ -1043,10 +1074,12 @@ class TaskCreate(BaseModel):
     assignee_ids: Optional[List[int]] = None
     start_date: Optional[str] = None
     due_date: Optional[str] = None
+    completed_at: Optional[str] = None
     dependencies: Optional[str] = None
     blocking: Optional[str] = None
     estimated_hours: Optional[float] = 0.00
     actual_hours: Optional[float] = 0.00
+    sort_order: Optional[int] = None
 
 class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
@@ -1058,14 +1091,56 @@ class TaskUpdate(BaseModel):
     assignee_ids: Optional[List[int]] = None
     start_date: Optional[str] = None
     due_date: Optional[str] = None
+    completed_at: Optional[str] = None
     dependencies: Optional[str] = None
     blocking: Optional[str] = None
     estimated_hours: Optional[float] = None
     actual_hours: Optional[float] = None
+    sort_order: Optional[int] = None
 
 @router.get("/{project_id}/dynamic-tasks")
 def list_dynamic_tasks(project_id: int):
     return DBStore.get_dynamic_tasks(project_id)
+
+@router.get("/{project_id}/events")
+async def stream_project_events(
+    project_id: int,
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    async def event_generator():
+        queue = project_event_manager.subscribe(project_id)
+        init_payload = json.dumps({
+            "type": "CONNECTED",
+            "project_id": project_id,
+            "user_id": current_user.get("id"),
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        yield f"data: {init_payload}\n\n"
+
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            project_event_manager.unsubscribe(project_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 def validate_task_dates(start_date: str, due_date: str):
     if start_date and due_date:
@@ -1130,6 +1205,8 @@ def check_circular_dependencies(project_id: int, task_id: Optional[int], new_dep
 class TaskReorder(BaseModel):
     id: int
     sort_order: int
+    parent_id: Optional[int] = None
+    status: Optional[str] = None
 
 @router.put("/{project_id}/dynamic-tasks/reorder")
 def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -1138,7 +1215,24 @@ def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_use
     cursor = conn.cursor()
     try:
         for task in tasks:
-            cursor.execute("UPDATE dynamic_tasks SET sort_order = %s WHERE id = %s AND project_id = %s", (task.sort_order, task.id, project_id))
+            if task.parent_id == task.id:
+                continue
+            if task.status:
+                if task.status == "COMPLETED":
+                    cursor.execute(
+                        "UPDATE dynamic_tasks SET sort_order = %s, parent_id = %s, status = %s, completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP) WHERE id = %s AND project_id = %s",
+                        (task.sort_order, task.parent_id, task.status, task.id, project_id)
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE dynamic_tasks SET sort_order = %s, parent_id = %s, status = %s, completed_at = NULL WHERE id = %s AND project_id = %s",
+                        (task.sort_order, task.parent_id, task.status, task.id, project_id)
+                    )
+            else:
+                cursor.execute(
+                    "UPDATE dynamic_tasks SET sort_order = %s, parent_id = %s WHERE id = %s AND project_id = %s",
+                    (task.sort_order, task.parent_id, task.id, project_id)
+                )
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -1146,6 +1240,7 @@ def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_use
     finally:
         cursor.close()
         conn.close()
+    project_event_manager.broadcast(project_id, "TASKS_REORDERED", {"user_id": current_user["id"]})
     return {"status": "success"}
 
 @router.post("/{project_id}/dynamic-tasks")
@@ -1154,6 +1249,8 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     check_circular_dependencies(project_id, None, task.dependencies)
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
+    if task.description and task.description.strip():
+        DBStore.record_description_change("task", new_task["id"], None, task.description.strip(), current_user["id"])
     
     if task.blocking is not None:
         try:
@@ -1191,6 +1288,7 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
                 link=f"/projects/{project_id}"
             )
         
+    project_event_manager.broadcast(project_id, "TASK_CREATED", {"task_id": new_task["id"], "title": task.title, "user_id": current_user["id"]})
     return new_task
 
 @router.put("/{project_id}/dynamic-tasks/{task_id}")
@@ -1219,7 +1317,7 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
             raise HTTPException(status_code=403, detail="Not authorized to edit this task")
 
         task_dump = task.model_dump(exclude_unset=True)
-        allowed_keys = ["status", "actual_hours"]
+        allowed_keys = ["status", "actual_hours", "completed_at"]
         for key in list(task_dump.keys()):
             if key not in allowed_keys:
                 del task_dump[key]
@@ -1230,8 +1328,44 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     if not updated:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    if task.description is not None:
+        old_desc = (existing_task.get("description") or "").strip()
+        new_desc = (task.description or "").strip()
+        if old_desc != new_desc:
+            DBStore.record_description_change("task", task_id, existing_task.get("description"), task.description, current_user["id"])
+            DBStore.add_project_activity(project_id, "TASK_DESCRIPTION_UPDATED", f"Updated description for task '{existing_task.get('title')}'", current_user["id"])
+
     if task.status and task.status != existing_task.get("status"):
-        DBStore.add_project_activity(project_id, "TASK_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
+        DBStore.add_project_activity(project_id, "TASK_STATUS_UPDATED", f"Updated task status for '{existing_task['title']}' to {task.status}", current_user["id"])
+
+    if task.completed_at is not None and task.completed_at != existing_task.get("completed_at"):
+        DBStore.add_project_activity(project_id, "TASK_COMPLETED_DATE_UPDATED", f"Updated completion date for task '{existing_task.get('title')}'", current_user["id"])
+
+    date_changes = []
+    if task.start_date is not None and task.start_date != (existing_task.get("start_date") or None):
+        date_changes.append(f"Start date to {task.start_date or 'None'}")
+    if task.due_date is not None and task.due_date != (existing_task.get("due_date") or None):
+        date_changes.append(f"Due date to {task.due_date or 'None'}")
+    if date_changes:
+        DBStore.add_project_activity(project_id, "TASK_DATES_UPDATED", f"Updated dates for '{existing_task.get('title')}': {', '.join(date_changes)}", current_user["id"])
+
+    if task.title and task.title != existing_task.get("title"):
+        DBStore.add_project_activity(project_id, "TASK_RENAMED", f"Renamed task from '{existing_task.get('title')}' to '{task.title}'", current_user["id"])
+
+    if task.priority and task.priority != existing_task.get("priority"):
+        DBStore.add_project_activity(project_id, "TASK_PRIORITY_UPDATED", f"Changed priority of task '{existing_task.get('title')}' from {existing_task.get('priority')} to {task.priority}", current_user["id"])
+
+    new_assignee_ids = None
+    if task.assignee_ids is not None:
+        new_assignee_ids = set(task.assignee_ids)
+    elif task.assignee_id is not None:
+        new_assignee_ids = {task.assignee_id}
+    old_assignee_ids = set(existing_task.get("assignee_ids") or ([] if not existing_task.get("assignee_id") else [existing_task["assignee_id"]]))
+    if new_assignee_ids is not None and new_assignee_ids != old_assignee_ids:
+        DBStore.add_project_activity(project_id, "TASK_ASSIGNEE_UPDATED", f"Updated assignees for task '{existing_task.get('title')}'", current_user["id"])
+
+    if task.actual_hours is not None and task.actual_hours != existing_task.get("actual_hours"):
+        DBStore.add_project_activity(project_id, "TASK_HOURS_UPDATED", f"Logged {task.actual_hours}h actual time on task '{existing_task.get('title')}'", current_user["id"])
 
     if task.blocking is not None:
         try:
@@ -1274,6 +1408,7 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
                 link=f"/projects/{project_id}"
             )
 
+    project_event_manager.broadcast(project_id, "TASK_UPDATED", {"task_id": task_id, "user_id": current_user["id"]})
     return updated
 
 @router.delete("/{project_id}/dynamic-tasks/{task_id}")
@@ -1288,6 +1423,7 @@ def delete_dynamic_task(project_id: int, task_id: int, current_user: Dict[str, A
     if existing_task:
         DBStore.add_project_activity(project_id, "TASK_DELETED", f"Deleted task: {existing_task.get('title')}", current_user["id"])
 
+    project_event_manager.broadcast(project_id, "TASK_DELETED", {"task_id": task_id, "user_id": current_user["id"]})
     return {"message": "Task deleted successfully"}
 
 # TASK COMMENTS ENDPOINTS
@@ -1302,13 +1438,23 @@ def get_task_comments(project_id: int, task_id: int):
 def create_task_comment(project_id: int, task_id: int, comment: TaskCommentCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
     if not comment.content.strip():
         raise HTTPException(status_code=400, detail="Comment content cannot be empty")
-    return DBStore.add_task_comment(task_id, current_user["id"], comment.content.strip())
+    res = DBStore.add_task_comment(task_id, current_user["id"], comment.content.strip())
+    try:
+        all_tasks = DBStore.get_dynamic_tasks(project_id)
+        t = next((task for task in all_tasks if task["id"] == task_id), None)
+        t_name = t.get("title") if t else f"#{task_id}"
+        DBStore.add_project_activity(project_id, "TASK_COMMENT_ADDED", f"Added comment on task '{t_name}'", current_user["id"])
+    except Exception as e:
+        print("Error logging comment activity:", e)
+    project_event_manager.broadcast(project_id, "TASK_COMMENT_ADDED", {"task_id": task_id, "user_id": current_user["id"]})
+    return res
 
 @router.delete("/{project_id}/tasks/{task_id}/comments/{comment_id}")
 def delete_task_comment(project_id: int, task_id: int, comment_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
     success = DBStore.delete_task_comment(comment_id, current_user["id"])
     if not success:
         raise HTTPException(status_code=404, detail="Comment not found or permission denied")
+    project_event_manager.broadcast(project_id, "TASK_COMMENT_DELETED", {"task_id": task_id, "comment_id": comment_id, "user_id": current_user["id"]})
     return {"message": "Comment deleted successfully"}
 
 # PROJECT NOTES & ACTIVITIES ENDPOINTS
@@ -1326,8 +1472,12 @@ def get_project_notes(project_id: int):
     return DBStore.get_project_notes(project_id)
 
 @router.post("/{project_id}/notes")
-def create_project_note(project_id: int, note: ProjectNoteCreate):
-    return DBStore.add_project_note(project_id, note.content, note.created_by)
+def create_project_note(project_id: int, note: ProjectNoteCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
+    user_id = note.created_by or current_user.get("id")
+    res = DBStore.add_project_note(project_id, note.content, user_id)
+    DBStore.add_project_activity(project_id, "PROJECT_NOTE_ADDED", "Added a project note", user_id)
+    project_event_manager.broadcast(project_id, "NOTE_ADDED", {"user_id": user_id})
+    return res
 
 @router.get("/{project_id}/activities")
 def get_project_activities(project_id: int):
@@ -1336,6 +1486,14 @@ def get_project_activities(project_id: int):
 @router.post("/{project_id}/activities")
 def create_project_activity(project_id: int, activity: ProjectActivityCreate):
     return DBStore.add_project_activity(project_id, activity.action, activity.description, activity.user_id)
+
+@router.get("/{project_id}/description-history")
+def get_project_description_history(project_id: int):
+    return DBStore.get_description_history("project", project_id)
+
+@router.get("/{project_id}/tasks/{task_id}/description-history")
+def get_task_description_history(project_id: int, task_id: int):
+    return DBStore.get_description_history("task", task_id)
 
 
 class ProjectPlanRequest(BaseModel):

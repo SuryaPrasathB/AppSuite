@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight, Trash2 } from 'lucide-react';
+import { ArrowLeft, Megaphone, Plus, X, AlertTriangle, CheckCircle2, CornerDownRight, Trash2, Pencil } from 'lucide-react';
 import { fetchProjects, fetchDashboardTasks, fetchDashboardStats, fetchWorkload } from '../projects/api';
 import { apiClient } from '../../api/apiClient';
 import { useAuth } from '../../context/AuthContext';
@@ -11,6 +11,7 @@ export const GlobalDashboard: React.FC = () => {
   const { hasRole } = useAuth();
   // Modals
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<any | null>(null);
   const [newAnnouncement, setNewAnnouncement] = useState('');
 
   // Data states
@@ -49,15 +50,20 @@ export const GlobalDashboard: React.FC = () => {
     return () => clearInterval(dataInterval);
   }, []);
 
-  const handlePostAnnouncement = async () => {
+  const handleSaveAnnouncement = async () => {
     if (!newAnnouncement.trim()) return;
     try {
-      await apiClient.announcements.create({ message: newAnnouncement });
+      if (editingAnnouncement) {
+        await apiClient.announcements.update(editingAnnouncement.id, { message: newAnnouncement.trim() });
+      } else {
+        await apiClient.announcements.create({ message: newAnnouncement.trim() });
+      }
       setNewAnnouncement('');
+      setEditingAnnouncement(null);
       setIsAnnouncementModalOpen(false);
       loadData();
     } catch (err) {
-      alert("Failed to post announcement. Are you an admin?");
+      alert(editingAnnouncement ? "Failed to update announcement." : "Failed to post announcement. Are you an admin?");
     }
   };
 
@@ -487,7 +493,11 @@ export const GlobalDashboard: React.FC = () => {
                 </div>
                 {hasRole(['Administrator', 'Store Manager']) && (
                   <button 
-                    onClick={() => setIsAnnouncementModalOpen(true)}
+                    onClick={() => {
+                      setEditingAnnouncement(null);
+                      setNewAnnouncement('');
+                      setIsAnnouncementModalOpen(true);
+                    }}
                     className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-100 hover:bg-blue-200 text-blue-700 p-1 rounded cursor-pointer"
                     title="Add Announcement"
                   >
@@ -509,13 +519,26 @@ export const GlobalDashboard: React.FC = () => {
                         </div>
                       </div>
                       {hasRole(['Administrator', 'Store Manager']) && (
-                        <button
-                          onClick={() => handleDeleteAnnouncement(a.id)}
-                          className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-all cursor-pointer shrink-0"
-                          title="Delete Announcement"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/item:opacity-100 transition-all">
+                          <button
+                            onClick={() => {
+                              setEditingAnnouncement(a);
+                              setNewAnnouncement(a.message);
+                              setIsAnnouncementModalOpen(true);
+                            }}
+                            className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-1 rounded transition-all cursor-pointer"
+                            title="Edit Announcement"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAnnouncement(a.id)}
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-all cursor-pointer"
+                            title="Delete Announcement"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       )}
                     </li>
                   ))}
@@ -543,15 +566,22 @@ export const GlobalDashboard: React.FC = () => {
         <div className="tracking-widest">INNOVATE | INTEGRATE | AUTOMATE</div>
       </footer> */}
 
-      {/* Post Announcement Modal */}
+      {/* Post/Edit Announcement Modal */}
       {isAnnouncementModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 border border-slate-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Megaphone className="h-5 w-5 text-blue-600" /> Post Announcement
+                <Megaphone className="h-5 w-5 text-blue-600" /> {editingAnnouncement ? 'Edit Announcement' : 'Post Announcement'}
               </h3>
-              <button onClick={() => setIsAnnouncementModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button 
+                onClick={() => {
+                  setIsAnnouncementModalOpen(false);
+                  setEditingAnnouncement(null);
+                  setNewAnnouncement('');
+                }} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -563,17 +593,21 @@ export const GlobalDashboard: React.FC = () => {
             ></textarea>
             <div className="flex justify-end gap-3">
               <button 
-                onClick={() => setIsAnnouncementModalOpen(false)}
+                onClick={() => {
+                  setIsAnnouncementModalOpen(false);
+                  setEditingAnnouncement(null);
+                  setNewAnnouncement('');
+                }}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm rounded-lg cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button 
-                onClick={handlePostAnnouncement}
+                onClick={handleSaveAnnouncement}
                 disabled={!newAnnouncement.trim()}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-lg cursor-pointer transition-colors shadow-sm"
               >
-                Post
+                {editingAnnouncement ? 'Update' : 'Post'}
               </button>
             </div>
           </div>

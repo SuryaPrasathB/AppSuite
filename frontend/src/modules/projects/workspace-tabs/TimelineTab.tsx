@@ -3,7 +3,7 @@ import { Clock, Edit2, BarChart3 } from 'lucide-react';
 
 interface TimelineTabProps {
   dynamicTasks: any[];
-  handleOpenEditTask: (task: any) => void;
+  handleOpenEditTask: (task?: any, parentId?: number | null) => void;
 }
 
 export const TimelineTab: React.FC<TimelineTabProps> = ({ dynamicTasks, handleOpenEditTask }) => {

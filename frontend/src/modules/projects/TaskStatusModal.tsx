@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, User, CheckCircle2, ChevronRight, Settings2, Plus, GripVertical, AlertTriangle } from 'lucide-react';
 import { fetchAllDynamicTasks, fetchProjects, fetchEmployees, updateDynamicTask } from './api';
+import { isTaskOverdue } from './taskUtils';
 
 interface TaskStatusModalProps {
   status: 'Unassigned' | 'In Progress' | 'Completed';
@@ -234,7 +235,7 @@ export const TaskStatusModal: React.FC<TaskStatusModalProps> = ({ status, onClos
                               />
                               {t.due_date ? (
                                 <span className={`text-[11px] font-medium flex items-center gap-1.5 ${
-                                  new Date(t.due_date) < new Date() && t.status !== 'COMPLETED' ? 'text-rose-500' : 'text-slate-500'
+                                  isTaskOverdue(t) ? 'text-rose-500 font-bold' : 'text-slate-500'
                                 }`}>
                                   {new Date(t.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                 </span>

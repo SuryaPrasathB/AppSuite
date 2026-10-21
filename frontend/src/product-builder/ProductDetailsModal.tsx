@@ -50,7 +50,13 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
   const store = parsedDesc?.store || {};
   const addl = parsedDesc?.additional || {};
 
-  const location = [store.warehouse, store.zone, store.rack && `Rack ${store.rack}`, store.shelf && `Shelf ${store.shelf}`, store.bin && `Bin ${store.bin}`]
+  const location = [
+    store.warehouse,
+    store.zone,
+    store.rack && (String(store.rack).startsWith('Rack') ? store.rack : `Rack ${store.rack}`),
+    store.shelf && (String(store.shelf).startsWith('Shelf') ? store.shelf : `Shelf ${store.shelf}`),
+    store.bin && (String(store.bin).startsWith('Bin') ? store.bin : `Bin ${store.bin}`),
+  ]
     .filter(Boolean)
     .join(' · ');
 

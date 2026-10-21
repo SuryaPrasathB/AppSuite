@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+ import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Package, 
   Calendar, 
@@ -20,11 +20,13 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Building2
+  Building2,
+  Clock
 } from 'lucide-react';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
 import { LocationSelectorModal } from '../../../components/LocationSelectorModal';
+import { DraftsModal, StockDraft } from '../components/DraftsModal';
 import { getProductManufacturer, getProductPartNumber } from '../../../utils/productUtils';
 
 interface StockInItem {
@@ -89,6 +91,13 @@ export const StockIn: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Draft states
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [loadedDraftId, setLoadedDraftId] = useState<number | null>(null);
+  const [draftsList, setDraftsList] = useState<StockDraft[]>([]);
+  const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+
   // Vendor modal state
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const [vendorForm, setVendorForm] = useState({
@@ -103,6 +112,20 @@ export const StockIn: React.FC = () => {
   const [vendorFormError, setVendorFormError] = useState<string | null>(null);
   const [vendorFormSuccess, setVendorFormSuccess] = useState(false);
 
+  const fetchDrafts = async () => {
+    try {
+      setLoadingDrafts(true);
+      const drafts = await apiClient.inventory.getDrafts('STOCK_IN');
+      setDraftsList(drafts || []);
+      return drafts || [];
+    } catch (err) {
+      console.error("Failed to fetch drafts:", err);
+      return [];
+    } finally {
+      setLoadingDrafts(false);
+    }
+  };
+
   // Initialize reference number, date and load dropdown data
   useEffect(() => {
     // Set default date to today in YYYY-MM-DD
@@ -116,6 +139,15 @@ export const StockIn: React.FC = () => {
     setReferenceNo(`SIN-${today.getFullYear()}-${month}-${randomSeq}`);
 
     fetchDropdownData();
+    fetchDrafts().then((drafts) => {
+      const draftIdParam = searchParams.get('draftId');
+      if (draftIdParam && drafts) {
+        const matched = drafts.find((d: any) => String(d.id) === String(draftIdParam));
+        if (matched) {
+          handleSelectDraft(matched);
+        }
+      }
+    });
   }, []);
 
   const fetchDropdownData = async () => {
@@ -160,6 +192,21 @@ export const StockIn: React.FC = () => {
   };
 
   const handleProductChange = (index: number, productId: string) => {
+    if (!productId) {
+      setItems(prev => prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return {
+          ...item,
+          product_id: "",
+          code: "",
+          name: "",
+          category: "",
+          unit: ""
+        };
+      }));
+      return;
+    }
+
     const selectedProd = productsList.find(p => String(p.id) === String(productId));
     if (!selectedProd) return;
 
@@ -178,7 +225,7 @@ export const StockIn: React.FC = () => {
         name: selectedProd.name,
         category: selectedProd.category,
         unit: selectedProd.unit || 'pcs',
-        location_id: matchedLoc ? String(matchedLoc.id) : "1"
+        location_id: matchedLoc ? String(matchedLoc.id) : (locationsList[0] ? String(locationsList[0].id) : "1")
       };
     }));
   };
@@ -194,24 +241,39 @@ export const StockIn: React.FC = () => {
   };
 
   const handleAddItem = (prod?: any) => {
-    if (productsList.length === 0 && !prod) return;
-    const defaultProd = prod || productsList[0];
-    const defaultLoc = locationsList.find(l => l.zone === (defaultProd.category === 'Electrical' ? 'Zone A' : 'Zone B')) || locationsList[0];
-
-    setItems(prev => [
-      ...prev,
-      {
-        id: `item-${Date.now()}-${Math.random()}`,
-        product_id: String(defaultProd.id),
-        code: defaultProd.code,
-        name: defaultProd.name,
-        category: defaultProd.category,
-        unit: defaultProd.unit || 'pcs',
-        batch_no: "",
-        quantity: 1,
-        location_id: defaultLoc ? String(defaultLoc.id) : "1"
-      }
-    ]);
+    if (prod) {
+      const defaultLoc = locationsList.find(l => l.zone === (prod.category === 'Electrical' ? 'Zone A' : 'Zone B')) || locationsList[0];
+      setItems(prev => [
+        ...prev,
+        {
+          id: `item-${Date.now()}-${Math.random()}`,
+          product_id: String(prod.id),
+          code: prod.code,
+          name: prod.name,
+          category: prod.category,
+          unit: prod.unit || 'pcs',
+          batch_no: "",
+          quantity: 1,
+          location_id: defaultLoc ? String(defaultLoc.id) : (locationsList[0] ? String(locationsList[0].id) : "1")
+        }
+      ]);
+    } else {
+      // Create a truly blank row
+      setItems(prev => [
+        ...prev,
+        {
+          id: `item-${Date.now()}-${Math.random()}`,
+          product_id: "",
+          code: "",
+          name: "",
+          category: "",
+          unit: "",
+          batch_no: "",
+          quantity: 1,
+          location_id: locationsList[0] ? String(locationsList[0].id) : "1"
+        }
+      ]);
+    }
   };
 
   const handleDeleteItem = (index: number) => {
@@ -259,10 +321,16 @@ export const StockIn: React.FC = () => {
       return;
     }
 
+    const unselectedItem = items.find(item => !item.product_id);
+    if (unselectedItem) {
+      setError("Please select an item code for all rows or remove unused blank rows.");
+      return;
+    }
+
     // Verify quantities
     const invalidItem = items.find(item => !item.quantity || item.quantity <= 0);
     if (invalidItem) {
-      setError(`Item ${invalidItem.code} must have a valid quantity greater than zero.`);
+      setError(`Item ${invalidItem.code || 'in list'} must have a valid quantity greater than zero.`);
       return;
     }
 
@@ -284,6 +352,15 @@ export const StockIn: React.FC = () => {
       };
 
       await apiClient.inventory.bulkStockIn(payload);
+
+      // If this intake was created from a draft, clean up the draft
+      if (loadedDraftId) {
+        try {
+          await apiClient.inventory.deleteDraft(loadedDraftId);
+        } catch (e) {
+          console.error("Failed to delete draft after submit:", e);
+        }
+      }
       
       setSuccess(`Intake reference ${referenceNo} successfully registered!`);
       
@@ -295,9 +372,98 @@ export const StockIn: React.FC = () => {
     }
   };
 
-  const handleSaveDraft = () => {
-    setSuccess("Stock In record saved as draft locally.");
+  const handleSelectDraft = (draft: StockDraft) => {
+    setLoadedDraftId(draft.id);
+    const d = draft.data || {};
+    if (d.referenceNo) setReferenceNo(d.referenceNo);
+    if (d.date) setDate(d.date);
+    if (d.supplierId) setSupplierId(String(d.supplierId));
+    if (d.purchaseReference) setPurchaseReference(d.purchaseReference);
+    if (d.notes) setNotes(d.notes);
+    if (d.attachedFile) setAttachedFile(d.attachedFile);
+    if (Array.isArray(d.items)) setItems(d.items);
+    setIsDraftsModalOpen(false);
+    setSuccess(`Draft ${draft.reference_no || draft.id} loaded into editor.`);
     setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const handleClearDraft = () => {
+    setLoadedDraftId(null);
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const randomSeq = String(Math.floor(Math.random() * 90) + 10);
+    setReferenceNo(`SIN-${today.getFullYear()}-${month}-${randomSeq}`);
+    setPurchaseReference("");
+    setNotes("");
+    setAttachedFile(null);
+    setItems([]);
+    if (searchParams.get('draftId')) {
+      searchParams.delete('draftId');
+      setSearchParams(searchParams);
+    }
+    setSuccess("Cleared draft. Form reset to fresh intake.");
+    setTimeout(() => setSuccess(null), 2500);
+  };
+
+  const handleDeleteDraft = async (id: number) => {
+    await apiClient.inventory.deleteDraft(id);
+    if (loadedDraftId === id) {
+      setLoadedDraftId(null);
+      if (searchParams.get('draftId')) {
+        searchParams.delete('draftId');
+        setSearchParams(searchParams);
+      }
+    }
+    await fetchDrafts();
+  };
+
+  const handleSaveDraft = async () => {
+    if (items.length === 0) {
+      setError("Please add at least one item before saving as draft.");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    try {
+      const selectedVendor = vendorsList.find(v => String(v.id) === String(supplierId));
+      const supplierName = selectedVendor ? selectedVendor.name : "Unknown Vendor";
+
+      const draftPayload = {
+        draft_type: 'STOCK_IN',
+        reference_no: referenceNo,
+        title: supplierName ? `Supplier: ${supplierName}` : `Stock In intake ${referenceNo}`,
+        user_name: user?.username || 'Storekeeper',
+        user_role: user?.role || 'Storekeeper',
+        total_items: items.length,
+        total_quantity: items.reduce((sum, item) => sum + (parseFloat(String(item.quantity)) || 0), 0),
+        data: {
+          referenceNo,
+          date,
+          supplierId,
+          supplierName,
+          purchaseReference,
+          notes,
+          attachedFile,
+          items
+        }
+      };
+
+      if (loadedDraftId) {
+        await apiClient.inventory.updateDraft(loadedDraftId, draftPayload);
+        setSuccess(`Draft ${referenceNo} updated successfully!`);
+      } else {
+        const res = await apiClient.inventory.saveDraft(draftPayload);
+        if (res && res.id) {
+          setLoadedDraftId(res.id);
+        }
+        setSuccess(`Stock In record saved as draft! Reference: ${referenceNo}`);
+      }
+      await fetchDrafts();
+      setTimeout(() => setSuccess(null), 3500);
+    } catch (err: any) {
+      setError(err.message || "Failed to save draft.");
+      setTimeout(() => setError(null), 3500);
+    }
   };
 
   const handleVendorInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -448,14 +614,54 @@ export const StockIn: React.FC = () => {
               Register Stock Intake
             </h2>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500">
-             <span className="bg-slate-100 px-3 py-1.5 rounded-lg font-bold border border-slate-200">Ref: {referenceNo}</span>
+          <div className="flex items-center gap-2.5 text-xs">
+            {loadedDraftId && (
+              <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+                <FileText className="h-3.5 w-3.5" />
+                Draft Mode
+              </span>
+            )}
+            <span className="bg-slate-100 px-3 py-1.5 rounded-lg font-bold border border-slate-200 text-slate-600">
+              Ref: {referenceNo}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsDraftsModalOpen(true)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              title="View saved drafts"
+            >
+              <Clock className="h-3.5 w-3.5 text-slate-500" />
+              <span>Saved Drafts</span>
+              {draftsList.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-emerald-600 text-white rounded-full text-[10px] font-extrabold ml-0.5">
+                  {draftsList.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
         {/* Main Editor Area */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
           
+          {loadedDraftId && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 px-4 flex items-center justify-between text-xs shadow-xs">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-amber-600 shrink-0" />
+                <span>You are editing draft <strong>{referenceNo}</strong>. Submit will register stock and finalize this draft.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleClearDraft}
+                  className="px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-md font-bold text-amber-800 transition-colors cursor-pointer"
+                >
+                  Clear & New Form
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-800 text-xs p-4 rounded-xl flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
@@ -883,6 +1089,17 @@ export const StockIn: React.FC = () => {
           }}
         />
       )}
+
+      {/* Saved Drafts Drawer / Modal */}
+      <DraftsModal
+        isOpen={isDraftsModalOpen}
+        onClose={() => setIsDraftsModalOpen(false)}
+        drafts={draftsList}
+        draftTypeFilter="STOCK_IN"
+        onSelectDraft={handleSelectDraft}
+        onDeleteDraft={handleDeleteDraft}
+        isLoading={loadingDrafts}
+      />
     </div>
   );
 };

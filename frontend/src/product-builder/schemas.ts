@@ -278,16 +278,34 @@ export const PRODUCT_CATEGORY_SCHEMAS: ProductCategorySchema[] = [
   '{codePrefix}-{manufacturerShort}-{series}-{capacitance}-{voltage}'),
 ];
 
+export const DEFAULT_ZONES = ['Zone A', 'Zone B', 'Zone C', 'Zone D'];
+
+export const DEFAULT_RACKS = [
+  'A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2',
+  'A3', 'A4', 'B3', 'B4', 'C3', 'C4', 'D3', 'D4',
+  'A5', 'A6', 'B5', 'B6', 'C5', 'C6', 'D5', 'D6',
+  'A7', 'A8', 'B7', 'B8', 'C7', 'C8', 'D7', 'D8',
+];
+
+export const DEFAULT_SHELVES = [
+  'Shelf 1', 'Shelf 2', 'Shelf 3', 'Shelf 4', 'Shelf 5', 'Shelf 6',
+];
+
+export const DEFAULT_BINS = [
+  'Bin 1', 'Bin 2', 'Bin 3', 'Bin 4', 'Bin 5', 'Bin 6',
+  'Bin 7', 'Bin 8', 'Bin 9', 'Bin 10', 'Bin 11', 'Bin 12',
+];
+
 export const getStoreFields = (isMandatory: boolean = false): ProductFieldSchema[] => [
   { key: 'unit', label: 'Unit', type: 'select', options: ['Nos', 'pcs', 'm', 'kg', 'roll', 'set', 'box', 'lot'].map(value => ({ label: value, value })), validation: isMandatory ? required : undefined, defaultValue: 'Nos', width: 'third' },
   { key: 'minimumStock', label: 'Minimum Stock', type: 'number', validation: isMandatory ? { required: true, min: 0 } : { min: 0 }, defaultValue: '10', width: 'third' },
   { key: 'reorderLevel', label: 'Reorder Level', type: 'number', validation: isMandatory ? { required: true, min: 0 } : { min: 0 }, defaultValue: '20', width: 'third' },
   { key: 'initialStock', label: 'Initial Stock', type: 'number', validation: { min: 0 }, defaultValue: '0', width: 'third' },
-  { key: 'rack', label: 'Rack', type: 'text', validation: isMandatory ? required : undefined, width: 'third' },
-  { key: 'shelf', label: 'Shelf', type: 'text', validation: isMandatory ? required : undefined, width: 'third' },
-  { key: 'bin', label: 'Bin', type: 'text', width: 'third' },
+  { key: 'rack', label: 'Rack', type: 'select', options: DEFAULT_RACKS.map(value => ({ label: value, value })), validation: isMandatory ? required : undefined, width: 'third' },
+  { key: 'shelf', label: 'Shelf', type: 'select', options: DEFAULT_SHELVES.map(value => ({ label: value, value })), validation: isMandatory ? required : undefined, width: 'third' },
+  { key: 'bin', label: 'Bin', type: 'select', options: DEFAULT_BINS.map(value => ({ label: value, value })), width: 'third' },
   { key: 'warehouse', label: 'Warehouse', type: 'text', validation: isMandatory ? required : undefined, defaultValue: 'Main Store', width: 'third' },
-  { key: 'zone', label: 'Zone', type: 'text', width: 'third' },
+  { key: 'zone', label: 'Zone', type: 'select', options: DEFAULT_ZONES.map(value => ({ label: value, value })), width: 'third' },
   { key: 'standardCost', label: 'Standard Cost', type: 'number', validation: { min: 0 }, defaultValue: '0.00', width: 'third' },
   { key: 'currency', label: 'Currency', type: 'select', options: ['INR', 'USD', 'EUR', 'GBP'].map(value => ({ label: value, value })), defaultValue: 'INR', width: 'third' },
   { key: 'remarks', label: 'Remarks', type: 'textarea', width: 'full', placeholder: 'Store-specific notes, handling instructions, or restrictions…' },

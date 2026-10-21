@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, AlertTriangle, Send, Trash2 } from 'lucide-react';
+import { X, AlertTriangle, Send, Trash2, Pencil, Check } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 
 interface AnnouncementManagerModalProps {
@@ -10,6 +10,9 @@ export const AnnouncementManagerModal: React.FC<AnnouncementManagerModalProps> =
   const [activeAnnouncements, setActiveAnnouncements] = useState<any[]>([]);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editMessage, setEditMessage] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const fetchAnnouncements = async () => {
     try {
@@ -37,6 +40,32 @@ export const AnnouncementManagerModal: React.FC<AnnouncementManagerModalProps> =
       console.error(err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleStartEdit = (ann: any) => {
+    setEditingId(ann.id);
+    setEditMessage(ann.message);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditMessage('');
+  };
+
+  const handleSaveEdit = async (id: number) => {
+    if (!editMessage.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      await apiClient.announcements.update(id, { message: editMessage.trim() });
+      setEditingId(null);
+      setEditMessage('');
+      fetchAnnouncements();
+    } catch (err) {
+      alert("Failed to update announcement");
+      console.error(err);
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -100,17 +129,65 @@ export const AnnouncementManagerModal: React.FC<AnnouncementManagerModalProps> =
             ) : (
               <div className="space-y-3">
                 {activeAnnouncements.map((ann) => (
-                  <div key={ann.id} className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-start justify-between gap-4">
-                    <div className="text-sm text-amber-900 font-medium pt-0.5">
-                      {ann.message}
-                    </div>
-                    <button
-                      onClick={() => handleDelete(ann.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors shrink-0"
-                      title="Deactivate"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div key={ann.id} className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex items-start justify-between gap-3">
+                    {editingId === ann.id ? (
+                      <div className="flex-1 flex flex-col gap-2">
+                        <textarea
+                          value={editMessage}
+                          onChange={(e) => setEditMessage(e.target.value)}
+                          className="w-full bg-white border border-amber-300 rounded-lg p-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none min-h-[60px]"
+                          rows={2}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSaveEdit(ann.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit();
+                            }
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleSaveEdit(ann.id)}
+                            disabled={isSavingEdit || !editMessage.trim()}
+                            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded font-medium text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            {isSavingEdit ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            disabled={isSavingEdit}
+                            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded font-medium text-xs transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-sm text-amber-900 font-medium pt-0.5 break-words flex-1 min-w-0">
+                          {ann.message}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => handleStartEdit(ann)}
+                            className="text-amber-700 hover:text-amber-900 hover:bg-amber-100/70 p-1.5 rounded transition-colors"
+                            title="Edit Announcement"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(ann.id)}
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition-colors"
+                            title="Deactivate"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

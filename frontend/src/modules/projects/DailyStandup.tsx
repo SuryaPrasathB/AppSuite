@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Briefcase, AlertCircle, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { fetchStandupData } from './api';
 import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
+import { isTaskOverdue } from './taskUtils';
 
 export const DailyStandup: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
@@ -155,18 +156,17 @@ export const DailyStandup: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {sortedTasks.map(task => {
-                        let isTaskOverdue = false;
+                        const isLateOrOverdue = isTaskOverdue(task);
                         let isTaskDueToday = false;
 
                         if (task.due_date) {
                           const dueDate = parseISO(task.due_date.split('T')[0]);
-                          isTaskOverdue = isBefore(dueDate, todayDate);
                           isTaskDueToday = isToday(dueDate);
                         }
 
                         // Determine row highlight
                         let rowClass = "hover:bg-slate-50 transition-colors group";
-                        if (isTaskOverdue) rowClass = "bg-red-50/30 hover:bg-red-50/50 transition-colors group";
+                        if (isLateOrOverdue) rowClass = "bg-red-50/30 hover:bg-red-50/50 transition-colors group";
                         else if (isTaskDueToday) rowClass = "bg-amber-50/30 hover:bg-amber-50/50 transition-colors group";
 
                         return (
@@ -200,17 +200,19 @@ export const DailyStandup: React.FC = () => {
                             <td className="px-6 py-4">
                               {task.due_date ? (
                                 <div className="flex flex-col gap-1.5">
-                                  <span className="text-sm font-semibold text-slate-600 flex items-center gap-1.5">
-                                    <Clock className="h-3.5 w-3.5" />
+                                  <span className={`text-sm font-semibold flex items-center gap-1.5 ${
+                                    isLateOrOverdue ? 'text-red-600 font-bold' : 'text-slate-600'
+                                  }`}>
+                                    <Clock className={`h-3.5 w-3.5 ${isLateOrOverdue ? 'text-red-500' : 'text-slate-400'}`} />
                                     {task.due_date.split('T')[0]}
                                   </span>
-                                  {isTaskOverdue && (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded w-max">
+                                  {isLateOrOverdue && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded w-max border border-red-200">
                                       <AlertCircle className="h-3 w-3" />
-                                      OVERDUE
+                                      {task.status === 'COMPLETED' ? 'COMPLETED LATE' : 'OVERDUE'}
                                     </span>
                                   )}
-                                  {isTaskDueToday && !isTaskOverdue && (
+                                  {isTaskDueToday && !isLateOrOverdue && (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded w-max">
                                       <Clock className="h-3 w-3" />
                                       DUE TODAY

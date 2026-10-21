@@ -252,9 +252,10 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       ) : (
         <button
           onClick={() => setIsOpen(!isOpen)}
+          title={isOverdue ? 'Due date overdue or completed late' : undefined}
           className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm ${
             isOverdue 
-              ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' 
+              ? 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100 ring-1 ring-rose-200 font-bold' 
               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
           } ${triggerClassName}`}
         >

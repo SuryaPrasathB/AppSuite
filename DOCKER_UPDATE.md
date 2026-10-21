@@ -38,6 +38,7 @@ docker exec -it smart_store_backend python update_notifications_db.py
 docker exec -it smart_store_backend python update_projects_deleted_at_db.py
 docker exec -it smart_store_backend python update_projects_parent_db.py
 docker exec -it smart_store_backend python update_task_comments_db.py
+docker exec -it smart_store_backend python migrate_description_history.py
 docker exec -it smart_store_backend python db_update.py
 ```
 *(Running them multiple times is safe, as they check if columns exist before adding them).*

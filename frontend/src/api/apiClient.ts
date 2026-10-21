@@ -83,6 +83,11 @@ export const apiClient = {
     bulkStockOut: (body: any) => request<any>('/inventory/bulk-stock-out', { method: 'POST', body: JSON.stringify(body) }),
     transfer: (body: any) => request<any>('/inventory/transfer', { method: 'POST', body: JSON.stringify(body) }),
     adjust: (body: any) => request<any>('/inventory/adjust', { method: 'POST', body: JSON.stringify(body) }),
+    getDrafts: (draft_type?: string) => request<any[]>(`/inventory/drafts${draft_type ? `?draft_type=${draft_type}` : ''}`),
+    getDraft: (id: number | string) => request<any>(`/inventory/drafts/${id}`),
+    saveDraft: (body: any) => request<any>('/inventory/drafts', { method: 'POST', body: JSON.stringify(body) }),
+    updateDraft: (id: number | string, body: any) => request<any>(`/inventory/drafts/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteDraft: (id: number | string) => request<any>(`/inventory/drafts/${id}`, { method: 'DELETE' }),
   },
   layout: {
     locations: () => request<any[]>('/layout/locations'),
@@ -145,6 +150,7 @@ export const apiClient = {
   announcements: {
     listActive: (limit = 5) => request<any[]>(`/announcements/active?limit=${limit}`),
     create: (body: any) => request<any>('/announcements', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number | string, body: any) => request<any>(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     deactivate: (id: number | string) => request<any>(`/announcements/${id}`, { method: 'DELETE' }),
   },
   assets: {

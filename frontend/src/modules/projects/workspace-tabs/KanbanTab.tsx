@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search, MessageSquare, AlignLeft, GitBranch, Flag, Plus, Paperclip, AlertCircle } from 'lucide-react';
+import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Search, MessageSquare, AlignLeft, GitBranch, Flag, Plus, Paperclip, AlertCircle, ListPlus } from 'lucide-react';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
 import { DateRangePicker } from './DateRangePicker';
+import { isTaskOverdue } from '../taskUtils';
 
 interface KanbanTabProps {
   dynamicTasks: any[];
-  handleOpenEditTask: (task: any) => void;
+  handleOpenEditTask: (task?: any, parentId?: number | null) => void;
   handleDeleteTask: (taskId: number) => void;
   handleUpdateTaskStatus: (taskId: number, newStatus: string) => void;
   onUpdateTaskField?: (taskId: number, field: string, value: any) => Promise<void>;
@@ -24,7 +25,11 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as HTMLElement;
+      if (target?.closest?.('#assignee-select-popover-portal')) {
+        return;
+      }
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setOpenAssigneeTaskId(null);
       }
     };
@@ -180,10 +185,17 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
               <MessageSquare className="h-3 w-3" />
               <span className="text-[10px] font-bold">{(task.comment_count || 0)}</span>
             </button>
-            <button onClick={() => handleOpenEditTask(task)} className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded">
+            <button 
+              onClick={() => handleOpenEditTask(null, task.id)} 
+              className="p-1 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 rounded"
+              title="Add Subtask"
+            >
+              <ListPlus className="h-3 w-3" />
+            </button>
+            <button onClick={() => handleOpenEditTask(task)} title="Edit Task" className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded">
               <Edit2 className="h-3 w-3" />
             </button>
-            <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded">
+            <button onClick={() => handleDeleteTask(task.id)} title="Delete Task" className="p-1 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded">
               <Trash2 className="h-3 w-3" />
             </button>
           </div>
@@ -233,14 +245,7 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                 <DateRangePicker
                   startDate={task.start_date}
                   dueDate={task.due_date}
-                  isOverdue={(() => {
-                    if (!task.due_date || task.status === 'COMPLETED') return false;
-                    const due = new Date(task.due_date);
-                    const today = new Date();
-                    due.setHours(0,0,0,0);
-                    today.setHours(0,0,0,0);
-                    return today > due;
-                  })()}
+                  isOverdue={isTaskOverdue(task)}
                   onSave={async (start, due) => {
                     if (onUpdateTaskField) {
                       await onUpdateTaskField(task.id, 'start_date', start);
@@ -248,8 +253,16 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     }
                   }}
                   triggerElement={
-                    <button type="button" className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-indigo-600 transition-colors bg-transparent border-0 cursor-pointer p-0.5 rounded hover:bg-slate-100 focus:outline-none">
-                      <Calendar className="h-3 w-3 text-indigo-500" />
+                    <button 
+                      type="button" 
+                      className={`flex items-center gap-1 text-[10px] font-medium transition-colors border cursor-pointer p-0.5 px-1.5 rounded-md focus:outline-none ${
+                        isTaskOverdue(task) 
+                          ? 'text-rose-600 bg-rose-50 border-rose-200 font-bold' 
+                          : 'text-slate-500 bg-transparent border-transparent hover:bg-slate-100 hover:text-indigo-600'
+                      }`}
+                      title={isTaskOverdue(task) ? (task.status === 'COMPLETED' ? 'Completed past due date' : 'Overdue') : undefined}
+                    >
+                      <Calendar className={`h-3 w-3 ${isTaskOverdue(task) ? 'text-rose-500' : 'text-indigo-500'}`} />
                       {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
                     </button>
                   }
@@ -324,6 +337,7 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     { value: 'TODO', label: 'Not Started' },
                     { value: 'IN_PROGRESS', label: 'In Progress' },
                     { value: 'REVIEW', label: 'Pending Review' },
+                    { value: 'BLOCKED', label: 'Blocked' },
                     { value: 'COMPLETED', label: 'Completed' },
                   ]}
                   triggerElement={
@@ -331,14 +345,16 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                       type="button"
                       className={`px-1.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-white border border-slate-200 focus:outline-none cursor-pointer shadow-sm text-slate-800 hover:opacity-80 transition-opacity ${
                         task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
-                        task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-500/20' :
+                        task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-500/20' :
+                        task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-500/20' :
                         task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-500/20' :
                         'bg-slate-50 text-slate-500 border-slate-300'
                       }`}
                     >
                       {task.status === 'TODO' ? 'Not Started' :
                        task.status === 'IN_PROGRESS' ? 'In Progress' :
-                       task.status === 'REVIEW' ? 'Pending Review' : 'Completed'}
+                       task.status === 'REVIEW' ? 'Pending Review' :
+                       task.status === 'BLOCKED' ? 'Blocked' : 'Completed'}
                     </button>
                   }
                 />
@@ -383,11 +399,12 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
         <p className="text-xs text-slate-500">Drag handle to reorder tasks or move between columns.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 min-h-0">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
         {[
           { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-100/50 text-slate-700' },
           { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50 text-indigo-600' },
           { key: 'REVIEW', title: 'Review', color: 'border-t-amber-500 bg-amber-50/50 text-amber-600' },
+          { key: 'BLOCKED', title: 'Blocked', color: 'border-t-red-500 bg-red-50/50 text-red-600' },
           { key: 'COMPLETED', title: 'Completed', color: 'border-t-emerald-500 bg-emerald-50/50 text-emerald-600' },
         ].map(column => {
           // Render only root tasks in the column, subtasks are nested under parent cards

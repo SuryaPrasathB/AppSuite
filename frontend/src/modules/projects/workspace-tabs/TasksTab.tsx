@@ -1,14 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder } from 'lucide-react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
 import { createDynamicTask, fetchProjects } from '../api';
+import { isTaskOverdue } from '../taskUtils';
 
 interface TasksTabProps {
   dynamicTasks: any[];
-  handleOpenEditTask: (task: any) => void;
+  handleOpenEditTask: (task?: any, parentId?: number | null) => void;
   handleDeleteTask: (taskId: number) => void;
   project?: any;
   employees?: any[];
@@ -222,7 +223,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as HTMLElement;
+      if (target?.closest?.('#assignee-select-popover-portal')) {
+        return;
+      }
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setOpenAssigneeTaskId(null);
       }
     };
@@ -231,7 +236,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   }, []);
 
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
-  const [dragOverTarget, setDragOverTarget] = useState<{ taskId: number; position: 'above' | 'below' } | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<{ taskId: number; position: 'above' | 'below' | 'inside' } | null>(null);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
@@ -284,6 +289,18 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     setLastSelectedTaskId(taskId);
   };
 
+  const isDescendant = (potentialParentId: number, potentialChildId: number): boolean => {
+    if (potentialParentId === potentialChildId) return true;
+    let curr = dynamicTasks.find(t => t.id === potentialChildId);
+    const visited = new Set<number>();
+    while (curr && curr.parent_id && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      if (curr.parent_id === potentialParentId) return true;
+      curr = dynamicTasks.find(t => t.id === curr.parent_id);
+    }
+    return false;
+  };
+
   const handleRowDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('text/plain', taskId.toString());
     e.dataTransfer.effectAllowed = 'move';
@@ -312,30 +329,117 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
     const rect = e.currentTarget.getBoundingClientRect();
     const offsetY = e.clientY - rect.top;
-    const position = offsetY < rect.height / 2 ? 'above' : 'below';
+
+    // Check if dropping inside is allowed (cannot drop inside self or own descendants)
+    const canDropInside = !isDescendant(draggedTaskId, targetTask.id);
+
+    let position: 'above' | 'below' | 'inside';
+    if (canDropInside && offsetY >= rect.height * 0.25 && offsetY <= rect.height * 0.75) {
+      position = 'inside';
+    } else if (offsetY < rect.height / 2) {
+      position = 'above';
+    } else {
+      position = 'below';
+    }
 
     setDragOverTarget({ taskId: targetTask.id, position });
+  };
+
+  const getSubtreeTaskIds = (rootId: number): number[] => {
+    const result: number[] = [rootId];
+    const queue = [rootId];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      const children = dynamicTasks.filter(t => t.parent_id === parentId);
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
+  };
+
+  const handlePromoteToStandalone = (task: any) => {
+    const subtreeIdSet = new Set(getSubtreeTaskIds(task.id));
+    const remainingTasks = dynamicTasks.filter(t => !subtreeIdSet.has(t.id));
+    const draggedSubtree = dynamicTasks.filter(t => subtreeIdSet.has(t.id));
+    const promotedTask = { ...task, parent_id: null };
+    const updatedSubtree = [promotedTask, ...draggedSubtree.filter(t => t.id !== task.id).map(t => ({ ...t }))];
+
+    const parentIndex = remainingTasks.findIndex(t => t.id === task.parent_id);
+    if (parentIndex !== -1) {
+      let insertIndex = parentIndex + 1;
+      while (insertIndex < remainingTasks.length && isDescendant(task.parent_id, remainingTasks[insertIndex].id)) {
+        insertIndex++;
+      }
+      remainingTasks.splice(insertIndex, 0, ...updatedSubtree);
+    } else {
+      remainingTasks.push(...updatedSubtree);
+    }
+
+    if (onReorderTasks) {
+      onReorderTasks(remainingTasks);
+    }
   };
 
   const handleRowDrop = (e: React.DragEvent, targetTask: any) => {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedTaskId || draggedTaskId === targetTask.id) return;
+    if (isDescendant(draggedTaskId, targetTask.id)) return;
 
-    const draggedTask = dynamicTasks.find(t => t.id === draggedTaskId);
+    const subtreeIdSet = new Set(getSubtreeTaskIds(draggedTaskId));
+    const remainingTasks = dynamicTasks.filter(t => !subtreeIdSet.has(t.id));
+    const draggedSubtree = dynamicTasks.filter(t => subtreeIdSet.has(t.id));
+    const draggedTask = { ...draggedSubtree.find(t => t.id === draggedTaskId)! };
     if (!draggedTask) return;
 
-    // Keep parent relationship aligned if dropped within same level or move
-    const updatedTask = { ...draggedTask };
-    const remainingTasks = dynamicTasks.filter(t => t.id !== draggedTaskId);
+    const position = dragOverTarget?.position || 'below';
 
-    const targetIndex = remainingTasks.findIndex(t => t.id === targetTask.id);
-    if (targetIndex !== -1) {
-      const position = dragOverTarget?.position || 'below';
-      const insertIndex = position === 'above' ? targetIndex : targetIndex + 1;
-      remainingTasks.splice(insertIndex, 0, updatedTask);
+    if (position === 'inside') {
+      draggedTask.parent_id = targetTask.id;
+      draggedTask.status = targetTask.status;
+
+      const updatedSubtree = [draggedTask, ...draggedSubtree.filter(t => t.id !== draggedTaskId).map(t => ({ ...t }))];
+      const targetIndex = remainingTasks.findIndex(t => t.id === targetTask.id);
+      if (targetIndex !== -1) {
+        let insertIndex = targetIndex + 1;
+        while (
+          insertIndex < remainingTasks.length &&
+          isDescendant(targetTask.id, remainingTasks[insertIndex].id)
+        ) {
+          insertIndex++;
+        }
+        remainingTasks.splice(insertIndex, 0, ...updatedSubtree);
+      } else {
+        remainingTasks.push(...updatedSubtree);
+      }
     } else {
-      remainingTasks.push(updatedTask);
+      // 'above' or 'below'
+      // If targetTask is a subtask, adopt target's parent_id (stays in same subtask list)
+      // If targetTask is a standalone task, adopt null (becomes standalone task!)
+      draggedTask.parent_id = targetTask.parent_id || null;
+      if (!draggedTask.parent_id) {
+        draggedTask.status = targetTask.status;
+      }
+
+      const updatedSubtree = [draggedTask, ...draggedSubtree.filter(t => t.id !== draggedTaskId).map(t => ({ ...t }))];
+      const targetIndex = remainingTasks.findIndex(t => t.id === targetTask.id);
+      if (targetIndex !== -1) {
+        let insertIndex = targetIndex;
+        if (position === 'below') {
+          insertIndex = targetIndex + 1;
+          while (
+            insertIndex < remainingTasks.length &&
+            isDescendant(targetTask.id, remainingTasks[insertIndex].id)
+          ) {
+            insertIndex++;
+          }
+        }
+        remainingTasks.splice(insertIndex, 0, ...updatedSubtree);
+      } else {
+        remainingTasks.push(...updatedSubtree);
+      }
     }
 
     if (onReorderTasks) {
@@ -367,12 +471,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   };
 
   const handleQuickAddSubtask = (parentId: number) => {
-    setQuickParentId(parentId.toString());
-    titleInputRef.current?.focus();
-    const element = document.getElementById('quick-add-container');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
+    handleOpenEditTask(null, parentId);
   };
 
   const rootTasks = dynamicTasks.filter(t => !t.parent_id);
@@ -385,6 +484,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     const isTarget = dragOverTarget?.taskId === task.id;
     const isAboveTarget = isTarget && dragOverTarget?.position === 'above';
     const isBelowTarget = isTarget && dragOverTarget?.position === 'below';
+    const isInsideTarget = isTarget && dragOverTarget?.position === 'inside';
 
     let depsArray: any[] = [];
     try { if (task.dependencies) depsArray = JSON.parse(task.dependencies); } catch {}
@@ -397,9 +497,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     return (
       <React.Fragment key={task.id}>
         {isAboveTarget && (
-          <tr>
-            <td colSpan={7} className="p-0 border-0">
-              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125" />
+          <tr className="pointer-events-none">
+            <td colSpan={7} className="p-0 border-0 pointer-events-none">
+              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125 pointer-events-none" />
             </td>
           </tr>
         )}
@@ -413,6 +513,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           onDoubleClick={() => handleOpenEditTask(task)}
           className={`hover:bg-indigo-50/30 transition-all text-xs group border-b border-slate-100 last:border-0 ${
             isBeingDragged ? 'opacity-30 bg-indigo-50/50 border-dashed border-indigo-300' : ''
+          } ${
+            isInsideTarget ? 'bg-indigo-100/90 ring-2 ring-indigo-500 border-indigo-500 shadow-sm' : ''
           }`}
         >
           <td className="py-1 pl-4 pr-4">
@@ -431,7 +533,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 className={`cursor-pointer shrink-0 w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-opacity ${selectedTasks.includes(task.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
               />
               {isSubtask ? (
-                <Circle className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                  <span className="text-slate-300 font-bold select-none text-[11px]">↳</span>
+                  <Circle className="h-3.5 w-3.5 text-slate-300" />
+                </div>
               ) : (
                 <Circle className="h-4 w-4 text-indigo-500 fill-indigo-500/10 shrink-0" />
               )}
@@ -439,6 +544,16 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 <div className="font-medium text-slate-800 truncate" title={task.title}>
                   {task.title}
                 </div>
+                {isInsideTarget && (
+                  <span className="text-[10px] bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-1 animate-pulse shrink-0">
+                    ↳ Drop as Subtask
+                  </span>
+                )}
+                {!isSubtask && subTasks.length > 0 && (
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full shrink-0" title={`${subTasks.length} subtask${subTasks.length > 1 ? 's' : ''}`}>
+                    {subTasks.length} {subTasks.length === 1 ? 'subtask' : 'subtasks'}
+                  </span>
+                )}
                 {depsArray.length > 0 && (
                   <div className="group/dep relative flex items-center justify-center shrink-0 cursor-help">
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500 fill-amber-500/20" />
@@ -554,14 +669,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             <DateRangePicker
               startDate={task.start_date}
               dueDate={task.due_date}
-              isOverdue={(() => {
-                if (!task.due_date || task.status === 'COMPLETED') return false;
-                const due = new Date(task.due_date);
-                const today = new Date();
-                due.setHours(0,0,0,0);
-                today.setHours(0,0,0,0);
-                return today > due;
-              })()}
+              isOverdue={isTaskOverdue(task)}
               onSave={async (start, due) => {
                 await onUpdateTaskField?.(task.id, 'start_date', start);
                 await onUpdateTaskField?.(task.id, 'due_date', due);
@@ -570,9 +678,42 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           </td>
 
           <td className="py-1 px-4">
-            <span className="text-xs font-semibold text-slate-500">
-              {task.completed_at ? new Date(task.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
-            </span>
+            <div className="relative inline-flex items-center group/completed">
+              <input
+                type="date"
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                value={task.completed_at ? task.completed_at.split('T')[0] : ''}
+                onChange={async (e) => {
+                  const val = e.target.value ? `${e.target.value}T12:00:00` : null;
+                  await onUpdateTaskField?.(task.id, 'completed_at', val);
+                  if (val && task.status !== 'COMPLETED') {
+                    await onUpdateTaskField?.(task.id, 'status', 'COMPLETED');
+                  }
+                }}
+                title="Click to set or change actual completed date"
+              />
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1.5 transition-colors ${
+                task.completed_at
+                  ? isTaskOverdue(task) && task.status === 'COMPLETED'
+                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'border-transparent text-slate-400 group-hover/completed:bg-slate-100 group-hover/completed:border-slate-200 group-hover/completed:text-slate-600'
+              }`}>
+                {task.completed_at ? (
+                  <>
+                    <CheckCircle2 className={`h-3 w-3 ${isTaskOverdue(task) && task.status === 'COMPLETED' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                    <span>{new Date(task.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    {isTaskOverdue(task) && task.status === 'COMPLETED' && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-600 px-1 py-0.2 rounded border border-rose-200 ml-0.5">
+                        Late
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-slate-400 font-normal hover:underline">—</span>
+                )}
+              </span>
+            </div>
           </td>
 
           <td className="py-1 px-4">
@@ -613,25 +754,29 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 { value: 'TODO', label: 'TO DO' },
                 { value: 'IN_PROGRESS', label: 'IN PROGRESS' },
                 { value: 'REVIEW', label: 'REVIEW' },
+                { value: 'BLOCKED', label: 'BLOCKED' },
                 { value: 'COMPLETED', label: 'COMPLETED' },
               ]}
               triggerElement={
                 <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold w-fit cursor-pointer border shadow-sm ${
                   task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                  task.status === 'REVIEW' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                  task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-200' :
+                  task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                   task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                   'bg-slate-50 text-slate-500 border-slate-200'
                 }`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${
                     task.status === 'COMPLETED' ? 'bg-emerald-500' :
-                    task.status === 'REVIEW' ? 'bg-rose-500' :
+                    task.status === 'BLOCKED' ? 'bg-red-500' :
+                    task.status === 'REVIEW' ? 'bg-amber-500' :
                     task.status === 'IN_PROGRESS' ? 'bg-blue-500' :
                     'bg-slate-400'
                   }`} />
                   <span className="font-bold pr-1">
                     {task.status === 'TODO' ? 'TO DO' :
                      task.status === 'IN_PROGRESS' ? 'IN PROGRESS' :
-                     task.status === 'REVIEW' ? 'REVIEW' : 'COMPLETED'}
+                     task.status === 'REVIEW' ? 'REVIEW' :
+                     task.status === 'BLOCKED' ? 'BLOCKED' : 'COMPLETED'}
                   </span>
                 </div>
               }
@@ -655,6 +800,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 </span>
               </button>
               <div className="flex items-center gap-1">
+                {isSubtask && canEditAny && (
+                  <button 
+                    onClick={() => handlePromoteToStandalone(task)} 
+                    title="Promote to Standalone Task" 
+                    className="p-1 text-slate-300 hover:text-indigo-600 transition-colors"
+                  >
+                    <CornerUpLeft className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {canEditAny && (
                   <button onClick={() => handleQuickAddSubtask(task.id)} title="Add Subtask" className="p-1 text-slate-300 hover:text-emerald-600">
                     <ListPlus className="h-3.5 w-3.5" />
@@ -681,14 +835,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             </div>
           </td>
         </tr>
+        {subTasks.map(st => renderTaskRow(st, level + 1))}
         {isBelowTarget && (
-          <tr>
-            <td colSpan={7} className="p-0 border-0">
-              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125" />
+          <tr className="pointer-events-none">
+            <td colSpan={7} className="p-0 border-0 pointer-events-none">
+              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125 pointer-events-none" />
             </td>
           </tr>
         )}
-        {subTasks.map(st => renderTaskRow(st, level + 1))}
       </React.Fragment>
     );
   };
@@ -715,7 +869,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       const statusGroupsDef = [
         { key: 'IN_PROGRESS', label: 'IN PROGRESS', color: 'bg-blue-500 text-white' },
         { key: 'TODO', label: 'TO DO', color: 'bg-slate-500 text-white' },
-        { key: 'REVIEW', label: 'PENDING REVIEW', color: 'bg-rose-500 text-white' },
+        { key: 'REVIEW', label: 'PENDING REVIEW', color: 'bg-amber-500 text-white' },
+        { key: 'BLOCKED', label: 'BLOCKED', color: 'bg-red-500 text-white' },
         { key: 'COMPLETED', label: 'COMPLETED', color: 'bg-emerald-500 text-white' }
       ];
       return statusGroupsDef.map(g => ({
@@ -915,9 +1070,35 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                     </colgroup>
                     <tbody>
                       {groupTasks.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="py-6 px-8 text-slate-400 text-xs italic border-b border-slate-100 last:border-0">
-                            No tasks here.
+                        <tr
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!draggedTaskId) return;
+                            const subtreeIdSet = new Set(getSubtreeTaskIds(draggedTaskId));
+                            const remainingTasks = dynamicTasks.filter(t => !subtreeIdSet.has(t.id));
+                            const draggedSubtree = dynamicTasks.filter(t => subtreeIdSet.has(t.id));
+                            const draggedTask = { ...draggedSubtree.find(t => t.id === draggedTaskId)! };
+                            if (!draggedTask) return;
+                            
+                            draggedTask.parent_id = null;
+                            if (groupBy === 'status') {
+                              draggedTask.status = group.key;
+                            } else if (groupBy === 'priority') {
+                              draggedTask.priority = group.key;
+                            } else if (groupBy === 'assignee') {
+                              draggedTask.assignee_id = group.key === 'unassigned' ? null : parseInt(group.key, 10);
+                            }
+                            
+                            const updatedSubtree = [draggedTask, ...draggedSubtree.filter(t => t.id !== draggedTaskId).map(t => ({ ...t }))];
+                            remainingTasks.push(...updatedSubtree);
+                            if (onReorderTasks) onReorderTasks(remainingTasks);
+                            handleRowDragEnd();
+                          }}
+                        >
+                          <td colSpan={7} className="py-6 px-8 text-slate-400 text-xs italic border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                            No tasks here. Drop tasks here to move to this group.
                           </td>
                         </tr>
                       ) : (
@@ -1013,6 +1194,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 <option value="TODO" className="bg-slate-800">TO DO</option>
                 <option value="IN_PROGRESS" className="bg-slate-800">IN PROGRESS</option>
                 <option value="REVIEW" className="bg-slate-800">REVIEW</option>
+                <option value="BLOCKED" className="bg-slate-800 text-red-400 font-bold">BLOCKED</option>
                 <option value="COMPLETED" className="bg-slate-800">COMPLETED</option>
               </select>
             </div>

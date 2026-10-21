@@ -43,7 +43,7 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchTaskComments(task.project_id, task.id);
+      const data = await fetchTaskComments(task.project_id || 0, task.id);
       setComments(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load comments');
@@ -58,7 +58,7 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const added = await createTaskComment(task.project_id, task.id, newComment.trim());
+      const added = await createTaskComment(task.project_id || 0, task.id, newComment.trim());
       setComments(prev => [...prev, added]);
       setNewComment('');
       onCommentsUpdated?.();
@@ -71,7 +71,7 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
 
   const handleDeleteComment = async (commentId: number) => {
     try {
-      await deleteTaskComment(task.project_id, task.id, commentId);
+      await deleteTaskComment(task.project_id || 0, task.id, commentId);
       setComments(prev => prev.filter(c => c.id !== commentId));
       onCommentsUpdated?.();
     } catch (err: any) {

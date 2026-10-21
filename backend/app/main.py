@@ -55,6 +55,8 @@ async def recycle_bin_cleanup_task():
 
 @app.on_event("startup")
 async def startup_event():
+    DBStore.init_description_history_table()
+    DBStore.init_stock_drafts_table()
     asyncio.create_task(recycle_bin_cleanup_task())
 
 # Valuation unit prices for dashboard KPI calculation
@@ -72,7 +74,7 @@ def read_root():
         "app": "Smart Store Management System API",
         "version": "1.0.0",
         "status": "online",
-        "mode": "Mock DB (Fallback)" if settings.use_mock_db else "Production Supabase"
+        "mode": "Mock DB (Fallback)" if getattr(settings, "use_mock_db", False) else "Production MySQL"
     }
 
 @app.get("/api/dashboard/stats")

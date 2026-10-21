@@ -1,3 +1,4 @@
+import { DescriptionHistorySection } from './components/DescriptionHistorySection';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -19,6 +20,7 @@ import { TimelineTab } from './workspace-tabs/TimelineTab';
 import { DocumentsTab } from './workspace-tabs/DocumentsTab';
 import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
+import { SubProjectsTab } from './workspace-tabs/SubProjectsTab';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
 import { FolderBrowserModal } from './FolderBrowserModal';
@@ -32,7 +34,7 @@ export const ProjectWorkspace: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert, showConfirm } = useDialog();
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const { success, error: showError } = useToast();
   const isAdmin = hasRole(['Administrator']);
   const [project, setProject] = useState<any>(null);
@@ -42,7 +44,6 @@ export const ProjectWorkspace: React.FC = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   
   const [subProjects, setSubProjects] = useState<any[]>([]);
-  const [subProjectView, setSubProjectView] = useState<'grid' | 'list'>('grid');
   
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
@@ -60,12 +61,15 @@ export const ProjectWorkspace: React.FC = () => {
   const [taskForm, setTaskForm] = useState({
     parent_id: null as number | null,
     title: '', description: '', status: 'TODO', priority: 'MEDIUM',
-    assignee_id: '', assignee_ids: [] as number[], start_date: '', due_date: '', dependencies: [] as any[], blocking: [] as any[],
+    assignee_id: '', assignee_ids: [] as number[], start_date: '', due_date: '', completed_at: '' as string | null, dependencies: [] as any[], blocking: [] as any[],
     estimated_hours: 0, actual_hours: 0,
   });
 
   const [isSubProjectModalOpen, setIsSubProjectModalOpen] = useState(false);
+  const [subProjectInitialStatus, setSubProjectInitialStatus] = useState<string>('PLANNING');
   const [allProjectsList, setAllProjectsList] = useState<any[]>([]);
+  const [syncStatus, setSyncStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const [syncVersion, setSyncVersion] = useState(0);
 
   const loadData = async (projectId: number, silent = false) => {
     try {
@@ -73,7 +77,7 @@ export const ProjectWorkspace: React.FC = () => {
       const [projDetails, taskList, empList, allProjs] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
-        fetchEmployees().catch(() => []),
+        fetchEmployees(true).catch(() => []),
         fetchProjects(1, 1000).catch(() => ({ data: [] }))
       ]);
       setProject(projDetails.project);
@@ -84,11 +88,14 @@ export const ProjectWorkspace: React.FC = () => {
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
       setAllProjectsList(allProjs.data || []);
+      setSyncVersion(v => v + 1);
 
-      if (projDetails.project?.is_parent) {
-        setActiveTab('sub_projects');
-      } else {
-        setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+      if (!silent) {
+        if (projDetails.project?.is_parent) {
+          setActiveTab(prev => ['sub_projects', 'sub_analytics', 'overview', 'notes', 'activity'].includes(prev) ? prev : 'sub_projects');
+        } else {
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+        }
       }
     } catch (error) {
       console.error(error);
@@ -102,6 +109,84 @@ export const ProjectWorkspace: React.FC = () => {
       loadData(parseInt(id));
     }
   }, [id]);
+
+  // Real-time SSE Live Sync + Tab Focus Revalidation
+  useEffect(() => {
+    if (!id) return;
+    const projectId = parseInt(id, 10);
+    if (isNaN(projectId)) return;
+
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: any = null;
+    let debounceTimer: any = null;
+    let isMounted = true;
+
+    const connectSSE = () => {
+      if (!isMounted) return;
+      setSyncStatus('connecting');
+      const token = user?.token || JSON.parse(localStorage.getItem('smart_store_user') || '{}')?.token || '';
+      const url = `/api/projects/${projectId}/events?token=${encodeURIComponent(token)}`;
+
+      try {
+        eventSource = new EventSource(url);
+
+        eventSource.onopen = () => {
+          if (isMounted) setSyncStatus('connected');
+        };
+
+        eventSource.onmessage = (e) => {
+          if (!isMounted) return;
+          try {
+            const payload = JSON.parse(e.data);
+            if (payload.type === 'CONNECTED') {
+              setSyncStatus('connected');
+              return;
+            }
+            // Batch rapid events into a single background refresh
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+              if (isMounted) {
+                loadData(projectId, true);
+              }
+            }, 300);
+          } catch (err) {
+            console.error('Error handling SSE live sync message:', err);
+          }
+        };
+
+        eventSource.onerror = () => {
+          if (!isMounted) return;
+          setSyncStatus('disconnected');
+          eventSource?.close();
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectSSE, 3000);
+        };
+      } catch (err) {
+        if (isMounted) {
+          setSyncStatus('disconnected');
+          reconnectTimer = setTimeout(connectSSE, 3000);
+        }
+      }
+    };
+
+    connectSSE();
+
+    // Auto-revalidate when user returns to this browser tab
+    const handleFocus = () => {
+      loadData(projectId, true);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      clearTimeout(debounceTimer);
+      window.removeEventListener('focus', handleFocus);
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [id, user?.token]);
 
   useEffect(() => {
     if (dynamicTasks.length > 0 && location.state?.openTaskId) {
@@ -224,7 +309,7 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
-  const handleOpenEditTask = (task?: any) => {
+  const handleOpenEditTask = (task?: any, parentId?: number | null) => {
     if (task) {
       setEditingTask(task);
       let depsArray: any[] = [];
@@ -269,19 +354,27 @@ export const ProjectWorkspace: React.FC = () => {
         title: task.title, description: task.description || '', status: task.status, priority: task.priority,
         assignee_id: task.assignee_id ? task.assignee_id.toString() : '',
         assignee_ids: parsedAssigneeIds,
-        start_date: task.start_date || '', due_date: task.due_date || '', dependencies: depsArray, blocking: blockingArray,
+        start_date: task.start_date || '', due_date: task.due_date || '', completed_at: task.completed_at || '', dependencies: depsArray, blocking: blockingArray,
         estimated_hours: task.estimated_hours || 0, actual_hours: task.actual_hours || 0,
       });
     } else {
       setEditingTask(null);
+      const parentTask = parentId ? dynamicTasks.find(t => Number(t.id) === Number(parentId)) : null;
       setTaskForm({
-        parent_id: null,
-        title: '', description: '', status: 'TODO', priority: 'MEDIUM', assignee_id: '', assignee_ids: [],
-        start_date: '',
-        due_date: '',
+        parent_id: parentId ?? null,
+        title: '',
+        description: '',
+        status: parentTask?.status || 'TODO',
+        priority: parentTask?.priority || 'MEDIUM',
+        assignee_id: '',
+        assignee_ids: [],
+        start_date: parentTask?.start_date || '',
+        due_date: parentTask?.due_date || '',
+        completed_at: '',
         dependencies: [],
         blocking: [],
-        estimated_hours: 0, actual_hours: 0,
+        estimated_hours: 0,
+        actual_hours: 0,
       });
     }
     setIsTaskFormOpen(true);
@@ -293,10 +386,13 @@ export const ProjectWorkspace: React.FC = () => {
       showAlert("Title is required");
       return;
     }
+    const maxSortOrder = dynamicTasks.reduce((max, t) => Math.max(max, t.sort_order ?? 0), -1);
     const payload = {
       ...taskForm,
+      sort_order: editingTask ? editingTask.sort_order : (maxSortOrder + 1),
       assignee_id: taskForm.assignee_id ? parseInt(taskForm.assignee_id, 10) : null,
       assignee_ids: taskForm.assignee_ids || [],
+      completed_at: taskForm.completed_at || null,
       dependencies: taskForm.dependencies.length > 0 ? JSON.stringify(taskForm.dependencies) : null,
       blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null
     };
@@ -347,8 +443,10 @@ export const ProjectWorkspace: React.FC = () => {
 
   const handleCreateQuickTask = async (taskData: any) => {
     try {
+      const maxSortOrder = dynamicTasks.reduce((max, t) => Math.max(max, t.sort_order ?? 0), -1);
       const payload = {
         ...taskData,
+        sort_order: taskData.sort_order !== undefined ? taskData.sort_order : (maxSortOrder + 1),
         start_date: taskData.start_date || null,
         due_date: taskData.due_date || null,
       };
@@ -365,14 +463,17 @@ export const ProjectWorkspace: React.FC = () => {
     try {
       const taskBefore = dynamicTasks.find(t => t.id === taskId);
       const oldStatus = taskBefore ? taskBefore.status : null;
+      const oldCompletedAt = taskBefore ? taskBefore.completed_at : null;
       
+      const newCompletedAt = newStatus === 'COMPLETED' ? (taskBefore?.completed_at || new Date().toISOString()) : null;
+
       await updateDynamicTask(project.id, taskId, { status: newStatus });
-      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus, completed_at: newCompletedAt } : t));
       
       success(`Task status updated`, 'Success', 3000, async () => {
         if (oldStatus) {
-          await updateDynamicTask(project.id, taskId, { status: oldStatus });
-          setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: oldStatus } : t));
+          await updateDynamicTask(project.id, taskId, { status: oldStatus, completed_at: oldCompletedAt });
+          setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: oldStatus, completed_at: oldCompletedAt } : t));
           loadData(project.id, true);
         }
       });
@@ -388,8 +489,13 @@ export const ProjectWorkspace: React.FC = () => {
       const taskBefore = dynamicTasks.find(t => t.id === taskId);
       const oldValue = taskBefore ? taskBefore[field] : null;
 
+      const extraUpdates: any = {};
+      if (field === 'status') {
+        extraUpdates.completed_at = value === 'COMPLETED' ? (taskBefore?.completed_at || new Date().toISOString()) : null;
+      }
+
       await updateDynamicTask(project.id, taskId, { [field]: value });
-      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value } : t));
+      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value, ...extraUpdates } : t));
       await loadData(project.id, true);
       
       if (field !== 'assignee_id' && field !== 'assignee_ids') {
@@ -409,8 +515,14 @@ export const ProjectWorkspace: React.FC = () => {
   };
 
   const handleReorderTasks = async (newTasks: any[]) => {
-    setDynamicTasks(newTasks);
-    const updates = newTasks.map((t, index) => ({ id: t.id, sort_order: index }));
+    const tasksWithOrder = newTasks.map((t, index) => ({ ...t, sort_order: index }));
+    setDynamicTasks(tasksWithOrder);
+    const updates = tasksWithOrder.map(t => ({
+      id: t.id,
+      sort_order: t.sort_order,
+      parent_id: t.parent_id !== undefined ? t.parent_id : null,
+      status: t.status
+    }));
     try {
       await reorderDynamicTasks(project.id, updates);
     } catch (err: any) {
@@ -460,6 +572,14 @@ export const ProjectWorkspace: React.FC = () => {
                     project.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
                     'bg-slate-100 text-slate-700'
                   }`}>{project.status.replace('_', ' ')}</span>
+                  <span>•</span>
+                  <span 
+                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 cursor-default" 
+                    title={syncStatus === 'connected' ? 'Live real-time sync active' : syncStatus === 'connecting' ? 'Connecting to live sync...' : 'Live sync disconnected (auto-reconnecting)'}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${syncStatus === 'connected' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]' : syncStatus === 'connecting' ? 'bg-amber-400 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="hidden sm:inline text-slate-400 text-[10px] font-semibold">{syncStatus === 'connected' ? 'Live' : syncStatus === 'connecting' ? 'Syncing...' : 'Offline'}</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -530,137 +650,32 @@ export const ProjectWorkspace: React.FC = () => {
       {/* Workspace Content Area */}
       <div className="p-6 pt-1 relative flex-1 min-h-0 flex flex-col">
         {activeTab === 'sub_projects' && (
-          <div className="max-w-7xl mx-auto space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800">Sub-Projects ({subProjects.length})</h2>
-                <p className="text-xs text-slate-500 font-medium">All sub-project modules linked directly inside this major project folder.</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="bg-slate-100 p-1 rounded-lg flex items-center shadow-inner">
-                  <button
-                    onClick={() => setSubProjectView('grid')}
-                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${subProjectView === 'grid' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    title="Grid View"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setSubProjectView('list')}
-                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${subProjectView === 'list' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    title="List View"
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
-                </div>
-                <button
-                  onClick={() => setIsSubProjectModalOpen(true)}
-                  className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Sub-Project
-                </button>
-              </div>
-            </div>
-
-            {subProjects.length === 0 ? (
-              <div className="bg-white rounded-2xl p-10 text-center border border-slate-200 shadow-xs">
-                <FolderPlus className="h-10 w-10 text-purple-400 mx-auto mb-3" />
-                <h3 className="font-bold text-slate-800 text-base mb-1">No sub-projects yet</h3>
-                <p className="text-slate-500 font-medium text-xs max-w-md mx-auto mb-4">
-                  Major projects act as containers. Create sub-projects to manage individual BOMs, schematics, and task timelines.
-                </p>
-                <button
-                  onClick={() => setIsSubProjectModalOpen(true)}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create First Sub-Project
-                </button>
-              </div>
-            ) : subProjectView === 'grid' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {subProjects.map(sp => (
-                  <Link
-                    key={sp.id}
-                    to={`/projects/${sp.id}`}
-                    className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm hover:shadow-md hover:border-purple-300 transition-all flex flex-col justify-between group"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-600">
-                          {sp.code}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          sp.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
-                          sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
-                          {sp.status.replace('_', ' ')}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-slate-800 text-base mb-1 group-hover:text-purple-600 transition-colors flex items-center gap-1.5">
-                        <Folder className="h-4 w-4 text-purple-500 shrink-0" />
-                        {sp.name}
-                      </h3>
-                      {sp.description && (
-                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">{sp.description}</p>
-                      )}
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                      <span>In-charge: <strong className="text-slate-700">{sp.project_incharge || 'Unassigned'}</strong></span>
-                      <span className="font-bold text-purple-600 group-hover:translate-x-1 transition-transform">View →</span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                <table className="w-full text-left border-collapse text-xs text-slate-650">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                      <th className="px-4 py-3">Project</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">In-charge</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {subProjects.map(sp => (
-                      <tr key={sp.id} className="hover:bg-slate-50 transition-colors group">
-                        <td className="px-4 py-3">
-                          <Link to={`/projects/${sp.id}`} className="block">
-                            <div className="font-bold text-slate-800 text-sm mb-0.5 group-hover:text-purple-600 transition-colors flex items-center gap-1.5">
-                              <Folder className="h-3.5 w-3.5 text-purple-500 shrink-0" />
-                              {sp.name}
-                            </div>
-                            <div className="text-[10px] font-mono text-slate-400">{sp.code}</div>
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            sp.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
-                            sp.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
-                            {sp.status.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-slate-700">
-                          {sp.project_incharge || 'Unassigned'}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link to={`/projects/${sp.id}`} className="inline-block font-bold text-purple-600 hover:text-purple-700 hover:underline cursor-pointer">
-                            View
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <SubProjectsTab
+            subProjects={subProjects}
+            onOpenCreateModal={(status) => {
+              setSubProjectInitialStatus(status || 'PLANNING');
+              setIsSubProjectModalOpen(true);
+            }}
+            onUpdateStatus={async (subProjectId, newStatus) => {
+              const previous = subProjects.find(sp => sp.id === subProjectId);
+              const oldStatus = previous?.status;
+              setSubProjects(prev => prev.map(sp => sp.id === subProjectId ? { ...sp, status: newStatus } : sp));
+              try {
+                await updateProject(subProjectId, { status: newStatus });
+                success(`Sub-project status updated to ${newStatus.replace('_', ' ')}`, 'Status Updated');
+                if (project?.id) {
+                  loadData(project.id, true);
+                }
+              } catch (err: any) {
+                if (oldStatus) {
+                  setSubProjects(prev => prev.map(sp => sp.id === subProjectId ? { ...sp, status: oldStatus } : sp));
+                }
+                showError(err.message || 'Failed to update sub-project status', 'Update Failed');
+                showAlert(err.message || 'Failed to update sub-project status');
+              }
+            }}
+            employees={employees}
+          />
         )}
 
         {activeTab === 'sub_analytics' && (
@@ -723,10 +738,16 @@ export const ProjectWorkspace: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
             <div className="md:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
                   <LayoutDashboard className="h-5 w-5 mr-2 text-slate-400" />
                   Project Specifications
                 </h3>
+                <DescriptionHistorySection
+                  entityType="project"
+                  projectId={project.id}
+                  entityId={project.id}
+                  isReadOnly
+                />
                 {project.description ? (
                   <div className="prose prose-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6">
                     {project.description.split('\n').map((line: string, i: number) => (
@@ -827,7 +848,7 @@ export const ProjectWorkspace: React.FC = () => {
         )}
         
         {activeTab === 'notes' && <NotesTab projectId={project.id} />}
-        {activeTab === 'activity' && <ActivityTab projectId={project.id} />}
+        {activeTab === 'activity' && <ActivityTab projectId={project.id} refreshTrigger={syncVersion} />}
         {activeTab === 'service' && <ServiceTickets projectId={project.id} />}
       </div>
 
@@ -855,6 +876,7 @@ export const ProjectWorkspace: React.FC = () => {
         project={null}
         allProjects={allProjectsList}
         initialParentId={project.id}
+        initialStatus={subProjectInitialStatus}
         onSave={async (formData) => {
           try {
             await createProject({ ...formData, parent_id: project.id, is_parent: false });
@@ -875,6 +897,7 @@ export const ProjectWorkspace: React.FC = () => {
         editingTask={editingTask}
         employees={employees}
         dynamicTasks={dynamicTasks}
+        projectId={project.id}
       />
 
       <TaskCommentsModal

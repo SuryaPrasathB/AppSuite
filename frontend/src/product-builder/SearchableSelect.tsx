@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, Search, Trash2, X } from 'lucide-react';
 
 interface Option {
   label: string;
@@ -97,17 +97,43 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           }}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
-          className="w-full bg-transparent outline-none pl-3 pr-8 py-2.5 text-sm text-slate-800 truncate cursor-text"
+          className="w-full bg-transparent outline-none pl-3 pr-14 py-2.5 text-sm text-slate-800 truncate cursor-text"
           autoComplete="off"
         />
-        <div className="absolute right-2 pointer-events-none text-slate-400">
-          <ChevronDown className="h-4 w-4" />
+        <div className="absolute right-2.5 flex items-center gap-1 text-slate-400">
+          {value && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+                setSearch('');
+              }}
+              className="text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors cursor-pointer"
+              title="Clear selection"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <ChevronDown className="h-4 w-4 pointer-events-none" />
         </div>
       </div>
 
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden flex flex-col max-h-60">
           <div className="overflow-y-auto flex-1 py-1">
+            {!search && value && (
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-50 italic border-b border-slate-100"
+                onClick={() => {
+                  onChange('');
+                  setIsOpen(false);
+                }}
+              >
+                — Clear selection —
+              </button>
+            )}
             {search && !allOptions.some(opt => opt.label.toLowerCase() === search.trim().toLowerCase()) && (
               <button
                 type="button"

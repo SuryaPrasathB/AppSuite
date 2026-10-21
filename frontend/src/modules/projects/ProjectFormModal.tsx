@@ -1,3 +1,4 @@
+import { DescriptionHistorySection } from './components/DescriptionHistorySection';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Folder, CheckCircle2, Building2, User, CalendarDays, Layers, 
@@ -14,6 +15,7 @@ interface ProjectFormModalProps {
   nextCode?: string;
   allProjects?: any[];
   initialParentId?: number;
+  initialStatus?: string;
 }
 
 const toTitleCase = (str: string) => {
@@ -28,7 +30,7 @@ const toTitleCase = (str: string) => {
 };
 
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
-  project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId
+  project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId, initialStatus
 }) => {
   const { showConfirm, showAlert } = useDialog();
   const submitActionRef = useRef<'save' | 'save_and_add'>('save');
@@ -121,7 +123,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           description: '',
           start_date: today,
           date_of_delivery: '',
-          status: 'PLANNING',
+          status: initialStatus || 'PLANNING',
           has_software: false,
           has_firmware: false,
           has_transformer: false,
@@ -457,27 +459,31 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                   </div>
                 </div>
                 
-                {project && (
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Status</label>
-                    <select
-                      value={form.status}
-                      onChange={(e) => setForm({...form, status: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all cursor-pointer"
-                    >
-                      <option value="PLANNING">PLANNING</option>
-                      <option value="IN_PROGRESS">IN_PROGRESS</option>
-                      <option value="ON_HOLD">ON_HOLD</option>
-                      <option value="COMPLETED">COMPLETED</option>
-                      <option value="SERVICE">SERVICE</option>
-                      <option value="CANCELLED">CANCELLED</option>
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Status</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => setForm({...form, status: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all cursor-pointer"
+                  >
+                    <option value="PLANNING">PLANNING</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS</option>
+                    <option value="ON_HOLD">ON_HOLD</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="SERVICE">SERVICE</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
               </div>
               
               <div className="mt-5">
                 <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Description</label>
+                <DescriptionHistorySection
+                  entityType="project"
+                  projectId={project?.id}
+                  entityId={project?.id}
+                  onRestore={(desc) => setForm((prev: any) => ({ ...prev, description: desc }))}
+                />
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm({...form, description: e.target.value})}

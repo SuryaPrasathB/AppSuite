@@ -17,6 +17,30 @@ def get_db_connection():
 
 class DBStore:
     @staticmethod
+    def init_description_history_table():
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS description_histories (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    entity_type VARCHAR(50) NOT NULL,
+                    entity_id INT NOT NULL,
+                    old_description TEXT,
+                    new_description TEXT,
+                    user_id INT DEFAULT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES employees(id) ON DELETE SET NULL,
+                    INDEX idx_entity (entity_type, entity_id, created_at)
+                )
+            """)
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print("init_description_history_table error:", e)
+
+    @staticmethod
     def get_vendors() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -836,6 +860,105 @@ class DBStore:
         return employees
 
     @staticmethod
+    def get_employees_with_workload() -> List[Dict[str, Any]]:
+        employees = DBStore.get_employees()
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            
+            # Fetch all active (non-completed, non-cancelled) tasks with assignees
+            query = """
+                SELECT DISTINCT dt.id, dt.title, dt.project_id, dt.status, dt.priority, 
+                       dt.start_date, dt.due_date, p.name as project_name, p.code as project_code,
+                       COALESCE(ta.employee_id, dt.assignee_id) as employee_id
+                FROM dynamic_tasks dt
+                LEFT JOIN task_assignees ta ON dt.id = ta.task_id
+                LEFT JOIN projects p ON dt.project_id = p.id
+                WHERE dt.status NOT IN ('COMPLETED', 'CANCELLED')
+                  AND (ta.employee_id IS NOT NULL OR dt.assignee_id IS NOT NULL)
+                ORDER BY dt.due_date ASC, dt.id ASC
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            emp_tasks: Dict[int, List[Dict[str, Any]]] = {}
+            for r in rows:
+                emp_id = r.get('employee_id')
+                if not emp_id:
+                    continue
+                try:
+                    emp_id = int(emp_id)
+                except (ValueError, TypeError):
+                    continue
+
+                if emp_id not in emp_tasks:
+                    emp_tasks[emp_id] = []
+
+                due_str = None
+                if r.get('due_date'):
+                    due_str = r['due_date'].isoformat() if hasattr(r['due_date'], 'isoformat') else str(r['due_date'])
+
+                start_str = None
+                if r.get('start_date'):
+                    start_str = r['start_date'].isoformat() if hasattr(r['start_date'], 'isoformat') else str(r['start_date'])
+
+                is_overdue = False
+                if due_str and due_str.split('T')[0] < today_str:
+                    is_overdue = True
+
+                emp_tasks[emp_id].append({
+                    "id": r['id'],
+                    "title": r['title'],
+                    "project_id": r['project_id'],
+                    "project_name": r.get('project_name') or 'Project',
+                    "project_code": r.get('project_code') or '',
+                    "status": r.get('status', 'TODO'),
+                    "priority": r.get('priority', 'Medium'),
+                    "start_date": start_str,
+                    "due_date": due_str,
+                    "is_overdue": is_overdue
+                })
+
+            for emp in employees:
+                e_id = emp['id']
+                tasks = emp_tasks.get(e_id, [])
+                emp['active_task_count'] = len(tasks)
+                emp['in_progress_count'] = sum(1 for t in tasks if t['status'] == 'IN_PROGRESS')
+                emp['overdue_task_count'] = sum(1 for t in tasks if t['is_overdue'])
+
+                start_dates = [t['start_date'].split('T')[0] for t in tasks if t.get('start_date')]
+                due_dates = [t['due_date'].split('T')[0] for t in tasks if t.get('due_date')]
+
+                if tasks:
+                    emp['engaged_from'] = min(start_dates) if start_dates else (min(due_dates) if due_dates else None)
+                    emp['engaged_until'] = max(due_dates) if due_dates else (max(start_dates) if start_dates else None)
+                    emp['next_available_date'] = emp['engaged_until']
+                else:
+                    emp['engaged_from'] = None
+                    emp['engaged_until'] = None
+                    emp['next_available_date'] = None
+
+                # Keep up to 8 tasks for quick peek
+                emp['active_tasks'] = tasks[:8]
+
+        except Exception as e:
+            print(f"Error enriching employees with workload: {e}", file=sys.stderr)
+            for emp in employees:
+                emp['active_task_count'] = 0
+                emp['in_progress_count'] = 0
+                emp['overdue_task_count'] = 0
+                emp['engaged_from'] = None
+                emp['engaged_until'] = None
+                emp['next_available_date'] = None
+                emp['active_tasks'] = []
+
+        return employees
+
+    @staticmethod
     def add_employee(employee: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1541,9 +1664,20 @@ class DBStore:
         elif primary_assignee_id and primary_assignee_id not in assignee_ids:
             assignee_ids.append(primary_assignee_id)
 
+        sort_order = task.get("sort_order")
+        if sort_order is None:
+            cursor.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM dynamic_tasks WHERE project_id = %s", (project_id,))
+            row = cursor.fetchone()
+            sort_order = row["next_order"] if row and row.get("next_order") is not None else 0
+
+        completed_at = task.get("completed_at")
+        if not completed_at and task.get("status") == "COMPLETED":
+            from datetime import datetime
+            completed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
         query = """
-            INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, assignee_id, start_date, due_date, dependencies)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, assignee_id, start_date, due_date, completed_at, dependencies, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project_id,
@@ -1555,7 +1689,9 @@ class DBStore:
             primary_assignee_id or None,
             task.get("start_date") or None,
             task.get("due_date") or None,
-            task.get("dependencies") or None
+            completed_at or None,
+            task.get("dependencies") or None,
+            sort_order
         )
         cursor.execute(query, values)
         task_id = cursor.lastrowid
@@ -1576,7 +1712,19 @@ class DBStore:
         DBStore._enrich_task_assignees(cursor, created_task_list)
         cursor.close()
         conn.close()
-        return created_task_list[0] if created_task_list else task
+        t = created_task_list[0] if created_task_list else task
+        if t:
+            if t.get('created_at') and hasattr(t['created_at'], 'isoformat'):
+                t['created_at'] = t['created_at'].isoformat()
+            if t.get('updated_at') and hasattr(t['updated_at'], 'isoformat'):
+                t['updated_at'] = t['updated_at'].isoformat()
+            if t.get('completed_at') and hasattr(t['completed_at'], 'isoformat'):
+                t['completed_at'] = t['completed_at'].isoformat()
+            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
+                t['start_date'] = t['start_date'].isoformat()
+            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
+                t['due_date'] = t['due_date'].isoformat()
+        return t
 
     @staticmethod
     def update_dynamic_task(task_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1594,7 +1742,7 @@ class DBStore:
 
         updates = []
         values = []
-        fields = ["parent_id", "title", "description", "status", "priority", "assignee_id", "start_date", "due_date", "dependencies"]
+        fields = ["parent_id", "title", "description", "status", "priority", "assignee_id", "start_date", "due_date", "dependencies", "sort_order"]
         for key in fields:
             if key in data:
                 updates.append(f"{key} = %s")
@@ -1603,9 +1751,12 @@ class DBStore:
                 else:
                     values.append(data[key])
                     
-        if "status" in data:
+        if "completed_at" in data:
+            updates.append("completed_at = %s")
+            values.append(data["completed_at"] or None)
+        elif "status" in data:
             if data["status"] == "COMPLETED":
-                updates.append("completed_at = CURRENT_TIMESTAMP")
+                updates.append("completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)")
             else:
                 updates.append("completed_at = NULL")
                     
@@ -1934,6 +2085,10 @@ class DBStore:
     def add_project_activity(project_id: int, action: str, description: str = None, user_id: int = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        if user_id is not None:
+            cursor.execute("SELECT id FROM employees WHERE id = %s", (user_id,))
+            if not cursor.fetchone():
+                user_id = None
         cursor.execute(
             "INSERT INTO project_activities (project_id, action, description, user_id) VALUES (%s, %s, %s, %s)",
             (project_id, action, description, user_id)
@@ -1952,6 +2107,59 @@ class DBStore:
         conn.close()
         if activity and activity.get('created_at'): activity['created_at'] = activity['created_at'].isoformat()
         return activity
+
+    @staticmethod
+    def record_description_change(entity_type: str, entity_id: int, old_description: Optional[str], new_description: Optional[str], user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        clean_old = (old_description or "").strip()
+        clean_new = (new_description or "").strip()
+        if clean_old == clean_new:
+            return None
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        if user_id is not None:
+            cursor.execute("SELECT id FROM employees WHERE id = %s", (user_id,))
+            if not cursor.fetchone():
+                user_id = None
+        cursor.execute(
+            """INSERT INTO description_histories (entity_type, entity_id, old_description, new_description, user_id)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (entity_type, entity_id, old_description, new_description, user_id)
+        )
+        rec_id = cursor.lastrowid
+        conn.commit()
+
+        cursor.execute("""
+            SELECT dh.*, e.name as user_name
+            FROM description_histories dh
+            LEFT JOIN employees e ON dh.user_id = e.id
+            WHERE dh.id = %s
+        """, (rec_id,))
+        record = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if record and record.get('created_at'):
+            record['created_at'] = record['created_at'].isoformat()
+        return record
+
+    @staticmethod
+    def get_description_history(entity_type: str, entity_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT dh.*, e.name as user_name
+            FROM description_histories dh
+            LEFT JOIN employees e ON dh.user_id = e.id
+            WHERE dh.entity_type = %s AND dh.entity_id = %s
+            ORDER BY dh.created_at DESC
+        """, (entity_type, entity_id))
+        records = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for r in records:
+            if r.get('created_at'):
+                r['created_at'] = r['created_at'].isoformat()
+        return records
 
     @staticmethod
     def get_notifications(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
@@ -2063,12 +2271,14 @@ class DBStore:
             task_id_map = {}
 
             # 2. Insert Phases (as parent tasks in dynamic_tasks)
+            current_sort_order = 0
             for phase in plan_json.get("phases", []):
                 query_phase = """
-                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority)
-                    VALUES (%s, NULL, %s, %s, 'TODO', 'MEDIUM')
+                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, sort_order)
+                    VALUES (%s, NULL, %s, %s, 'TODO', 'MEDIUM', %s)
                 """
-                cursor.execute(query_phase, (project_id, phase["name"], phase.get("description") or ""))
+                cursor.execute(query_phase, (project_id, phase["name"], phase.get("description") or "", current_sort_order))
+                current_sort_order += 1
                 db_phase_id = cursor.lastrowid
                 phase_id_map[phase["id"]] = db_phase_id
 
@@ -2076,8 +2286,8 @@ class DBStore:
             for t in plan_json.get("tasks", []):
                 db_phase_id = phase_id_map.get(t["phaseId"])
                 query_task = """
-                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, start_date, due_date)
-                    VALUES (%s, %s, %s, %s, 'TODO', %s, %s, %s)
+                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, start_date, due_date, sort_order)
+                    VALUES (%s, %s, %s, %s, 'TODO', %s, %s, %s, %s)
                 """
                 cursor.execute(query_task, (
                     project_id,
@@ -2086,8 +2296,10 @@ class DBStore:
                     t.get("description") or "",
                     t.get("priority", "MEDIUM"),
                     t.get("earliestStartDate") or None,
-                    t.get("earliestFinishDate") or None
+                    t.get("earliestFinishDate") or None,
+                    current_sort_order
                 ))
+                current_sort_order += 1
                 db_task_id = cursor.lastrowid
                 task_id_map[t["id"]] = db_task_id
 
@@ -2096,10 +2308,11 @@ class DBStore:
                 db_task_id = task_id_map.get(sub["taskId"])
                 if db_task_id:
                     query_sub = """
-                        INSERT INTO dynamic_tasks (project_id, parent_id, title, status, priority)
-                        VALUES (%s, %s, %s, 'TODO', 'MEDIUM')
+                        INSERT INTO dynamic_tasks (project_id, parent_id, title, status, priority, sort_order)
+                        VALUES (%s, %s, %s, 'TODO', 'MEDIUM', %s)
                     """
-                    cursor.execute(query_sub, (project_id, db_task_id, sub["name"]))
+                    cursor.execute(query_sub, (project_id, db_task_id, sub["name"], current_sort_order))
+                    current_sort_order += 1
 
             # 5. Insert Dependencies
             for dep in plan_json.get("dependencies", []):
@@ -2179,7 +2392,7 @@ class DBStore:
     def get_active_announcements(limit=5) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND created_at >= NOW() - INTERVAL 2 DAY ORDER BY created_at DESC LIMIT %s", (limit,))
+        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND created_at >= NOW() - INTERVAL '23:59:59' HOUR_SECOND ORDER BY created_at DESC LIMIT %s", (limit,))
         announcements = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -2213,6 +2426,20 @@ class DBStore:
         cursor.close()
         conn.close()
         return True
+
+    @staticmethod
+    def update_announcement(announcement_id: int, message: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("UPDATE announcements SET message = %s WHERE id = %s", (message, announcement_id))
+        conn.commit()
+        cursor.execute("SELECT * FROM announcements WHERE id = %s", (announcement_id,))
+        announcement = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if announcement and announcement.get('created_at'):
+            announcement['created_at'] = announcement['created_at'].isoformat()
+        return announcement
 
     @staticmethod
     def get_service_tickets(project_id: Optional[int] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -2415,7 +2642,131 @@ class DBStore:
             raise e
         finally:
             cursor.close()
+    @staticmethod
+    def init_stock_drafts_table():
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS stock_drafts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    draft_type VARCHAR(50) NOT NULL,
+                    reference_no VARCHAR(100),
+                    title VARCHAR(255),
+                    user_name VARCHAR(100),
+                    user_role VARCHAR(100),
+                    total_items INT DEFAULT 0,
+                    total_quantity DECIMAL(10, 2) DEFAULT 0.0,
+                    data JSON NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_type (draft_type, updated_at)
+                )
+            """)
+            conn.commit()
+            cursor.close()
             conn.close()
+        except Exception as e:
+            print("init_stock_drafts_table error:", e)
+
+    @staticmethod
+    def get_stock_drafts(draft_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        if draft_type:
+            cursor.execute("""
+                SELECT * FROM stock_drafts 
+                WHERE draft_type = %s 
+                ORDER BY updated_at DESC
+            """, (draft_type,))
+        else:
+            cursor.execute("""
+                SELECT * FROM stock_drafts 
+                ORDER BY updated_at DESC
+            """)
+        drafts = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for d in drafts:
+            if d.get('created_at') and hasattr(d['created_at'], 'isoformat'):
+                d['created_at'] = d['created_at'].isoformat()
+            if d.get('updated_at') and hasattr(d['updated_at'], 'isoformat'):
+                d['updated_at'] = d['updated_at'].isoformat()
+            if d.get('total_quantity') is not None:
+                d['total_quantity'] = float(d['total_quantity'])
+            if isinstance(d.get('data'), str):
+                try:
+                    d['data'] = json.loads(d['data'])
+                except:
+                    pass
+        return drafts
+
+    @staticmethod
+    def get_stock_draft(draft_id: int) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM stock_drafts WHERE id = %s", (draft_id,))
+        draft = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not draft:
+            return None
+        if draft.get('created_at') and hasattr(draft['created_at'], 'isoformat'):
+            draft['created_at'] = draft['created_at'].isoformat()
+        if draft.get('updated_at') and hasattr(draft['updated_at'], 'isoformat'):
+            draft['updated_at'] = draft['updated_at'].isoformat()
+        if draft.get('total_quantity') is not None:
+            draft['total_quantity'] = float(draft['total_quantity'])
+        if isinstance(draft.get('data'), str):
+            try:
+                draft['data'] = json.loads(draft['data'])
+            except:
+                pass
+        return draft
+
+    @staticmethod
+    def save_stock_draft(draft: Dict[str, Any], draft_id: Optional[int] = None) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        draft_type = draft.get("draft_type", "STOCK_IN")
+        reference_no = draft.get("reference_no", "")
+        title = draft.get("title", "")
+        user_name = draft.get("user_name", "Storekeeper")
+        user_role = draft.get("user_role", "Storekeeper")
+        total_items = int(draft.get("total_items", 0))
+        total_quantity = float(draft.get("total_quantity", 0.0))
+        data_json = json.dumps(draft.get("data", {}))
+
+        if draft_id:
+            cursor.execute("""
+                UPDATE stock_drafts 
+                SET draft_type = %s, reference_no = %s, title = %s, user_name = %s, user_role = %s,
+                    total_items = %s, total_quantity = %s, data = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (draft_type, reference_no, title, user_name, user_role, total_items, total_quantity, data_json, draft_id))
+            saved_id = draft_id
+        else:
+            cursor.execute("""
+                INSERT INTO stock_drafts (draft_type, reference_no, title, user_name, user_role, total_items, total_quantity, data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (draft_type, reference_no, title, user_name, user_role, total_items, total_quantity, data_json))
+            saved_id = cursor.lastrowid
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_stock_draft(saved_id)
+
+    @staticmethod
+    def delete_stock_draft(draft_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM stock_drafts WHERE id = %s", (draft_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        cursor.close()
+        conn.close()
+        return deleted
 
 
 class AssetStore:
