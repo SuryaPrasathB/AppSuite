@@ -4,7 +4,7 @@ import {
   Folder, CheckCircle2, Building2, User, CalendarDays, Layers, 
   Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X
 } from 'lucide-react';
-import { fetchEmployees } from './api';
+import { fetchEmployees, fetchNextProjectCode } from './api';
 import { useDialog } from '../../context/DialogContext';
 
 interface ProjectFormModalProps {
@@ -16,6 +16,7 @@ interface ProjectFormModalProps {
   allProjects?: any[];
   initialParentId?: number;
   initialStatus?: string;
+  initialCategory?: string;
 }
 
 const toTitleCase = (str: string) => {
@@ -30,14 +31,14 @@ const toTitleCase = (str: string) => {
 };
 
 export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({ 
-  project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId, initialStatus
+  project, isOpen, onClose, onSave, nextCode, allProjects = [], initialParentId, initialStatus, initialCategory
 }) => {
   const { showConfirm, showAlert } = useDialog();
   const submitActionRef = useRef<'save' | 'save_and_add'>('save');
   const [isCodeManualOverride, setIsCodeManualOverride] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [useAiPlanning, setUseAiPlanning] = useState(false);
-  const [projectTypeOption, setProjectTypeOption] = useState<'standalone' | 'major' | 'sub'>('standalone');
+  const [projectTypeOption, setProjectTypeOption] = useState<'standalone' | 'major' | 'sub' | 'rnd'>('standalone');
   const [form, setForm] = useState({
     code: '',
     name: '',
@@ -57,6 +58,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     parent_id: null as number | null,
     template_id: null as number | null,
     is_parent: false,
+    category: 'STANDARD',
     // AI fields
     objectives: '',
     scope: '',
@@ -77,8 +79,10 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
         setIsCodeManualOverride(true);
         const isParent = project.is_parent || false;
         const parentId = project.parent_id || null;
-        let pOption: 'standalone' | 'major' | 'sub' = 'standalone';
-        if (isParent) pOption = 'major';
+        const isRnd = project.category === 'RND';
+        let pOption: 'standalone' | 'major' | 'sub' | 'rnd' = 'standalone';
+        if (isRnd) pOption = 'rnd';
+        else if (isParent) pOption = 'major';
         else if (parentId) pOption = 'sub';
         setProjectTypeOption(pOption);
 
@@ -101,6 +105,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           parent_id: parentId,
           template_id: null,
           is_parent: isParent,
+          category: project.category || 'STANDARD',
           objectives: '',
           scope: '',
           technologies: '',
@@ -112,8 +117,10 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       } else {
         setIsCodeManualOverride(false);
         setUseAiPlanning(false);
-        setProjectTypeOption(initialParentId ? 'sub' : 'standalone');
+        const startAsRnd = !initialParentId && initialCategory === 'RND';
+        setProjectTypeOption(initialParentId ? 'sub' : startAsRnd ? 'rnd' : 'standalone');
         const today = new Date().toISOString().split('T')[0];
+        const targetCat = startAsRnd ? 'RND' : 'STANDARD';
         setForm({
           code: nextCode || '',
           name: '',
@@ -133,6 +140,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           parent_id: initialParentId || null,
           template_id: null,
           is_parent: false,
+          category: targetCat,
           objectives: '',
           scope: '',
           technologies: '',
@@ -141,24 +149,73 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           projectType: 'software',
           provider: 'Ollama'
         });
+        fetchNextProjectCode(targetCat)
+          .then(res => {
+            if (res?.code) {
+              setForm(prev => ({ ...prev, code: res.code }));
+            }
+          })
+          .catch(() => {});
       }
     }
-  }, [isOpen, project, nextCode, initialParentId]);
+  }, [isOpen, project, nextCode, initialParentId, initialCategory]);
 
-  const handleProjectTypeChange = (type: 'standalone' | 'major' | 'sub') => {
+  const handleProjectTypeChange = (type: 'standalone' | 'major' | 'sub' | 'rnd') => {
     setProjectTypeOption(type);
-    if (type === 'major') {
-      setForm(prev => ({ ...prev, is_parent: true, parent_id: null }));
+    if (type === 'rnd') {
+      setForm(prev => ({
+        ...prev,
+        is_parent: false,
+        parent_id: null,
+        category: 'RND',
+        code: project && project.category === 'RND' ? (project.code || prev.code) : prev.code
+      }));
+      if (!project || project.category !== 'RND') {
+        fetchNextProjectCode('RND')
+          .then(res => {
+            if (res?.code) setForm(prev => ({ ...prev, code: res.code }));
+          })
+          .catch(() => {});
+      }
+    } else if (type === 'major') {
+      setForm(prev => ({
+        ...prev,
+        is_parent: true,
+        parent_id: null,
+        category: 'STANDARD',
+        code: project && project.category !== 'RND' ? (project.code || prev.code) : prev.code
+      }));
+      if (!project || project.category === 'RND') {
+        fetchNextProjectCode('STANDARD')
+          .then(res => {
+            if (res?.code) setForm(prev => ({ ...prev, code: res.code }));
+          })
+          .catch(() => {});
+      }
     } else if (type === 'sub') {
-      const firstParent = allProjects.find(p => p.is_parent || !p.parent_id);
+      const firstParent = allProjects.find(p => (p.is_parent || !p.parent_id) && p.category !== 'RND');
       setForm(prev => ({ 
         ...prev, 
         is_parent: false, 
         parent_id: firstParent ? firstParent.id : null,
+        category: 'STANDARD',
         client_name: firstParent ? (firstParent.client_name || '') : ''
       }));
     } else {
-      setForm(prev => ({ ...prev, is_parent: false, parent_id: null }));
+      setForm(prev => ({
+        ...prev,
+        is_parent: false,
+        parent_id: null,
+        category: 'STANDARD',
+        code: project && project.category !== 'RND' ? (project.code || prev.code) : prev.code
+      }));
+      if (!project || project.category === 'RND') {
+        fetchNextProjectCode('STANDARD')
+          .then(res => {
+            if (res?.code) setForm(prev => ({ ...prev, code: res.code }));
+          })
+          .catch(() => {});
+      }
     }
   };
 
@@ -177,6 +234,16 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       }
     }
     
+    // Check if converting from Development Project (RND) to Standard Project
+    if (project && project.category === 'RND' && form.category === 'STANDARD') {
+      const confirmed = await showConfirm(
+        "Converting this Development Project to a Standard Project will initialize its physical folder and default template directories on the server. Would you like to proceed?",
+        "Convert to Standard Project",
+        true
+      );
+      if (!confirmed) return;
+    }
+
     // Check if converting from standalone/sub to major
     if (project && !project.is_parent && form.is_parent) {
       const confirmed = await showConfirm(
@@ -275,7 +342,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 <Layers className="h-4 w-4" />
                 Project Hierarchy & Structure
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                 <button
                   type="button"
                   onClick={() => handleProjectTypeChange('standalone')}
@@ -316,7 +383,44 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                   <span className="text-xs font-bold text-slate-800">Sub-Project</span>
                   <span className="text-[10px] text-slate-500 mt-1">Nested inside a major project folder on the server.</span>
                 </button>
+
+                <button
+                  type="button"
+                  disabled={!!project && project.category !== 'RND'}
+                  title={project && project.category !== 'RND' ? 'Standard projects with server folders cannot be converted to folderless Development Projects.' : undefined}
+                  onClick={() => handleProjectTypeChange('rnd')}
+                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    projectTypeOption === 'rnd'
+                      ? 'border-teal-600 bg-teal-50/60 ring-2 ring-teal-500/20'
+                      : project && project.category !== 'RND'
+                        ? 'border-slate-200 bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed'
+                        : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-600'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    Development Project
+                  </span>
+                  <span className="text-[10px] text-slate-500 mt-1">Standalone R&amp;D project (X/RND/MMYY). No server folder created.</span>
+                </button>
               </div>
+
+              {projectTypeOption === 'rnd' && (
+                <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-3 text-[11px] text-teal-800 flex items-center gap-2">
+                  <Cpu className="h-4 w-4 text-teal-600 shrink-0" />
+                  <span>
+                    <strong>Development Project (R&amp;D):</strong> Managed purely in the workspace (Tasks, Kanban, Timeline, Notes, Analytics). No physical folder or mandatory document checklist will be created on the server. You can convert it to a Standard Project later if needed.
+                  </span>
+                </div>
+              )}
+
+              {project && project.category === 'RND' && projectTypeOption !== 'rnd' && (
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
+                  <Folder className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>Converting to Standard Project:</strong> Saving changes will initialize a physical project directory and default subfolders on the server.
+                  </span>
+                </div>
+              )}
 
               {projectTypeOption === 'sub' && (
                 <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4">
@@ -592,7 +696,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
             <div className="h-px w-full bg-slate-100"></div>
 
             {/* Section 4: Module Requirements */}
-            {!form.is_parent ? (
+            {!form.is_parent && projectTypeOption !== 'rnd' ? (
               <section>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
                   <Cpu className="h-4 w-4" />

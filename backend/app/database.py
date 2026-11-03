@@ -41,6 +41,21 @@ class DBStore:
             print("init_description_history_table error:", e)
 
     @staticmethod
+    def init_project_category_column():
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SHOW COLUMNS FROM projects LIKE 'category'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE projects ADD COLUMN category VARCHAR(50) DEFAULT 'STANDARD'")
+                conn.commit()
+                print("Added category column to projects table.")
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print("init_project_category_column error:", e)
+
+    @staticmethod
     def get_vendors() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1115,7 +1130,7 @@ class DBStore:
 
     # PROJECTS METHODS
     @staticmethod
-    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False, current_user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_projects(page: int = 1, limit: int = 100, search: Optional[str] = None, status: Optional[str] = None, parent_id: Optional[int] = None, root_only: bool = False, current_user: Optional[Dict[str, Any]] = None, category: Optional[str] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
@@ -1135,6 +1150,13 @@ class DBStore:
         if status and status != 'All':
             where_clauses.append("p.status = %s")
             params.append(status)
+
+        if category and category != 'All':
+            if category == 'STANDARD':
+                where_clauses.append("(p.category = 'STANDARD' OR p.category IS NULL)")
+            else:
+                where_clauses.append("p.category = %s")
+                params.append(category)
 
         if parent_id is not None:
             where_clauses.append("p.parent_id = %s")
@@ -1192,6 +1214,7 @@ class DBStore:
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
+            p['category'] = p.get('category') or 'STANDARD'
                     
             # Calculate completion percentage
             total_tasks = p.get('total_dynamic_tasks', 0) + p.get('total_static_tasks', 0)
@@ -1239,6 +1262,7 @@ class DBStore:
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
+            p['category'] = p.get('category') or 'STANDARD'
         return projects
 
     @staticmethod
@@ -1257,8 +1281,8 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         query = """
             INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
-                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template, milestone)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template, category, milestone)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project.get("code"), project.get("name"), project.get("po_number"),
@@ -1274,11 +1298,13 @@ class DBStore:
             project.get("parent_id") or None,
             1 if project.get("is_parent") else 0,
             1 if project.get("is_template") else 0,
+            project.get("category") or "STANDARD",
             project.get("milestone")
         )
         cursor.execute(query, values)
         conn.commit()
         project["id"] = cursor.lastrowid
+        project["category"] = project.get("category") or "STANDARD"
         project["created_at"] = datetime.now().isoformat()
         cursor.close()
         conn.close()
@@ -1291,7 +1317,7 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id", "milestone"]:
+        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id", "category", "milestone"]:
             if key in data:
                 updates.append(f"{key} = %s")
                 if key in ["start_date", "end_date", "date_of_delivery", "parent_id"] and not data[key]:
@@ -1329,6 +1355,7 @@ class DBStore:
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
+            p['category'] = p.get('category') or 'STANDARD'
         return p
 
     @staticmethod
@@ -2255,8 +2282,8 @@ class DBStore:
             query_proj = """
                 INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
                                       project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, 
-                                      date_of_delivery, constraints, budget, priority)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                      date_of_delivery, constraints, budget, priority, category)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             proj_values = (
                 project_data.get("code"),
@@ -2276,7 +2303,8 @@ class DBStore:
                 project_data.get("date_of_delivery") or None,
                 project_data.get("constraints"),
                 project_data.get("budget"),
-                project_data.get("priority", "MEDIUM")
+                project_data.get("priority", "MEDIUM"),
+                project_data.get("category") or "STANDARD"
             )
             cursor.execute(query_proj, proj_values)
             project_id = cursor.lastrowid

@@ -70,6 +70,7 @@ class ProjectCreate(BaseModel):
     is_parent: bool = False
     is_template: bool = False
     template_id: Optional[int] = None
+    category: Optional[str] = "STANDARD"
     milestone: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
@@ -92,15 +93,30 @@ class ProjectUpdate(BaseModel):
     parent_id: Optional[int] = None
     is_parent: Optional[bool] = None
     is_template: Optional[bool] = None
+    category: Optional[str] = None
     milestone: Optional[str] = None
 
 class RelinkRequest(BaseModel):
     manual_path: Optional[str] = None
 
 
-def get_next_project_num():
-    base_dir = settings.PROJECTS_BASE_DIR
+def get_next_project_num(category: str = "STANDARD"):
     max_num = 0
+    if category == "RND":
+        try:
+            codes = DBStore.get_all_project_codes()
+            for code in codes:
+                if code:
+                    match = re.search(r"^(\d+)/RND/", code)
+                    if match:
+                        num = int(match.group(1))
+                        if num > max_num:
+                            max_num = num
+        except Exception as e:
+            print(f"Warning: Could not check DB for max RND project number: {e}")
+        return max_num + 1 if max_num > 0 else 1
+
+    base_dir = settings.PROJECTS_BASE_DIR
     try:
         if not os.path.exists(base_dir):
             os.makedirs(base_dir, exist_ok=True)
@@ -138,9 +154,10 @@ def list_projects(
     status: Optional[str] = None,
     parent_id: Optional[int] = None,
     root_only: bool = False,
+    category: Optional[str] = None,
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)
 ):
-    return DBStore.get_projects(page, limit, search, status, parent_id, root_only, current_user=current_user)
+    return DBStore.get_projects(page, limit, search, status, parent_id, root_only, current_user=current_user, category=category)
 
 class MilestoneCreate(BaseModel):
     name: str
@@ -174,10 +191,12 @@ def create_milestone(milestone: MilestoneCreate):
 
 
 @router.get("/next-code")
-def get_next_code():
-    next_num = get_next_project_num()
+def get_next_code(category: Optional[str] = "STANDARD"):
+    is_rnd = category == "RND"
+    next_num = get_next_project_num("RND" if is_rnd else "STANDARD")
     mmyy = datetime.now().strftime("%m%y")
-    return {"code": f"{next_num}/PRJ/{mmyy}"}
+    prefix = "RND" if is_rnd else "PRJ"
+    return {"code": f"{next_num}/{prefix}/{mmyy}"}
 
 @router.get("/all-dynamic-tasks")
 def list_all_dynamic_tasks():
@@ -618,83 +637,92 @@ def _create_project_folders(full_path: str, subfolders: List[str]):
 
 @router.post("")
 def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
+    is_rnd = (project.category == "RND")
+    if is_rnd:
+        project.is_parent = False
+        project.parent_id = None
+
     if not project.code or str(project.code).strip() == "":
         if project.parent_id:
             project.code = f"SUB-{int(time.time())}"
         else:
-            next_num = get_next_project_num()
+            next_num = get_next_project_num("RND" if is_rnd else "STANDARD")
             mmyy = datetime.now().strftime("%m%y")
-            project.code = f"{next_num}/PRJ/{mmyy}"
+            prefix = "RND" if is_rnd else "PRJ"
+            project.code = f"{next_num}/{prefix}/{mmyy}"
         
     existing = [p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["code"] == project.code]
     if existing:
         raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
     
-    # 1. Determine folder name and parent path
-    match = re.search(r"(\d+)", project.code)
-    if match:
-        proj_num = match.group(1)
-    else:
-        proj_num = get_next_project_num()
-
-    customer = project.client_name or "Unknown_Customer"
-    customer = re.sub(r'[\\/*?:"<>|]', "", customer)
-    proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
-
-    base_dir = settings.PROJECTS_BASE_DIR
-
-    parent_project = None
-    if project.parent_id:
-        all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
-        parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
-        if not parent_project:
-            raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
-
-    if parent_project:
-        # Automatically take the client of the major project
-        project.client_name = parent_project.get("client_name")
-
-        # Sub-Project: Nest directly inside parent project folder
-        parent_folder = parent_project.get("folder_path")
-        if not parent_folder:
-            parent_folder = base_dir
-            
-        # Calculate sub-project number by counting existing children
-        existing_sub_projects = [p for p in all_projects if p.get("parent_id") == project.parent_id]
-        sub_proj_num = str(len(existing_sub_projects) + 1).zfill(3)
-            
-        folder_name = f"Sub No {sub_proj_num}_{proj_name}"
-        full_path = os.path.join(parent_folder, folder_name)
-    else:
-        # Standalone or Major Project container
-        folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
-        full_path = os.path.join(base_dir, folder_name)
-    
-    # 2. Check physical directories
-    if os.path.exists(full_path):
-        raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
-        
+    full_path = None
     subfolders = []
-    if not project.is_parent:
-        config = get_project_config()
-        subfolders = list(config["default_folders"])
-        if project.has_software:
-            subfolders.append("Software")
-        if project.has_firmware:
-            subfolders.append("Firmware")
-        if project.has_transformer:
-            subfolders.append("Transformer Design")
-            
-    background_tasks.add_task(_create_project_folders, full_path, subfolders)
+
+    if not is_rnd:
+        # 1. Determine folder name and parent path
+        match = re.search(r"(\d+)", project.code)
+        if match:
+            proj_num = match.group(1)
+        else:
+            proj_num = get_next_project_num()
+
+        customer = project.client_name or "Unknown_Customer"
+        customer = re.sub(r'[\\/*?:"<>|]', "", customer)
+        proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
+
+        base_dir = settings.PROJECTS_BASE_DIR
+
+        parent_project = None
+        if project.parent_id:
+            all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
+            parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
+            if not parent_project:
+                raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
+
+        if parent_project:
+            # Automatically take the client of the major project
+            project.client_name = parent_project.get("client_name")
+
+            # Sub-Project: Nest directly inside parent project folder
+            parent_folder = parent_project.get("folder_path")
+            if not parent_folder:
+                parent_folder = base_dir
+                
+            # Calculate sub-project number by counting existing children
+            existing_sub_projects = [p for p in all_projects if p.get("parent_id") == project.parent_id]
+            sub_proj_num = str(len(existing_sub_projects) + 1).zfill(3)
+                
+            folder_name = f"Sub No {sub_proj_num}_{proj_name}"
+            full_path = os.path.join(parent_folder, folder_name)
+        else:
+            # Standalone or Major Project container
+            folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
+            full_path = os.path.join(base_dir, folder_name)
         
+        # 2. Check physical directories
+        if os.path.exists(full_path):
+            raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
+            
+        if not project.is_parent:
+            config = get_project_config()
+            subfolders = list(config["default_folders"])
+            if project.has_software:
+                subfolders.append("Software")
+            if project.has_firmware:
+                subfolders.append("Firmware")
+            if project.has_transformer:
+                subfolders.append("Transformer Design")
+                
+        background_tasks.add_task(_create_project_folders, full_path, subfolders)
         
     # 3. Save to DB
     proj_dict = project.model_dump()
     proj_dict["folder_path"] = full_path
+    proj_dict["category"] = "RND" if is_rnd else "STANDARD"
     saved_project = DBStore.add_project(proj_dict)
     
-    # 4. Create initial pending tasks in DB only if NOT a major parent project container
-    if not project.is_parent:
+    # 4. Create initial pending tasks in DB only if NOT a major parent project container and NOT an RND project
+    if not project.is_parent and not is_rnd:
         for sf in subfolders:
             DBStore.add_project_task(saved_project["id"], sf, "PENDING")
         
@@ -723,6 +751,10 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     if not existing_proj:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    project_dump = project.model_dump(exclude_unset=True)
+    old_category = existing_proj.get("category") or "STANDARD"
+    final_category = project_dump.get("category") or old_category
+
     # Check permissions if completing or changing critical info
     if project.status == "COMPLETED" and existing_proj.get("status") != "COMPLETED":
         if current_user["role"] not in ["Administrator", "Store Manager"] and current_user["name"] != existing_proj.get("project_incharge"):
@@ -734,8 +766,8 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
         if incomplete_tasks:
             raise HTTPException(status_code=400, detail=f"Cannot complete project. There are {len(incomplete_tasks)} incomplete task(s).")
             
-        # Enforce mandatory documents
-        if not existing_proj.get("is_parent"):
+        # Enforce mandatory documents (skip for Major Project containers and Development Projects)
+        if not existing_proj.get("is_parent") and final_category != "RND":
             config = get_project_config()
             expected_categories = list(config["mandatory_documents"])
             if existing_proj.get("has_software"):
@@ -751,8 +783,6 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
             
             if missing_categories:
                 raise HTTPException(status_code=400, detail=f"Cannot complete project. Missing documents in: {', '.join(missing_categories)}")
-
-    project_dump = project.model_dump(exclude_unset=True)
 
     # Handle folder path update if code, name, or client_name changed
     # Check if converting between parent and standalone
@@ -782,9 +812,28 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     old_name = existing_proj.get("name") or ""
     old_client = existing_proj.get("client_name") or ""
 
+    if new_code != old_code:
+        dup = [p for p in projects if p["code"] == new_code and p["id"] != project_id]
+        if dup:
+            raise HTTPException(status_code=400, detail=f"Project with code '{new_code}' already exists.")
+
     old_folder_path = existing_proj.get("folder_path")
 
-    if old_folder_path and (new_code != old_code or new_name != old_name or new_client != old_client):
+    # If converting a Development Project (RND) to a Standard Project, initialize folder_path and ensure standard PRJ code
+    if old_category == "RND" and final_category == "STANDARD" and not old_folder_path:
+        if not new_code or new_code == old_code or "/RND/" in new_code:
+            next_std_num = get_next_project_num("STANDARD")
+            mmyy = datetime.now().strftime("%m%y")
+            new_code = f"{next_std_num}/PRJ/{mmyy}"
+            project_dump["code"] = new_code
+        match = re.search(r"(\d+)", new_code)
+        proj_num = match.group(1) if match else str(get_next_project_num("STANDARD"))
+        customer = new_client or "Unknown_Customer"
+        customer = re.sub(r'[\\/*?:"<>|]', "", customer)
+        proj_name_cleaned = re.sub(r'[\\/*?:"<>|]', "", new_name)
+        new_folder_name = f"Project No {proj_num}_{customer}_{proj_name_cleaned}"
+        project_dump["folder_path"] = os.path.join(settings.PROJECTS_BASE_DIR, new_folder_name)
+    elif final_category != "RND" and old_folder_path and (new_code != old_code or new_name != old_name or new_client != old_client):
         match = re.search(r"(\d+)", new_code)
         proj_num = match.group(1) if match else "Unknown"
 
@@ -830,6 +879,9 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     updated = DBStore.update_project(project_id, project_dump)
 
     # Log activities
+    if old_category == "RND" and final_category == "STANDARD":
+        DBStore.add_project_activity(project_id, "PROJECT_CONVERTED", "Converted Development Project to Standard Project and initialized server folders", current_user["id"])
+
     if project.description is not None:
         old_desc = (existing_proj.get("description") or "").strip()
         new_desc = (project.description or "").strip()
@@ -857,10 +909,10 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     if project.milestone is not None and project.milestone != existing_proj.get("milestone"):
         DBStore.add_project_activity(project_id, "PROJECT_MILESTONE_UPDATED", f"Project milestone updated to '{project.milestone}'", current_user["id"])
 
-    # Ensure necessary folders exist if it's now a standalone/sub-project
-    # e.g., if it was a Major Project and changed to Standalone, or if has_software was checked.
+    # Ensure necessary folders exist if it's now a standalone/sub-project (and NOT a Development Project)
+    # e.g., if it was a Major Project or Development Project and changed to Standalone, or if has_software was checked.
     final_is_parent = project_dump.get("is_parent", existing_proj.get("is_parent", False))
-    if not final_is_parent:
+    if not final_is_parent and final_category != "RND":
         final_folder_path = project_dump.get("folder_path", existing_proj.get("folder_path"))
         if final_folder_path:
             config = get_project_config()
@@ -1513,6 +1565,9 @@ class ProjectPlanRequest(BaseModel):
     budget: Optional[float] = None
     projectType: Optional[str] = "generic"
     provider: Optional[str] = "Ollama"
+    category: Optional[str] = "STANDARD"
+    client_name: Optional[str] = None
+    po_number: Optional[str] = None
 
 @router.post("/generate-plan")
 def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -1527,6 +1582,8 @@ def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, A
         project_data = {
             "code": request.code,
             "name": request.name,
+            "client_name": request.client_name,
+            "po_number": request.po_number,
             "description": request.description,
             "start_date": request.startDate,
             "end_date": request.deadline,
@@ -1534,7 +1591,8 @@ def generate_project_plan(request: ProjectPlanRequest, current_user: Dict[str, A
             "budget": request.budget,
             "priority": request.priority,
             "project_incharge": current_user["name"],
-            "has_software": request.projectType.lower() == "software"
+            "has_software": request.projectType.lower() == "software",
+            "category": request.category or "STANDARD"
         }
         project_id = DBStore.save_ai_project_plan(project_data, scheduled_plan)
         

@@ -57,6 +57,7 @@ async def recycle_bin_cleanup_task():
 async def startup_event():
     DBStore.init_description_history_table()
     DBStore.init_stock_drafts_table()
+    DBStore.init_project_category_column()
     asyncio.create_task(recycle_bin_cleanup_task())
 
 # Valuation unit prices for dashboard KPI calculation

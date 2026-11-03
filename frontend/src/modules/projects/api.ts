@@ -18,7 +18,7 @@ function getAuthHeaders(isFileUpload = false): Headers {
   return headers;
 }
 
-export async function fetchProjects(page = 1, limit = 100, search = '', status = 'All', parentId?: number, rootOnly = false) {
+export async function fetchProjects(page = 1, limit = 100, search = '', status = 'All', parentId?: number, rootOnly = false, category = 'All') {
   const params = new URLSearchParams({
     page: page.toString(),
     limit: limit.toString(),
@@ -27,6 +27,7 @@ export async function fetchProjects(page = 1, limit = 100, search = '', status =
   if (status && status !== 'All') params.append('status', status);
   if (parentId !== undefined) params.append('parent_id', parentId.toString());
   if (rootOnly) params.append('root_only', 'true');
+  if (category && category !== 'All') params.append('category', category);
 
   const res = await fetch(`${API_BASE}?${params.toString()}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch projects');
@@ -57,8 +58,8 @@ export async function fetchDashboardActivity() {
   return res.json();
 }
 
-export async function fetchNextProjectCode() {
-  const res = await fetch(`${API_BASE}/next-code`, { headers: getAuthHeaders() });
+export async function fetchNextProjectCode(category = 'STANDARD') {
+  const res = await fetch(`${API_BASE}/next-code?category=${encodeURIComponent(category)}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch next code');
   return res.json();
 }

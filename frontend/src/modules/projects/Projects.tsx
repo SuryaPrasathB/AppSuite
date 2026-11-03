@@ -27,6 +27,7 @@ export const Projects: React.FC = () => {
   // Filters & State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [categoryFilter, setCategoryFilter] = useState<'All' | 'STANDARD' | 'RND'>('All');
   const [activeTab, setActiveTab] = useState('All Projects');
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   
@@ -51,7 +52,11 @@ export const Projects: React.FC = () => {
   const loadProjects = async () => {
     try {
       setLoading(true);
-      const data = await fetchProjects(page, limit, searchQuery, activeTab === 'All Projects' ? statusFilter : activeTab.toUpperCase().replace(' ', '_'), undefined, true);
+      const effectiveStatus = (activeTab === 'All Projects' || activeTab === 'Development Projects')
+        ? statusFilter
+        : activeTab.toUpperCase().replace(' ', '_');
+      const effectiveCategory = activeTab === 'Development Projects' ? 'RND' : categoryFilter;
+      const data = await fetchProjects(page, limit, searchQuery, effectiveStatus, undefined, true, effectiveCategory);
       setProjects(data.data || []);
       setTotalProjects(data.total || 0);
     } catch (err) {
@@ -79,13 +84,14 @@ export const Projects: React.FC = () => {
       loadProjects();
     }, 300); // debounce search
     return () => clearTimeout(timer);
-  }, [page, limit, searchQuery, statusFilter, activeTab]);
+  }, [page, limit, searchQuery, statusFilter, categoryFilter, activeTab]);
 
   const handleOpenNewProjectModal = async () => {
     setEditProjectId(null);
     setIsNewProjectOpen(true);
     try {
-      const { code } = await fetchNextProjectCode();
+      const targetCat = (categoryFilter === 'RND' || activeTab === 'Development Projects') ? 'RND' : 'STANDARD';
+      const { code } = await fetchNextProjectCode(targetCat);
       setNextProjectCode(code);
     } catch (err) {
       console.error("Failed to auto-assign project code", err);
@@ -313,7 +319,10 @@ export const Projects: React.FC = () => {
           <div className="flex flex-col">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
               className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
             >
               <option value="All">All Status</option>
@@ -324,6 +333,39 @@ export const Projects: React.FC = () => {
               <option value="SERVICE">Service</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
+          </div>
+
+          {/* Category Segmented Filter */}
+          <div className="inline-flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200/80">
+            {[
+              { id: 'All', label: 'All Categories' },
+              { id: 'STANDARD', label: 'Standard Projects' },
+              { id: 'RND', label: 'Development Projects' }
+            ].map((cat) => {
+              const isSelected = (activeTab === 'Development Projects' ? 'RND' : categoryFilter) === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setCategoryFilter(cat.id as 'All' | 'STANDARD' | 'RND');
+                    if (activeTab === 'Development Projects' && cat.id !== 'RND') {
+                      setActiveTab('All Projects');
+                    }
+                    setPage(1);
+                  }}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    isSelected
+                      ? cat.id === 'RND'
+                        ? 'bg-teal-600 text-white shadow-xs'
+                        : 'bg-white text-slate-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -349,18 +391,32 @@ export const Projects: React.FC = () => {
 
       {/* Main Content */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
-        <div className="border-b border-slate-200 dark:border-slate-800 flex items-center gap-6 px-6 pt-4 text-xs font-semibold text-slate-450 dark:text-slate-400">
-          {['All Projects', 'Active', 'On Hold', 'Completed', 'Service', 'Cancelled'].map((tab) => (
+        <div className="border-b border-slate-200 dark:border-slate-800 flex items-center gap-6 px-6 pt-4 text-xs font-semibold text-slate-450 dark:text-slate-400 overflow-x-auto no-scrollbar">
+          {['All Projects', 'Development Projects', 'Active', 'On Hold', 'Completed', 'Service', 'Cancelled'].map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-3 relative transition-colors cursor-pointer ${
-                activeTab === tab ? 'text-primary-600 dark:text-primary-400 font-extrabold' : 'hover:text-slate-800 dark:hover:text-slate-200'
+              onClick={() => {
+                setActiveTab(tab);
+                if (tab === 'Development Projects') {
+                  setCategoryFilter('RND');
+                } else if (activeTab === 'Development Projects') {
+                  setCategoryFilter('All');
+                }
+                setPage(1);
+              }}
+              className={`pb-3 relative transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === tab
+                  ? tab === 'Development Projects'
+                    ? 'text-teal-600 dark:text-teal-400 font-extrabold'
+                    : 'text-primary-600 dark:text-primary-400 font-extrabold'
+                  : 'hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               {tab}
               {activeTab === tab && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-primary-500 rounded-full"></span>
+                <span className={`absolute bottom-0 left-0 right-0 h-0.5 rounded-full ${
+                  tab === 'Development Projects' ? 'bg-teal-600 dark:bg-teal-500' : 'bg-primary-600 dark:bg-primary-500'
+                }`}></span>
               )}
             </button>
           ))}
@@ -399,7 +455,9 @@ export const Projects: React.FC = () => {
                         ? 'bg-blue-50/30 hover:bg-blue-100/50 border-l-4 border-l-blue-400' 
                         : p.is_parent 
                           ? 'bg-purple-50/20 hover:bg-purple-50/50 border-l-4 border-l-purple-600'
-                          : 'hover:bg-slate-50/50'
+                          : p.category === 'RND'
+                            ? 'bg-teal-50/20 hover:bg-teal-50/50 border-l-4 border-l-teal-500'
+                            : 'hover:bg-slate-50/50'
                     }`}
                   >
                     <td className={`py-4 ${isSub ? 'pl-10 pr-6' : 'px-6'}`}>
@@ -586,6 +644,7 @@ export const Projects: React.FC = () => {
           onSave={handleSaveProject}
           nextCode={nextProjectCode}
           allProjects={projects}
+          initialCategory={(categoryFilter === 'RND' || activeTab === 'Development Projects') ? 'RND' : 'STANDARD'}
         />
       </div>
 

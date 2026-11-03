@@ -10,7 +10,7 @@ import {
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
   uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask, fetchProjects, relinkProjectFolder,
-  reorderDynamicTasks
+  reorderDynamicTasks, fetchNextProjectCode
 } from './api';
 import { ProjectFormModal } from './ProjectFormModal';
 import { TasksTab } from './workspace-tabs/TasksTab';
@@ -93,6 +93,8 @@ export const ProjectWorkspace: React.FC = () => {
       if (!silent) {
         if (projDetails.project?.is_parent) {
           setActiveTab(prev => ['sub_projects', 'sub_analytics', 'overview', 'notes', 'activity'].includes(prev) ? prev : 'sub_projects');
+        } else if (projDetails.project?.category === 'RND') {
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         } else {
           setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         }
@@ -212,7 +214,7 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'tasks', name: 'Tasks List', icon: CheckCircle2 },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
-    { id: 'documents', name: 'Documents', icon: FileText },
+    ...(project?.category !== 'RND' ? [{ id: 'documents', name: 'Documents', icon: FileText }] : []),
     { id: 'notes', name: 'Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity', icon: Activity },
     { id: 'overview', name: 'Overview', icon: LayoutDashboard },
@@ -276,6 +278,31 @@ export const ProjectWorkspace: React.FC = () => {
       } else {
         showAlert(err.message || 'Failed to relink folder.');
       }
+    }
+  };
+
+  const handleConvertToStandard = async () => {
+    let newCode = (project.code || '').replace('/RND/', '/PRJ/');
+    try {
+      const nextRes = await fetchNextProjectCode('STANDARD');
+      if (nextRes?.code) {
+        newCode = nextRes.code;
+      }
+    } catch {
+      // Fallback handled by backend
+    }
+    const confirmed = await showConfirm(
+      `Convert "${project.name}" to a Standard Project (${newCode})? This will initialize its physical folder structure on the server and add standard document tasks.`,
+      'Convert to Standard Project'
+    );
+    if (!confirmed) return;
+    try {
+      await updateProject(project.id, { category: 'STANDARD', code: newCode });
+      await loadData(project.id);
+      success('Converted to Standard Project and initialized server folder', 'Success');
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to convert project');
+      showError(err.message || 'Failed to convert project', 'Error');
     }
   };
 
@@ -547,6 +574,11 @@ export const ProjectWorkspace: React.FC = () => {
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm font-bold text-slate-800 leading-tight">{project.name}</h1>
+                  {project.category === 'RND' && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+                      DEVELOPMENT
+                    </span>
+                  )}
                   {project.is_template && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
                       TEMPLATE
@@ -609,12 +641,23 @@ export const ProjectWorkspace: React.FC = () => {
                 Remove Template
               </button>
             )}
-            <button 
-              onClick={handleRelinkFolder}
-              className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-md transition-colors"
-            >
-              Relink Folder
-            </button>
+            {project.category === 'RND' ? (
+              <button 
+                onClick={handleConvertToStandard}
+                className="px-3 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-800 font-bold text-xs rounded-md transition-colors flex items-center gap-1"
+                title="Initialize server folders and convert to a Standard Project"
+              >
+                <FolderPlus className="h-3.5 w-3.5" />
+                Convert to Standard
+              </button>
+            ) : (
+              <button 
+                onClick={handleRelinkFolder}
+                className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold text-xs rounded-md transition-colors"
+              >
+                Relink Folder
+              </button>
+            )}
             <button 
               onClick={() => setIsEditModalOpen(true)}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-md transition-colors"

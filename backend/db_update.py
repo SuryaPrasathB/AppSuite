@@ -116,7 +116,8 @@ def update_db():
         scheduling_alters = [
             "ALTER TABLE projects ADD COLUMN constraints TEXT DEFAULT NULL;",
             "ALTER TABLE projects ADD COLUMN budget DECIMAL(15, 2) DEFAULT NULL;",
-            "ALTER TABLE projects ADD COLUMN priority VARCHAR(20) DEFAULT 'MEDIUM';"
+            "ALTER TABLE projects ADD COLUMN priority VARCHAR(20) DEFAULT 'MEDIUM';",
+            "ALTER TABLE projects ADD COLUMN category VARCHAR(50) DEFAULT 'STANDARD';"
         ]
         for stmt in scheduling_alters:
             try:
