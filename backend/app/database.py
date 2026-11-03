@@ -56,6 +56,45 @@ class DBStore:
             print("init_project_category_column error:", e)
 
     @staticmethod
+    def init_bom_procurement_columns():
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            bom_cols = [
+                ("issued_at", "TIMESTAMP NULL DEFAULT NULL"),
+                ("customer_name", "VARCHAR(255) NULL DEFAULT NULL"),
+                ("target_delivery_date", "DATE NULL DEFAULT NULL"),
+            ]
+            for col_name, col_def in bom_cols:
+                cursor.execute(f"SHOW COLUMNS FROM boms LIKE '{col_name}'")
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE boms ADD COLUMN {col_name} {col_def}")
+
+            item_cols = [
+                ("manual_product_name", "VARCHAR(255) NULL DEFAULT NULL"),
+                ("part_number", "VARCHAR(255) NULL DEFAULT NULL"),
+                ("manufacturer", "VARCHAR(255) NULL DEFAULT NULL"),
+                ("link", "TEXT NULL"),
+                ("custom_fields", "TEXT NULL"),
+                ("unit_price", "DECIMAL(12, 2) NOT NULL DEFAULT 0.00"),
+                ("procurement_status", "VARCHAR(50) NOT NULL DEFAULT 'YET_TO_ORDER'"),
+                ("ordered_date", "DATE NULL DEFAULT NULL"),
+                ("expected_delivery_date", "DATE NULL DEFAULT NULL"),
+                ("delivered_date", "DATE NULL DEFAULT NULL"),
+            ]
+            for col_name, col_def in item_cols:
+                cursor.execute(f"SHOW COLUMNS FROM bom_items LIKE '{col_name}'")
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE bom_items ADD COLUMN {col_name} {col_def}")
+
+            cursor.execute("UPDATE boms SET issued_at = created_at WHERE issued_at IS NULL AND status IN ('APPROVED', 'ISSUED', 'COMPLETED')")
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print("init_bom_procurement_columns error:", e)
+
+    @staticmethod
     def get_vendors() -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1849,47 +1888,66 @@ class DBStore:
     def get_boms(project_id: Optional[int] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        base_query = """
+            SELECT b.*, p.name as project_name, p.code as project_code,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id) as total_items,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'ORDERED') as ordered_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'DELIVERED') as delivered_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND COALESCE(bi.procurement_status, 'YET_TO_ORDER') = 'YET_TO_ORDER') as yet_to_order_count
+            FROM boms b
+            LEFT JOIN projects p ON b.project_id = p.id
+        """
         if project_id:
-            cursor.execute("""
-                SELECT b.*, p.name as project_name, p.code as project_code 
-                FROM boms b
-                LEFT JOIN projects p ON b.project_id = p.id
-                WHERE b.project_id = %s
-                ORDER BY b.id DESC
-            """, (project_id,))
+            cursor.execute(base_query + " WHERE b.project_id = %s ORDER BY b.id DESC", (project_id,))
         else:
-            cursor.execute("""
-                SELECT b.*, p.name as project_name, p.code as project_code 
-                FROM boms b
-                LEFT JOIN projects p ON b.project_id = p.id
-                ORDER BY b.id DESC
-            """)
+            cursor.execute(base_query + " ORDER BY b.id DESC")
         boms = cursor.fetchall()
         cursor.close()
         conn.close()
         for b in boms:
-            if b.get('created_at'):
+            if b.get('created_at') and hasattr(b['created_at'], 'isoformat'):
                 b['created_at'] = b['created_at'].isoformat()
-            if b.get('updated_at'):
+            if b.get('updated_at') and hasattr(b['updated_at'], 'isoformat'):
                 b['updated_at'] = b['updated_at'].isoformat()
+            if b.get('issued_at') and hasattr(b['issued_at'], 'isoformat'):
+                b['issued_at'] = b['issued_at'].isoformat()
+            if b.get('target_delivery_date') and hasattr(b['target_delivery_date'], 'isoformat'):
+                b['target_delivery_date'] = b['target_delivery_date'].isoformat()
         return boms
 
     @staticmethod
-    def create_bom(project_id: int, name: str, items: List[Dict[str, Any]], status: str = 'DRAFT') -> Dict[str, Any]:
+    def create_bom(
+        project_id: Optional[int],
+        name: str,
+        items: List[Dict[str, Any]],
+        status: str = 'DRAFT',
+        customer_name: Optional[str] = None,
+        issued_at: Optional[str] = None,
+        target_delivery_date: Optional[str] = None
+    ) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        
+
+        effective_issued_at = issued_at
+        if not effective_issued_at and status in ('APPROVED', 'ISSUED', 'COMPLETED'):
+            effective_issued_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         cursor.execute("""
-            INSERT INTO boms (project_id, name, status)
-            VALUES (%s, %s, %s)
-        """, (project_id, name, status))
+            INSERT INTO boms (project_id, name, status, customer_name, issued_at, target_delivery_date)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (project_id if project_id else None, name, status, customer_name, effective_issued_at, target_delivery_date or None))
         bom_id = cursor.lastrowid
         
         for item in items:
             product_id = item.get("product_id")
+            proc_status = item.get("procurement_status") or "YET_TO_ORDER"
             cursor.execute("""
-                INSERT INTO bom_items (bom_id, product_id, manual_product_name, part_number, manufacturer, link, quantity_required, quantity_issued, remarks, custom_fields)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO bom_items (
+                    bom_id, product_id, manual_product_name, part_number, manufacturer,
+                    link, quantity_required, quantity_issued, unit_price, remarks,
+                    custom_fields, procurement_status, ordered_date, expected_delivery_date, delivered_date
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 bom_id, 
                 product_id if product_id else None,
@@ -1899,14 +1957,19 @@ class DBStore:
                 item.get("link"),
                 item.get("quantity_required", 1), 
                 0.00, 
+                item.get("unit_price", 0.0) or 0.0,
                 item.get("remarks", ""),
-                json.dumps(item.get("custom_fields", {}))
+                json.dumps(item.get("custom_fields", {})),
+                proc_status,
+                item.get("ordered_date") or None,
+                item.get("expected_delivery_date") or None,
+                item.get("delivered_date") or None
             ))
             
         conn.commit()
         cursor.close()
         conn.close()
-        return {"id": bom_id, "project_id": project_id, "name": name, "status": "DRAFT"}
+        return {"id": bom_id, "project_id": project_id, "name": name, "status": status}
 
     @staticmethod
     def get_bom_details(bom_id: int) -> Optional[Dict[str, Any]]:
@@ -1925,25 +1988,37 @@ class DBStore:
             conn.close()
             return None
             
-        if bom.get('created_at'):
+        if bom.get('created_at') and hasattr(bom['created_at'], 'isoformat'):
             bom['created_at'] = bom['created_at'].isoformat()
-        if bom.get('updated_at'):
+        if bom.get('updated_at') and hasattr(bom['updated_at'], 'isoformat'):
             bom['updated_at'] = bom['updated_at'].isoformat()
+        if bom.get('issued_at') and hasattr(bom['issued_at'], 'isoformat'):
+            bom['issued_at'] = bom['issued_at'].isoformat()
+        if bom.get('target_delivery_date') and hasattr(bom['target_delivery_date'], 'isoformat'):
+            bom['target_delivery_date'] = bom['target_delivery_date'].isoformat()
             
         cursor.execute("""
             SELECT bi.id, bi.bom_id, bi.product_id, bi.quantity_required, bi.quantity_issued, bi.remarks,
                    bi.manual_product_name, bi.part_number, bi.manufacturer, bi.link, bi.custom_fields,
+                   bi.unit_price, bi.procurement_status, bi.ordered_date, bi.expected_delivery_date, bi.delivered_date,
                    p.name as product_name, p.code as product_code, p.unit as product_unit,
                    COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock
             FROM bom_items bi
             LEFT JOIN products p ON bi.product_id = p.id
             WHERE bi.bom_id = %s
+            ORDER BY bi.id ASC
         """, (bom_id,))
         items = cursor.fetchall()
         for item in items:
-            item["quantity_required"] = float(item["quantity_required"])
-            item["quantity_issued"] = float(item["quantity_issued"])
-            item["current_stock"] = float(item["current_stock"])
+            item["quantity_required"] = float(item["quantity_required"] or 0)
+            item["quantity_issued"] = float(item["quantity_issued"] or 0)
+            item["current_stock"] = float(item["current_stock"] or 0)
+            item["unit_price"] = float(item.get("unit_price") or 0)
+            item["procurement_status"] = item.get("procurement_status") or "YET_TO_ORDER"
+
+            for d_col in ("ordered_date", "expected_delivery_date", "delivered_date"):
+                if item.get(d_col) and hasattr(item[d_col], 'isoformat'):
+                    item[d_col] = item[d_col].isoformat()
             
             if not item.get("product_id"):
                 item["product_name"] = item.get("manual_product_name") or "Manual Item"
@@ -1961,14 +2036,171 @@ class DBStore:
         return bom
 
     @staticmethod
-    def update_bom_status(bom_id: int, status: str) -> bool:
+    def update_bom_status(
+        bom_id: int,
+        status: str,
+        issued_at: Optional[str] = None,
+        target_delivery_date: Optional[str] = "__UNSET__"
+    ) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("UPDATE boms SET status = %s WHERE id = %s", (status, bom_id))
+        updates = ["status = %s"]
+        params: List[Any] = [status]
+
+        if issued_at:
+            updates.append("issued_at = %s")
+            params.append(issued_at)
+        elif status in ('APPROVED', 'ISSUED', 'COMPLETED'):
+            updates.append("issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP)")
+
+        if target_delivery_date != "__UNSET__":
+            updates.append("target_delivery_date = %s")
+            params.append(target_delivery_date or None)
+
+        params.append(bom_id)
+        cursor.execute(f"UPDATE boms SET {', '.join(updates)} WHERE id = %s", tuple(params))
         conn.commit()
         cursor.close()
         conn.close()
         return True
+
+    @staticmethod
+    def _sync_bom_completion_status(cursor, bom_id: int) -> None:
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN procurement_status = 'DELIVERED' THEN 1 ELSE 0 END) as delivered
+            FROM bom_items
+            WHERE bom_id = %s
+        """, (bom_id,))
+        stats = cursor.fetchone()
+        total = int(stats["total"] or 0) if stats else 0
+        delivered = int(stats["delivered"] or 0) if stats else 0
+
+        cursor.execute("SELECT status FROM boms WHERE id = %s", (bom_id,))
+        bom_row = cursor.fetchone()
+        if not bom_row:
+            return
+        current_status = bom_row.get("status")
+
+        if total > 0 and delivered == total:
+            cursor.execute(
+                "UPDATE boms SET status = 'COMPLETED', issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP) WHERE id = %s",
+                (bom_id,)
+            )
+        elif current_status == 'COMPLETED' and delivered < total:
+            cursor.execute("UPDATE boms SET status = 'APPROVED' WHERE id = %s", (bom_id,))
+
+    @staticmethod
+    def update_bom_item_procurement(bom_id: int, item_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM bom_items WHERE id = %s AND bom_id = %s", (item_id, bom_id))
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.close()
+            conn.close()
+            return None
+
+        status = data.get("procurement_status", existing.get("procurement_status") or "YET_TO_ORDER")
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        ordered_date = data.get("ordered_date") if "ordered_date" in data else existing.get("ordered_date")
+        expected_delivery_date = data.get("expected_delivery_date") if "expected_delivery_date" in data else existing.get("expected_delivery_date")
+        delivered_date = data.get("delivered_date") if "delivered_date" in data else existing.get("delivered_date")
+        remarks = data.get("remarks") if "remarks" in data else existing.get("remarks")
+
+        if status == "YET_TO_ORDER":
+            if "ordered_date" not in data:
+                ordered_date = None
+            if "expected_delivery_date" not in data:
+                expected_delivery_date = None
+            if "delivered_date" not in data:
+                delivered_date = None
+        elif status == "ORDERED":
+            if not ordered_date:
+                ordered_date = today_str
+            if "delivered_date" not in data:
+                delivered_date = None
+        elif status == "DELIVERED":
+            if not delivered_date:
+                delivered_date = today_str
+
+        cursor.execute("""
+            UPDATE bom_items
+            SET procurement_status = %s,
+                ordered_date = %s,
+                expected_delivery_date = %s,
+                delivered_date = %s,
+                remarks = %s
+            WHERE id = %s AND bom_id = %s
+        """, (
+            status,
+            ordered_date or None,
+            expected_delivery_date or None,
+            delivered_date or None,
+            remarks,
+            item_id,
+            bom_id
+        ))
+        DBStore._sync_bom_completion_status(cursor, bom_id)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_bom_details(bom_id)
+
+    @staticmethod
+    def bulk_update_bom_items_procurement(bom_id: int, item_ids: List[int], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not item_ids:
+            return DBStore.get_bom_details(bom_id)
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        status = data.get("procurement_status", "YET_TO_ORDER")
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        placeholders = ", ".join(["%s"] * len(item_ids))
+        cursor.execute(f"SELECT * FROM bom_items WHERE bom_id = %s AND id IN ({placeholders})", [bom_id, *item_ids])
+        rows = cursor.fetchall()
+
+        for row in rows:
+            item_id = row["id"]
+            ordered_date = data.get("ordered_date") if data.get("ordered_date") else row.get("ordered_date")
+            expected_delivery_date = data.get("expected_delivery_date") if data.get("expected_delivery_date") else row.get("expected_delivery_date")
+            delivered_date = data.get("delivered_date") if data.get("delivered_date") else row.get("delivered_date")
+
+            if status == "YET_TO_ORDER":
+                ordered_date = None
+                expected_delivery_date = None
+                delivered_date = None
+            elif status == "ORDERED":
+                if not ordered_date:
+                    ordered_date = today_str
+                delivered_date = None
+            elif status == "DELIVERED":
+                if not delivered_date:
+                    delivered_date = today_str
+
+            cursor.execute("""
+                UPDATE bom_items
+                SET procurement_status = %s,
+                    ordered_date = %s,
+                    expected_delivery_date = %s,
+                    delivered_date = %s
+                WHERE id = %s AND bom_id = %s
+            """, (
+                status,
+                ordered_date or None,
+                expected_delivery_date or None,
+                delivered_date or None,
+                item_id,
+                bom_id
+            ))
+
+        DBStore._sync_bom_completion_status(cursor, bom_id)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_bom_details(bom_id)
 
     @staticmethod
     def delete_bom(bom_id: int) -> bool:

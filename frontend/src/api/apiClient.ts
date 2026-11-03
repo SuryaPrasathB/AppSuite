@@ -138,7 +138,17 @@ export const apiClient = {
     list: (projectId?: number) => request<any[]>(`/boms${projectId ? `?project_id=${projectId}` : ''}`),
     get: (id: number | string) => request<any>(`/boms/${id}`),
     create: (body: any) => request<any>('/boms', { method: 'POST', body: JSON.stringify(body) }),
-    updateStatus: (id: number | string, status: string) => request<any>(`/boms/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    updateStatus: (id: number | string, status: string, issued_at?: string, target_delivery_date?: string | null) =>
+      request<any>(`/boms/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status,
+          ...(issued_at !== undefined ? { issued_at } : {}),
+          ...(target_delivery_date !== undefined ? { target_delivery_date } : {})
+        })
+      }),
+    updateItemProcurement: (bomId: number | string, itemId: number | string, body: any) => request<any>(`/boms/${bomId}/items/${itemId}/procurement`, { method: 'PUT', body: JSON.stringify(body) }),
+    bulkUpdateProcurement: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/items/bulk-procurement`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number | string) => request<any>(`/boms/${id}`, { method: 'DELETE' }),
     issue: (id: number | string, body: any) => request<any>(`/boms/${id}/issue`, { method: 'POST', body: JSON.stringify(body) }),
   },
@@ -171,4 +181,3 @@ export const apiClient = {
     delete: (name: string) => request<any>(`/config/user-categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   }
 };
-
