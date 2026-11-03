@@ -1537,10 +1537,14 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT t.*, e.name as assignee_name, e.role as assignee_role,
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as client_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as customer_name,
                    (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) as comment_count
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
+            LEFT JOIN projects p ON t.project_id = p.id
+            LEFT JOIN projects parent_p ON p.parent_id = parent_p.id
             WHERE t.project_id = %s
             ORDER BY t.sort_order ASC, t.id ASC
         """, (project_id,))
@@ -1567,10 +1571,13 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         query = """
             SELECT dt.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as client_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as customer_name,
                    (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = dt.id) as comment_count
             FROM dynamic_tasks dt
             LEFT JOIN employees e ON dt.assignee_id = e.id
             LEFT JOIN projects p ON dt.project_id = p.id
+            LEFT JOIN projects parent_p ON p.parent_id = parent_p.id
             ORDER BY dt.sort_order ASC, dt.id ASC
         """
         cursor.execute(query)
@@ -1703,9 +1710,13 @@ class DBStore:
         conn.commit()
         
         cursor.execute("""
-            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as client_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as customer_name
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
+            LEFT JOIN projects p ON t.project_id = p.id
+            LEFT JOIN projects parent_p ON p.parent_id = parent_p.id
             WHERE t.id = %s
         """, (task_id,))
         created_task_list = cursor.fetchall()
@@ -1768,9 +1779,13 @@ class DBStore:
         conn.commit()
         
         cursor.execute("""
-            SELECT t.*, e.name as assignee_name, e.role as assignee_role 
+            SELECT t.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as client_name,
+                   COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as customer_name
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
+            LEFT JOIN projects p ON t.project_id = p.id
+            LEFT JOIN projects parent_p ON p.parent_id = parent_p.id
             WHERE t.id = %s
         """, (task_id,))
         updated_task_list = cursor.fetchall()

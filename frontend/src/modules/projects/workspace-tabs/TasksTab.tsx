@@ -530,7 +530,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 checked={selectedTasks.includes(task.id)} 
                 onChange={() => {}} 
                 onClick={(e) => { e.stopPropagation(); toggleSelectTask(task.id, e); }}
-                className={`cursor-pointer shrink-0 w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-opacity ${selectedTasks.includes(task.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                className={`cursor-pointer shrink-0 w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-opacity ${
+                  selectedTasks.length > 0
+                    ? (selectedTasks.includes(task.id) ? 'opacity-100 ring-2 ring-indigo-400' : 'opacity-70')
+                    : 'opacity-0 group-hover:opacity-100 touch-subtle'
+                }`}
               />
               {isSubtask ? (
                 <div className="flex items-center gap-1 shrink-0 text-slate-400">
@@ -814,19 +818,19 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                     <ListPlus className="h-3.5 w-3.5" />
                   </button>
                 )}
-                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                <div className="flex items-center opacity-0 group-hover:opacity-100 touch-visible transition-opacity gap-1">
                   {(canEditAny || user?.name === task.assignee_name) && (
-                    <button onClick={() => handleOpenEditTask(task)} title="Edit Task" className="p-1 text-slate-300 hover:text-indigo-600">
+                    <button onClick={() => handleOpenEditTask(task)} title="Edit Task" className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
                       <Edit2 className="h-3.5 w-3.5" />
                     </button>
                   )}
                   {canEditAny && (
-                    <button onClick={(e) => { e.stopPropagation(); setSelectedTasks([task.id]); setDuplicateModalOpen(true); }} title="Duplicate Task" className="p-1 text-slate-300 hover:text-indigo-600">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedTasks([task.id]); setDuplicateModalOpen(true); }} title="Duplicate Task" className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
                       <Copy className="h-3.5 w-3.5" />
                     </button>
                   )}
                   {canEditAny && (
-                    <button onClick={() => handleDeleteTask(task.id)} title="Delete Task" className="p-1 text-slate-300 hover:text-rose-600">
+                    <button onClick={() => handleDeleteTask(task.id)} title="Delete Task" className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100 transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -1046,7 +1050,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 <div className="text-xs font-semibold text-slate-400 ml-1">
                   {groupTasks.length}
                 </div>
-                <div className="opacity-0 group-hover/header:opacity-100 ml-2">
+                <div className="opacity-0 group-hover/header:opacity-100 touch-visible ml-2">
                   <button 
                     onClick={(e) => { e.stopPropagation(); setActiveInlineAddStatus(group.key); }}
                     className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"

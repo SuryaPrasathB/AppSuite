@@ -169,17 +169,17 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
           onDragStart={(e) => handleDragStart(e, task.id)}
           onDragEnd={handleDragEnd}
           onDragOver={(e) => handleCardDragOver(e, task)}
-          className={`bg-white border border-slate-200 p-2.5 rounded-xl shadow-sm hover:border-indigo-300 hover:shadow-md transition-all duration-200 group relative cursor-grab active:cursor-grabbing ${
-            isSubtask ? 'ml-3 mt-2 bg-slate-50/50' : ''
+          className={`bg-white border border-slate-200 p-2 lg:p-2.5 rounded-xl shadow-sm hover:border-indigo-300 hover:shadow-md transition-all duration-200 group relative cursor-grab active:cursor-grabbing ${
+            isSubtask ? 'ml-2 lg:ml-3 mt-1.5 bg-slate-50/50' : ''
           } ${
             isBeingDragged ? 'opacity-30 scale-95 border-dashed border-indigo-400 rotate-1 shadow-inner' : 'opacity-100 scale-100'
           } ${openAssigneeTaskId === task.id ? 'z-[100]' : 'z-10 hover:z-20'}`}
         >
-          {/* Hover Actions (Absolute to save space) */}
-          <div className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity bg-white/90 backdrop-blur-sm p-0.5 rounded-md shadow-sm border border-slate-100 z-10">
+          {/* Hover Actions */}
+          <div className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex gap-0.5 transition-opacity bg-white/95 backdrop-blur-sm p-0.5 rounded-md shadow-sm border border-slate-200/80 z-20">
             <button 
               onClick={() => onOpenComments?.(task)} 
-              className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded flex items-center gap-1"
+              className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded flex items-center gap-0.5"
               title="Comments"
             >
               <MessageSquare className="h-3 w-3" />
@@ -200,77 +200,125 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
             </button>
           </div>
 
-          <h4 className="font-bold text-slate-800 text-[13px] pr-10 leading-snug">{task.title}</h4>
+          {/* Card Top Meta Row: Priority + Status */}
+          <div className="flex items-center justify-between gap-1 mb-1.5">
+            <div className="flex items-center gap-1.5 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <CustomDropdown
+                value={task.priority}
+                onChange={(val) => onUpdateTaskField?.(task.id, 'priority', val)}
+                options={[
+                  { value: 'LOW', label: 'Low' },
+                  { value: 'MEDIUM', label: 'Medium' },
+                  { value: 'HIGH', label: 'High' },
+                  { value: 'CRITICAL', label: 'Critical' },
+                ]}
+                triggerElement={
+                  <button type="button" className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap hover:opacity-80 transition-opacity cursor-pointer focus:outline-none ${priorityColor}`}>
+                    {task.priority}
+                  </button>
+                }
+              />
+
+              {/* Subtask priority count indicators */}
+              {!isSubtask && (criticalCount > 0 || highCount > 0) && (
+                <div className="flex items-center gap-1 text-[10px] font-bold shrink-0">
+                  {criticalCount > 0 && (
+                    <span className="flex items-center gap-0.5 text-rose-600" title={`${criticalCount} Critical Subtask(s)`}>
+                      <span>⊖</span>{criticalCount}
+                    </span>
+                  )}
+                  {highCount > 0 && (
+                    <span className="flex items-center gap-0.5 text-amber-500" title={`${highCount} High Priority Subtask(s)`}>
+                      <span>⚠</span>{highCount}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Status select */}
+            <div className="flex items-center shrink-0" onClick={(e) => e.stopPropagation()}>
+              <CustomDropdown
+                value={task.status}
+                onChange={(val) => {
+                  onUpdateTaskField?.(task.id, 'status', val);
+                }}
+                options={[
+                  { value: 'TODO', label: 'Not Started' },
+                  { value: 'IN_PROGRESS', label: 'In Progress' },
+                  { value: 'REVIEW', label: 'Pending Review' },
+                  { value: 'BLOCKED', label: 'Blocked' },
+                  { value: 'COMPLETED', label: 'Completed' },
+                ]}
+                triggerElement={
+                  <button
+                    type="button"
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide whitespace-nowrap border focus:outline-none cursor-pointer hover:opacity-80 transition-opacity ${
+                      task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
+                      task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-500/20' :
+                      task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-500/20' :
+                      task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-500/20' :
+                      'bg-slate-50 text-slate-500 border-slate-300'
+                    }`}
+                  >
+                    {task.status === 'TODO' ? 'To Do' :
+                     task.status === 'IN_PROGRESS' ? 'In Progress' :
+                     task.status === 'REVIEW' ? 'Review' :
+                     task.status === 'BLOCKED' ? 'Blocked' : 'Completed'}
+                  </button>
+                }
+              />
+            </div>
+          </div>
+
+          <h4 className="font-bold text-slate-800 text-xs lg:text-[13px] leading-snug break-words">{task.title}</h4>
           {task.description && (
-            <p className="text-[11px] text-slate-500 line-clamp-2 mb-1.5 leading-relaxed">{task.description}</p>
+            <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 mb-1 leading-relaxed">{task.description}</p>
           )}
 
-          {/* Subtask priority count indicators */}
-          {!isSubtask && (criticalCount > 0 || highCount > 0) && (
-            <div className="flex items-center gap-2 mb-1.5 text-[10px] font-bold">
-              {criticalCount > 0 && (
-                <span className="flex items-center gap-0.5 text-rose-600">
-                  <span>⊖</span> {criticalCount}
-                </span>
-              )}
-              {highCount > 0 && (
-                <span className="flex items-center gap-0.5 text-amber-500">
-                  <span>⚠</span> {highCount}
-                </span>
+          {/* Card Footer with Due Date & Assignee Avatars */}
+          <div className="flex items-center justify-between gap-1.5 mt-2 pt-1.5 border-t border-slate-100">
+            <div className="flex items-center gap-1.5 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <DateRangePicker
+                startDate={task.start_date}
+                dueDate={task.due_date}
+                isOverdue={isTaskOverdue(task)}
+                onSave={async (start, due) => {
+                  if (onUpdateTaskField) {
+                    await onUpdateTaskField(task.id, 'start_date', start);
+                    await onUpdateTaskField(task.id, 'due_date', due);
+                  }
+                }}
+                triggerElement={
+                  <button 
+                    type="button" 
+                    className={`flex items-center gap-1 text-[10px] font-medium whitespace-nowrap transition-colors border cursor-pointer py-0.5 px-1.5 rounded-md focus:outline-none ${
+                      isTaskOverdue(task) 
+                        ? 'text-rose-600 bg-rose-50 border-rose-200 font-bold' 
+                        : 'text-slate-500 bg-transparent border-transparent hover:bg-slate-100 hover:text-indigo-600'
+                    }`}
+                    title={isTaskOverdue(task) ? (task.status === 'COMPLETED' ? 'Completed past due date' : 'Overdue') : undefined}
+                  >
+                    <Calendar className={`h-3 w-3 shrink-0 ${isTaskOverdue(task) ? 'text-rose-500' : 'text-indigo-500'}`} />
+                    <span>{task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}</span>
+                  </button>
+                }
+              />
+
+              {(task.comment_count || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenComments?.(task)}
+                  className="flex items-center gap-0.5 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded-md transition-colors shrink-0"
+                  title="View comments"
+                >
+                  <MessageSquare className="h-2.5 w-2.5" />
+                  <span>{task.comment_count}</span>
+                </button>
               )}
             </div>
-          )}
 
-          {/* Card Footer with Due Date, Assignee Avatar, and Status */}
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
-            <div className="flex items-center gap-2">
-              <div onClick={(e) => e.stopPropagation()}>
-                <CustomDropdown
-                  value={task.priority}
-                  onChange={(val) => onUpdateTaskField?.(task.id, 'priority', val)}
-                  options={[
-                    { value: 'LOW', label: 'Low' },
-                    { value: 'MEDIUM', label: 'Medium' },
-                    { value: 'HIGH', label: 'High' },
-                    { value: 'CRITICAL', label: 'Critical' },
-                  ]}
-                  triggerElement={
-                    <button type="button" className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider hover:opacity-80 transition-opacity cursor-pointer focus:outline-none ${priorityColor}`}>
-                      {task.priority}
-                    </button>
-                  }
-                />
-              </div>
-              <div onClick={(e) => e.stopPropagation()}>
-                <DateRangePicker
-                  startDate={task.start_date}
-                  dueDate={task.due_date}
-                  isOverdue={isTaskOverdue(task)}
-                  onSave={async (start, due) => {
-                    if (onUpdateTaskField) {
-                      await onUpdateTaskField(task.id, 'start_date', start);
-                      await onUpdateTaskField(task.id, 'due_date', due);
-                    }
-                  }}
-                  triggerElement={
-                    <button 
-                      type="button" 
-                      className={`flex items-center gap-1 text-[10px] font-medium transition-colors border cursor-pointer p-0.5 px-1.5 rounded-md focus:outline-none ${
-                        isTaskOverdue(task) 
-                          ? 'text-rose-600 bg-rose-50 border-rose-200 font-bold' 
-                          : 'text-slate-500 bg-transparent border-transparent hover:bg-slate-100 hover:text-indigo-600'
-                      }`}
-                      title={isTaskOverdue(task) ? (task.status === 'COMPLETED' ? 'Completed past due date' : 'Overdue') : undefined}
-                    >
-                      <Calendar className={`h-3 w-3 ${isTaskOverdue(task) ? 'text-rose-500' : 'text-indigo-500'}`} />
-                      {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
-                    </button>
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
+            <div className="flex items-center shrink-0">
               {/* Multiple Assignees Avatar Stack Popover */}
               <div className="relative flex items-center" ref={openAssigneeTaskId === task.id ? dropdownRef : undefined}>
                 <button
@@ -285,7 +333,7 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     task.assignees.slice(0, 3).map((a: any) => (
                       <div
                         key={a.id}
-                        className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white border border-white shadow-sm shrink-0"
+                        className="h-5 w-5 lg:h-6 lg:w-6 rounded-full flex items-center justify-center text-[9px] lg:text-[10px] font-black text-white border border-white shadow-sm shrink-0"
                         style={{ backgroundColor: getAvatarColor(a.name || '') }}
                         title={a.name}
                       >
@@ -294,7 +342,7 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     ))
                   ) : task.assignee_id ? (
                     <div 
-                      className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-sm shrink-0"
+                      className="h-5 w-5 lg:h-6 lg:w-6 rounded-full flex items-center justify-center text-[9px] lg:text-[10px] font-black text-white shadow-sm shrink-0"
                       style={{ backgroundColor: getAvatarColor(task.assignee_name || '') }}
                       title={task.assignee_name}
                     >
@@ -302,14 +350,14 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     </div>
                   ) : (
                     <div 
-                      className="h-6 w-6 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 bg-white shadow-sm shrink-0 hover:border-indigo-400 hover:text-indigo-500 transition-colors"
+                      className="h-5 w-5 lg:h-6 lg:w-6 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-slate-400 bg-white shadow-sm shrink-0 hover:border-indigo-400 hover:text-indigo-500 transition-colors"
                       title="Unassigned"
                     >
                       <User className="h-3 w-3" />
                     </div>
                   )}
                   {task.assignees && task.assignees.length > 3 && (
-                    <div className="h-6 w-6 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
+                    <div className="h-5 w-5 lg:h-6 lg:w-6 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
                       +{task.assignees.length - 3}
                     </div>
                   )}
@@ -324,40 +372,6 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                     align="right"
                   />
                 )}
-              </div>
-
-              {/* Status select */}
-              <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                <CustomDropdown
-                  value={task.status}
-                  onChange={(val) => {
-                    onUpdateTaskField?.(task.id, 'status', val);
-                  }}
-                  options={[
-                    { value: 'TODO', label: 'Not Started' },
-                    { value: 'IN_PROGRESS', label: 'In Progress' },
-                    { value: 'REVIEW', label: 'Pending Review' },
-                    { value: 'BLOCKED', label: 'Blocked' },
-                    { value: 'COMPLETED', label: 'Completed' },
-                  ]}
-                  triggerElement={
-                    <button
-                      type="button"
-                      className={`px-1.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-white border border-slate-200 focus:outline-none cursor-pointer shadow-sm text-slate-800 hover:opacity-80 transition-opacity ${
-                        task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-500/20' :
-                        task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-500/20' :
-                        task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-500/20' :
-                        task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-500/20' :
-                        'bg-slate-50 text-slate-500 border-slate-300'
-                      }`}
-                    >
-                      {task.status === 'TODO' ? 'Not Started' :
-                       task.status === 'IN_PROGRESS' ? 'In Progress' :
-                       task.status === 'REVIEW' ? 'Pending Review' :
-                       task.status === 'BLOCKED' ? 'Blocked' : 'Completed'}
-                    </button>
-                  }
-                />
               </div>
             </div>
           </div>
@@ -390,16 +404,26 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4 px-2">
-        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-          <Columns className="h-5 w-5 text-indigo-600" />
-          Kanban Board
-        </h3>
-        <p className="text-xs text-slate-500">Drag handle to reorder tasks or move between columns.</p>
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 px-1">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <h3 className="font-bold text-slate-800 text-sm lg:text-base flex items-center gap-1.5 shrink-0">
+            <Columns className="h-4 w-4 lg:h-5 lg:w-5 text-indigo-600" />
+            Kanban Board
+          </h3>
+          <span className="hidden sm:inline text-xs text-slate-400 truncate">
+            Drag cards to reorder or move between columns.
+          </span>
+        </div>
+        <button
+          onClick={() => handleOpenEditTask()}
+          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors shrink-0 cursor-pointer"
+        >
+          + Add Task
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 lg:gap-3.5 flex-1 min-h-0 overflow-x-auto pb-1">
         {[
           { key: 'TODO', title: 'To Do', color: 'border-t-slate-500 bg-slate-100/50 text-slate-700' },
           { key: 'IN_PROGRESS', title: 'In Progress', color: 'border-t-indigo-500 bg-indigo-50/50 text-indigo-600' },
@@ -424,17 +448,17 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                 }
               }}
               onDrop={(e) => handleDropOnColumn(e, column.key)}
-              className={`flex flex-col rounded-2xl border ${
+              className={`flex flex-col rounded-xl lg:rounded-2xl border min-w-[175px] md:min-w-0 ${
                 isOverCol ? 'border-indigo-400 bg-indigo-50/30 ring-2 ring-indigo-400/20' : 'border-slate-200'
-              } ${column.color} p-3 h-full max-h-full overflow-hidden transition-all duration-200`}
+              } ${column.color} p-2 lg:p-3 h-full max-h-full overflow-hidden transition-all duration-200`}
             >
-              <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
-                <span className="text-sm font-bold uppercase tracking-wider">{column.title}</span>
-                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded-full font-bold">{columnTasks.length}</span>
+              <div className="flex justify-between items-center gap-1 mb-2 pb-1.5 border-b border-slate-200/80">
+                <span className="text-xs lg:text-[13px] font-bold uppercase tracking-wider truncate">{column.title}</span>
+                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded-full font-bold shrink-0">{columnTasks.length}</span>
               </div>
 
               <div 
-                className="flex-1 space-y-2.5 overflow-y-auto custom-scrollbar pr-1 min-h-[120px]"
+                className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-0.5 min-h-[120px]"
                 onDragOver={(e) => {
                   e.preventDefault();
                   const buffer = 80;
@@ -448,8 +472,8 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                 }}
               >
                 {columnTasks.length === 0 ? (
-                  <div className="h-24 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium transition-colors hover:border-indigo-300">
-                    <GripVertical className="h-4 w-4 mb-1 text-slate-300" />
+                  <div className="h-20 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl px-2 text-center text-[11px] text-slate-400 font-medium transition-colors hover:border-indigo-300">
+                    <GripVertical className="h-3.5 w-3.5 mb-1 text-slate-300" />
                     Drop tasks here to reorder
                   </div>
                 ) : (

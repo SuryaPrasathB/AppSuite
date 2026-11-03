@@ -534,7 +534,7 @@ export const ProjectWorkspace: React.FC = () => {
   return (
     <div className="flex flex-col bg-slate-50 -m-6 flex-1 min-h-0">
       {/* Workspace Header */}
-      <div className="bg-white border-b border-slate-200 `px-6` py-2 sticky -top-6 z-20 shadow-sm">
+      <div className="bg-white border-b border-slate-200 px-4 lg:px-6 py-2 sticky -top-6 z-20 shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <Link to="/projects" className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800">
@@ -648,7 +648,7 @@ export const ProjectWorkspace: React.FC = () => {
       </div>
 
       {/* Workspace Content Area */}
-      <div className="p-6 pt-1 relative flex-1 min-h-0 flex flex-col">
+      <div className="p-3 sm:p-4 lg:p-6 pt-2 lg:pt-2 relative flex-1 min-h-0 flex flex-col">
         {activeTab === 'sub_projects' && (
           <SubProjectsTab
             subProjects={subProjects}
@@ -808,11 +808,6 @@ export const ProjectWorkspace: React.FC = () => {
 
         {activeTab === 'kanban' && (
           <div className="flex-1 min-h-0 relative flex flex-col">
-             <div className="absolute top-0 right-2 z-20">
-               <button onClick={() => handleOpenEditTask()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm">
-                 + Add Task
-               </button>
-             </div>
              <KanbanTab 
                dynamicTasks={dynamicTasks}
                handleOpenEditTask={handleOpenEditTask}

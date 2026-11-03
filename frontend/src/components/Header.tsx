@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Package, Sun, Bell, ChevronDown, X, LogOut, Settings, AlertTriangle, Megaphone } from 'lucide-react';
+import { Search, MapPin, Package, Sun, Moon, Bell, ChevronDown, X, LogOut, Settings, AlertTriangle, Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { apiClient } from '../api/apiClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AnnouncementManagerModal } from './AnnouncementManagerModal';
@@ -9,6 +10,7 @@ import { getProductManufacturer } from '../utils/productUtils';
 
 export const Header: React.FC = () => {
   const { user, logout, updatePresenceStatus } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -319,11 +321,11 @@ export const Header: React.FC = () => {
           </div>
         )}
       </div>
-    <header className="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-8 relative shrink-0 z-30">
+    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-20 flex items-center justify-between px-8 relative shrink-0 z-30 transition-colors">
       {/* Dynamic Title and Description */}
       <div className="flex flex-col text-left shrink-0">
-        <h1 className="text-xl font-bold text-slate-800">{title}</h1>
-        <p className="text-xs text-slate-400 font-medium mt-0.5">{desc}</p>
+        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{title}</h1>
+        <p className="text-xs text-slate-400 dark:text-slate-400 font-medium mt-0.5">{desc}</p>
       </div>
 
       {/* Global Product Locator Search */}
@@ -338,9 +340,9 @@ export const Header: React.FC = () => {
               setIsOpen(true);
             }}
             onFocus={() => setIsOpen(true)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-24 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all text-slate-800"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-10 pr-24 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-750 transition-all text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
           />
-          <Search className="absolute left-3 top-2.5 h-4.5 w-4.5 text-slate-400" />
+          <Search className="absolute left-3 top-2.5 h-4.5 w-4.5 text-slate-400 dark:text-slate-500" />
           
           <div className="absolute right-2 top-2 flex items-center space-x-2">
             {query && (
@@ -349,13 +351,13 @@ export const Header: React.FC = () => {
                   setQuery('');
                   setIsOpen(false);
                 }}
-                className="p-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer flex items-center justify-center bg-slate-200 hover:bg-slate-300 rounded-full"
+                className="p-1 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer flex items-center justify-center bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-full"
                 title="Clear search"
               >
                 <X className="h-3 w-3" />
               </button>
             )}
-            <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-slate-450 bg-white border border-slate-200 rounded shadow-xs select-none hidden sm:block">
+            <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-slate-450 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-xs select-none hidden sm:block">
               Ctrl + K
             </kbd>
           </div>
@@ -363,29 +365,29 @@ export const Header: React.FC = () => {
 
         {/* Autocomplete Dropdown */}
         {isOpen && filteredProducts.length > 0 && (
-          <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
+          <div className="absolute top-12 left-0 right-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg z-50 max-h-72 overflow-y-auto">
             {filteredProducts.map((prod) => (
               <button
                 key={prod.id}
                 onClick={() => handleProductSelect(prod)}
-                className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-b-0 flex items-center justify-between transition-colors cursor-pointer"
+                className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 last:border-b-0 flex items-center justify-between transition-colors cursor-pointer"
               >
                 <div>
-                  <div className="font-semibold text-slate-800 text-sm">{prod.name}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">
+                  <div className="font-semibold text-slate-800 dark:text-slate-100 text-sm">{prod.name}</div>
+                  <div className="text-xs text-slate-400 dark:text-slate-400 mt-0.5">
                     <span>{prod.code}</span>
                     {getProductManufacturer(prod) ? (
-                      <span className="text-slate-600 font-medium"> · {getProductManufacturer(prod)}</span>
+                      <span className="text-slate-600 dark:text-slate-300 font-medium"> · {getProductManufacturer(prod)}</span>
                     ) : null}
                     <span> · {prod.category}</span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-medium text-slate-650">Stock: {prod.current_quantity} {prod.unit}</div>
+                  <div className="text-xs font-medium text-slate-650 dark:text-slate-300">Stock: {prod.current_quantity} {prod.unit}</div>
                   <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full mt-1 ${
-                    prod.status === 'HEALTHY' ? 'bg-green-150 text-green-800' :
-                    prod.status === 'LOW_STOCK' ? 'bg-orange-100 text-orange-850' :
-                    'bg-red-150 text-red-800'
+                    prod.status === 'HEALTHY' ? 'bg-green-150 text-green-800 dark:bg-emerald-950/70 dark:text-emerald-300' :
+                    prod.status === 'LOW_STOCK' ? 'bg-orange-100 text-orange-850 dark:bg-amber-950/70 dark:text-amber-300' :
+                    'bg-red-150 text-red-800 dark:bg-rose-950/70 dark:text-rose-300'
                   }`}>
                     {prod.status.replace('_', ' ')}
                   </span>
@@ -400,10 +402,17 @@ export const Header: React.FC = () => {
       <div className="flex items-center space-x-5">
         {/* Theme Switcher Toggle Button */}
         <button 
-          title="Light Theme active" 
-          className="p-2 text-slate-400 hover:text-slate-650 transition-colors rounded-full hover:bg-slate-100 cursor-pointer"
+          type="button"
+          onClick={toggleTheme}
+          title={isDark ? "Switch to Light Theme" : "Switch to Dark Theme"} 
+          className="p-2 text-slate-400 hover:text-slate-650 dark:text-slate-400 dark:hover:text-amber-400 transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-center relative group"
+          aria-label={isDark ? "Switch to Light Theme" : "Switch to Dark Theme"}
         >
-          <Sun className="h-5 w-5" />
+          {isDark ? (
+            <Sun className="h-5 w-5 text-amber-400 transition-transform duration-200 group-hover:rotate-45" />
+          ) : (
+            <Moon className="h-5 w-5 text-slate-500 hover:text-slate-700 transition-transform duration-200 group-hover:-rotate-12" />
+          )}
         </button>
 
         {/* Assigned Tickets Alert Badge */}
@@ -411,11 +420,11 @@ export const Header: React.FC = () => {
           <button 
             title="Assigned Service Tickets" 
             onClick={() => setShowAssignedDropdown(!showAssignedDropdown)}
-            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showAssignedDropdown || assignedTickets.length > 0 ? 'text-indigo-500 hover:bg-indigo-50' : 'text-slate-450 hover:text-slate-700 hover:bg-slate-100'}`}
+            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showAssignedDropdown || assignedTickets.length > 0 ? 'text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : 'text-slate-450 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
           >
             <Package className={`h-5 w-5 ${assignedTickets.length > 0 ? 'animate-pulse text-indigo-500' : ''}`} />
             {assignedTickets.length > 0 && (
-              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-indigo-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-indigo-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
                 {assignedTickets.length > 9 ? '9+' : assignedTickets.length}
               </span>
             )}
@@ -423,16 +432,16 @@ export const Header: React.FC = () => {
           
           {/* Assigned Tickets Dropdown */}
           {showAssignedDropdown && (
-            <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-indigo-50">
-                <h3 className="font-bold text-indigo-800 text-sm flex items-center gap-2">
+            <div className="absolute top-12 right-0 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-indigo-50 dark:bg-indigo-950/40">
+                <h3 className="font-bold text-indigo-800 dark:text-indigo-200 text-sm flex items-center gap-2">
                   <Package className="h-4 w-4" /> 
                   Assigned Tickets
                 </h3>
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {assignedTickets.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                  <div className="px-4 py-8 text-center text-slate-500 dark:text-slate-400 text-sm">
                     No assigned tickets.
                   </div>
                 ) : (
@@ -443,10 +452,10 @@ export const Header: React.FC = () => {
                         setShowAssignedDropdown(false);
                         navigate(`/projects/service-tickets`);
                       }}
-                      className="px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1"
+                      className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 flex flex-col gap-1"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="text-sm font-semibold text-slate-900 line-clamp-2">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 line-clamp-2">
                           {ticket.title}
                         </div>
                       </div>
@@ -454,7 +463,7 @@ export const Header: React.FC = () => {
                         <span className="text-[10px] font-bold text-white bg-indigo-500 px-1.5 py-0.5 rounded">
                           {ticket.status}
                         </span>
-                        <span className="text-xs text-indigo-600 font-medium truncate ml-2">
+                        <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium truncate ml-2">
                           {ticket.project_name || ticket.custom_project_name}
                         </span>
                       </div>
@@ -471,11 +480,11 @@ export const Header: React.FC = () => {
           <button 
             title="Overdue Items" 
             onClick={() => setShowOverdueDropdown(!showOverdueDropdown)}
-            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showOverdueDropdown || overdueTasks.length > 0 ? 'text-rose-500 hover:bg-rose-50' : 'text-slate-450 hover:text-slate-700 hover:bg-slate-100'}`}
+            className={`p-2 transition-colors rounded-full cursor-pointer flex items-center justify-center ${showOverdueDropdown || overdueTasks.length > 0 ? 'text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40' : 'text-slate-450 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
           >
             <AlertTriangle className={`h-5 w-5 ${overdueTasks.length > 0 ? 'animate-pulse text-rose-500' : ''}`} />
             {overdueTasks.length > 0 && (
-              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-rose-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-rose-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
                 {overdueTasks.length > 9 ? '9+' : overdueTasks.length}
               </span>
             )}
@@ -483,16 +492,16 @@ export const Header: React.FC = () => {
           
           {/* Overdue Dropdown */}
           {showOverdueDropdown && (
-            <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-rose-50">
-                <h3 className="font-bold text-rose-800 text-sm flex items-center gap-2">
+            <div className="absolute top-12 right-0 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-rose-50 dark:bg-rose-950/40">
+                <h3 className="font-bold text-rose-800 dark:text-rose-200 text-sm flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" /> 
                   Overdue Tasks
                 </h3>
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {overdueTasks.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                  <div className="px-4 py-8 text-center text-slate-500 dark:text-slate-400 text-sm">
                     No overdue tasks.
                   </div>
                 ) : (
@@ -503,10 +512,10 @@ export const Header: React.FC = () => {
                         setShowOverdueDropdown(false);
                         navigate(`/projects/my-tasks`);
                       }}
-                      className="px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1"
+                      className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 flex flex-col gap-1"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="text-sm font-semibold text-slate-900">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                           {task.title}
                         </div>
                       </div>
@@ -514,7 +523,7 @@ export const Header: React.FC = () => {
                         <span className="text-[10px] font-bold text-white bg-rose-500 px-1.5 py-0.5 rounded">
                           OVERDUE
                         </span>
-                        <span className="text-xs text-rose-600 font-medium">
+                        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
                           Due: {task.due_date ? task.due_date.split('T')[0] : 'Unknown'}
                         </span>
                       </div>
@@ -531,11 +540,11 @@ export const Header: React.FC = () => {
           <button 
             title="Notifications" 
             onClick={() => setShowNotifications(!showNotifications)}
-            className={`p-2 transition-colors rounded-full cursor-pointer ${showNotifications ? 'bg-blue-50 text-blue-600' : 'text-slate-450 hover:text-slate-700 hover:bg-slate-100'}`}
+            className={`p-2 transition-colors rounded-full cursor-pointer ${showNotifications ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400' : 'text-slate-450 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-blue-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white">
+              <span className="absolute top-1 right-1 h-4.5 w-4.5 bg-blue-600 text-[10px] font-black text-white rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -543,18 +552,18 @@ export const Header: React.FC = () => {
           
           {/* Notifications Dropdown */}
           {showNotifications && (
-            <div className="absolute top-12 right-0 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-bold text-slate-800 text-sm">Notifications</h3>
+            <div className="absolute top-12 right-0 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Notifications</h3>
                 {unreadCount > 0 && (
-                  <button onClick={handleMarkAllRead} className="text-xs text-blue-600 font-medium hover:text-blue-700 cursor-pointer">
+                  <button onClick={handleMarkAllRead} className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer">
                     Mark all read
                   </button>
                 )}
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                  <div className="px-4 py-8 text-center text-slate-500 dark:text-slate-400 text-sm">
                     No notifications yet.
                   </div>
                 ) : (
@@ -562,10 +571,10 @@ export const Header: React.FC = () => {
                     <div 
                       key={notif.id}
                       onClick={() => handleNotificationClick(notif)}
-                      className={`px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 flex flex-col gap-1 ${!notif.is_read ? 'bg-blue-50/30' : ''}`}
+                      className={`px-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-b-0 cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 flex flex-col gap-1 ${!notif.is_read ? 'bg-blue-50/30 dark:bg-blue-950/20' : ''}`}
                     >
                       <div className="flex items-start justify-between">
-                        <div className={`text-sm font-semibold ${!notif.is_read ? 'text-slate-900' : 'text-slate-700'}`}>
+                        <div className={`text-sm font-semibold ${!notif.is_read ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
                           {notif.title}
                         </div>
                         {!notif.is_read && (
@@ -573,7 +582,7 @@ export const Header: React.FC = () => {
                         )}
                       </div>
                       {notif.message && (
-                        <p className={`text-xs ${!notif.is_read ? 'text-slate-700 font-medium' : 'text-slate-500'}`}>
+                        <p className={`text-xs ${!notif.is_read ? 'text-slate-700 dark:text-slate-300 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
                           {notif.message}
                         </p>
                       )}

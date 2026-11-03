@@ -178,7 +178,7 @@ export const TaskCommentsModal: React.FC<TaskCommentsModalProps> = ({
                       </p>
                       <button
                         onClick={() => handleDeleteComment(comment.id)}
-                        className="absolute -right-8 top-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-rose-600 rounded-lg shadow-sm"
+                        className="absolute -right-8 top-0 opacity-0 group-hover/bubble:opacity-100 touch-subtle transition-opacity p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-rose-600 rounded-lg shadow-sm"
                         title="Delete comment"
                       >
                         <Trash2 className="h-3.5 w-3.5" />

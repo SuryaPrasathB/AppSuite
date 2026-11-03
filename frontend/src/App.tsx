@@ -4,6 +4,7 @@ import { AuthProvider, useAuth, UserRole } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { DialogProvider } from './context/DialogContext';
 import { ToastProvider } from './context/ToastContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AnnouncementBanner } from './components/AnnouncementBanner';
@@ -62,7 +63,7 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="h-10 border-t border-slate-200 bg-white px-8 flex items-center justify-between text-[11px] text-slate-400 font-medium shrink-0">
+    <footer className="h-10 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-8 flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 font-medium shrink-0 transition-colors">
       <div className="flex items-center gap-6">
         <span>{formatDate(time)}</span>
         <span>{formatTime(time)}</span>
@@ -71,7 +72,7 @@ const Footer: React.FC = () => {
         <span>v1.0.0</span>
         <div className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-          <span className="text-slate-500 font-bold">System Online</span>
+          <span className="text-slate-500 dark:text-slate-400 font-bold">System Online</span>
         </div>
       </div>
     </footer>
@@ -135,11 +136,11 @@ const AppContent: React.FC = () => {
 
   // If logged in, render the main layout with sidebar and header
   return (
-    <div className="flex h-full overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-full overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 transition-colors">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
         <Header />
-        <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0 flex flex-col">
+        <main className="flex-1 overflow-y-auto px-6 py-6 print:px-0 print:py-0 flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors">
           <Routes>
             <Route path="/store" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><Dashboard /></ProtectedRoute>} />
             <Route path="/layout" element={<ProtectedRoute allowedRoles={['Administrator', 'Store Operator', 'Store Manager']}><StoreLayout /></ProtectedRoute>} />
@@ -179,22 +180,24 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <DialogProvider>
-          <CartProvider>
-            <Router>
-              <div className="flex flex-col h-screen overflow-hidden">
-                <AnnouncementBanner />
-                <div className="flex-1 overflow-hidden relative">
-                  <AppContent />
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <DialogProvider>
+            <CartProvider>
+              <Router>
+                <div className="flex flex-col h-screen overflow-hidden">
+                  <AnnouncementBanner />
+                  <div className="flex-1 overflow-hidden relative">
+                    <AppContent />
+                  </div>
                 </div>
-              </div>
-            </Router>
-          </CartProvider>
-        </DialogProvider>
-      </AuthProvider>
-    </ToastProvider>
+              </Router>
+            </CartProvider>
+          </DialogProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

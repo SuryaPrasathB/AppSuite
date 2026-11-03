@@ -348,28 +348,28 @@ export const Projects: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-        <div className="border-b border-slate-200 flex items-center gap-6 px-6 pt-4 text-xs font-semibold text-slate-450">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+        <div className="border-b border-slate-200 dark:border-slate-800 flex items-center gap-6 px-6 pt-4 text-xs font-semibold text-slate-450 dark:text-slate-400">
           {['All Projects', 'Active', 'On Hold', 'Completed', 'Service', 'Cancelled'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`pb-3 relative transition-colors cursor-pointer ${
-                activeTab === tab ? 'text-primary-600 font-extrabold' : 'hover:text-slate-800'
+                activeTab === tab ? 'text-primary-600 dark:text-primary-400 font-extrabold' : 'hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               {tab}
               {activeTab === tab && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 rounded-full"></span>
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-primary-500 rounded-full"></span>
               )}
             </button>
           ))}
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs text-slate-650">
+          <table className="w-full text-left border-collapse text-xs text-slate-650 dark:text-slate-300">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+              <tr className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                 <th className="px-6 py-4">Project Name</th>
                 <th className="px-6 py-4">Client</th>
                 <th className="px-6 py-4">PO Number</th>
@@ -382,7 +382,7 @@ export const Projects: React.FC = () => {
                 <th className="px-6 py-4 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium text-slate-700 dark:text-slate-300">
               {loading ? (
                 <tr>
                   <td colSpan={10} className="px-6 py-8 text-center text-slate-500">Loading projects...</td>
@@ -500,13 +500,13 @@ export const Projects: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-full bg-slate-200 rounded-full h-2 mt-1">
+                        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-1">
                           <div 
                             className={`h-2 rounded-full ${p.completion_percentage === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} 
                             style={{ width: `${p.completion_percentage ?? (p.status === 'COMPLETED' ? 100 : 0)}%` }}
                           ></div>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-500 w-8 text-right">
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 w-8 text-right">
                           {p.completion_percentage ?? (p.status === 'COMPLETED' ? 100 : 0)}%
                         </span>
                       </div>
