@@ -29,21 +29,6 @@ You only need to transfer two items to your Server PC:
 
 *(You do **not** need to transfer the `frontend` or `backend` source code folders).*
 
-### 4. Run Database Migrations on the Server PC
-Since new features often come with database changes, you need to apply these updates to your server's database. After loading the new images and starting the containers, run the migration scripts inside the backend container:
-```bash
-docker exec -it smart_store_backend python update_assets_db.py
-docker exec -it smart_store_backend python update_tickets_and_projects.py
-docker exec -it smart_store_backend python update_notifications_db.py
-docker exec -it smart_store_backend python update_projects_deleted_at_db.py
-docker exec -it smart_store_backend python update_projects_parent_db.py
-docker exec -it smart_store_backend python update_task_comments_db.py
-docker exec -it smart_store_backend python migrate_description_history.py
-docker exec -it smart_store_backend python migrate_project_category.py
-docker exec -it smart_store_backend python db_update.py
-```
-*(Running them multiple times is safe, as they check if columns exist before adding them).*
-
 ---
 
 ## Part 2: On Your Server PC
@@ -79,6 +64,11 @@ docker exec -it smart_store_backend python update_task_comments_db.py
 docker exec -it smart_store_backend python add_announcements_table.py
 docker exec -it smart_store_backend python update_tickets_and_projects.py
 docker exec -it smart_store_backend python update_projects_deleted_at_db.py
+docker exec -it smart_store_backend python update_notifications_db.py
+docker exec -it smart_store_backend python migrate_milestones.py
+docker exec -it smart_store_backend python migrate_project_category.py
+docker exec -it smart_store_backend python migrate_description_history.py
+docker exec -it smart_store_backend python migrate_bom_procurement.py
 ```
 *If a script hangs or freezes for a long time, press `Ctrl + C`, restart the database (`docker restart smart_store_db`), and try running the script again to clear any database locks.*
 

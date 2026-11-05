@@ -41,19 +41,48 @@ class DBStore:
             print("init_description_history_table error:", e)
 
     @staticmethod
-    def init_project_category_column():
+    def init_project_columns():
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SHOW COLUMNS FROM projects LIKE 'category'")
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE projects ADD COLUMN category VARCHAR(50) DEFAULT 'STANDARD'")
-                conn.commit()
-                print("Added category column to projects table.")
+            cols = [
+                ("category", "VARCHAR(50) DEFAULT 'STANDARD'"),
+                ("milestone", "VARCHAR(255) DEFAULT NULL"),
+                ("parent_id", "INT NULL"),
+                ("is_parent", "BOOLEAN DEFAULT FALSE"),
+                ("is_template", "BOOLEAN DEFAULT FALSE"),
+                ("template_id", "INT NULL"),
+                ("deleted_at", "TIMESTAMP NULL DEFAULT NULL"),
+                ("project_incharge", "VARCHAR(255) DEFAULT NULL"),
+                ("has_software", "BOOLEAN DEFAULT FALSE"),
+                ("has_firmware", "BOOLEAN DEFAULT FALSE"),
+                ("has_transformer", "BOOLEAN DEFAULT FALSE"),
+                ("no_of_panels", "INT DEFAULT 1"),
+                ("folder_path", "VARCHAR(500) DEFAULT NULL"),
+                ("date_of_delivery", "DATE DEFAULT NULL"),
+            ]
+            for col_name, col_type in cols:
+                cursor.execute(f"SHOW COLUMNS FROM projects LIKE '{col_name}'")
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE projects ADD COLUMN {col_name} {col_type}")
+                    print(f"Added {col_name} column to projects table.")
+
+            # Ensure global_milestones table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS global_milestones (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL UNIQUE
+                )
+            """)
+            conn.commit()
             cursor.close()
             conn.close()
         except Exception as e:
-            print("init_project_category_column error:", e)
+            print("init_project_columns error:", e)
+
+    @staticmethod
+    def init_project_category_column():
+        DBStore.init_project_columns()
 
     @staticmethod
     def init_bom_procurement_columns():
@@ -1318,36 +1347,47 @@ class DBStore:
     def add_project(project: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        query = """
-            INSERT INTO projects (code, name, po_number, client_name, description, status, start_date, end_date, 
-                                  project_incharge, has_software, has_firmware, has_transformer, no_of_panels, folder_path, date_of_delivery, parent_id, is_parent, is_template, category, milestone)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        values = (
-            project.get("code"), project.get("name"), project.get("po_number"),
-            project.get("client_name"), project.get("description"), project.get("status", "PLANNING"),
-            project.get("start_date") or None, project.get("end_date") or None,
-            project.get("project_incharge"), 
-            1 if project.get("has_software") else 0,
-            1 if project.get("has_firmware") else 0,
-            1 if project.get("has_transformer") else 0,
-            project.get("no_of_panels", 1),
-            project.get("folder_path"),
-            project.get("date_of_delivery") or None,
-            project.get("parent_id") or None,
-            1 if project.get("is_parent") else 0,
-            1 if project.get("is_template") else 0,
-            project.get("category") or "STANDARD",
-            project.get("milestone")
-        )
-        cursor.execute(query, values)
-        conn.commit()
-        project["id"] = cursor.lastrowid
-        project["category"] = project.get("category") or "STANDARD"
-        project["created_at"] = datetime.now().isoformat()
-        cursor.close()
-        conn.close()
-        return project
+        try:
+            cursor.execute("SHOW COLUMNS FROM projects")
+            existing_cols = {row['Field'] for row in cursor.fetchall()}
+
+            field_mapping = {
+                "code": project.get("code"),
+                "name": project.get("name"),
+                "po_number": project.get("po_number"),
+                "client_name": project.get("client_name"),
+                "description": project.get("description"),
+                "status": project.get("status", "PLANNING"),
+                "start_date": project.get("start_date") or None,
+                "end_date": project.get("end_date") or None,
+                "project_incharge": project.get("project_incharge"),
+                "has_software": 1 if project.get("has_software") else 0,
+                "has_firmware": 1 if project.get("has_firmware") else 0,
+                "has_transformer": 1 if project.get("has_transformer") else 0,
+                "no_of_panels": project.get("no_of_panels", 1),
+                "folder_path": project.get("folder_path"),
+                "date_of_delivery": project.get("date_of_delivery") or None,
+                "parent_id": project.get("parent_id") or None,
+                "is_parent": 1 if project.get("is_parent") else 0,
+                "is_template": 1 if project.get("is_template") else 0,
+                "category": project.get("category") or "STANDARD",
+                "milestone": project.get("milestone")
+            }
+
+            insert_cols = [c for c in field_mapping.keys() if c in existing_cols]
+            insert_vals = [field_mapping[c] for c in insert_cols]
+            placeholders = ["%s"] * len(insert_cols)
+
+            query = f"INSERT INTO projects ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)})"
+            cursor.execute(query, tuple(insert_vals))
+            conn.commit()
+            project["id"] = cursor.lastrowid
+            project["category"] = project.get("category") or "STANDARD"
+            project["created_at"] = datetime.now().isoformat()
+            return project
+        finally:
+            cursor.close()
+            conn.close()
 
     @staticmethod
     def update_project(proj_id: int, data: Dict[str, Any]) -> Dict[str, Any]:

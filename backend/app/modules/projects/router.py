@@ -162,9 +162,29 @@ def list_projects(
 class MilestoneCreate(BaseModel):
     name: str
 
+def ensure_global_milestones_schema():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_milestones (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE
+            )
+        """)
+        cursor.execute("SHOW COLUMNS FROM projects LIKE 'milestone'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE projects ADD COLUMN milestone VARCHAR(255) DEFAULT NULL")
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error ensuring milestone schema: {e}")
+
 @router.get("/milestones")
 def list_milestones():
     try:
+        ensure_global_milestones_schema()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT id, name FROM global_milestones ORDER BY name ASC")
@@ -177,15 +197,27 @@ def list_milestones():
 
 @router.post("/milestones")
 def create_milestone(milestone: MilestoneCreate):
+    clean_name = milestone.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Milestone name cannot be empty")
     try:
+        ensure_global_milestones_schema()
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO global_milestones (name) VALUES (%s)", (milestone.name,))
+        cursor = conn.cursor(dictionary=True)
+        # Check if already exists
+        cursor.execute("SELECT id, name FROM global_milestones WHERE name = %s", (clean_name,))
+        existing = cursor.fetchone()
+        if existing:
+            cursor.close()
+            conn.close()
+            return existing
+
+        cursor.execute("INSERT INTO global_milestones (name) VALUES (%s)", (clean_name,))
         conn.commit()
         new_id = cursor.lastrowid
         cursor.close()
         conn.close()
-        return {"id": new_id, "name": milestone.name}
+        return {"id": new_id, "name": clean_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -637,112 +669,132 @@ def _create_project_folders(full_path: str, subfolders: List[str]):
 
 @router.post("")
 def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
-    is_rnd = (project.category == "RND")
-    if is_rnd:
-        project.is_parent = False
-        project.parent_id = None
+    try:
+        is_rnd = (project.category == "RND")
+        if is_rnd:
+            project.is_parent = False
+            project.parent_id = None
 
-    if not project.code or str(project.code).strip() == "":
-        if project.parent_id:
-            project.code = f"SUB-{int(time.time())}"
-        else:
-            next_num = get_next_project_num("RND" if is_rnd else "STANDARD")
-            mmyy = datetime.now().strftime("%m%y")
-            prefix = "RND" if is_rnd else "PRJ"
-            project.code = f"{next_num}/{prefix}/{mmyy}"
-        
-    existing = [p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["code"] == project.code]
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
-    
-    full_path = None
-    subfolders = []
-
-    if not is_rnd:
-        # 1. Determine folder name and parent path
-        match = re.search(r"(\d+)", project.code)
-        if match:
-            proj_num = match.group(1)
-        else:
-            proj_num = get_next_project_num()
-
-        customer = project.client_name or "Unknown_Customer"
-        customer = re.sub(r'[\\/*?:"<>|]', "", customer)
-        proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
-
-        base_dir = settings.PROJECTS_BASE_DIR
-
-        parent_project = None
-        if project.parent_id:
-            all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
-            parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
-            if not parent_project:
-                raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
-
-        if parent_project:
-            # Automatically take the client of the major project
-            project.client_name = parent_project.get("client_name")
-
-            # Sub-Project: Nest directly inside parent project folder
-            parent_folder = parent_project.get("folder_path")
-            if not parent_folder:
-                parent_folder = base_dir
-                
-            # Calculate sub-project number by counting existing children
-            existing_sub_projects = [p for p in all_projects if p.get("parent_id") == project.parent_id]
-            sub_proj_num = str(len(existing_sub_projects) + 1).zfill(3)
-                
-            folder_name = f"Sub No {sub_proj_num}_{proj_name}"
-            full_path = os.path.join(parent_folder, folder_name)
-        else:
-            # Standalone or Major Project container
-            folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
-            full_path = os.path.join(base_dir, folder_name)
-        
-        # 2. Check physical directories
-        if os.path.exists(full_path):
-            raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
+        if not project.code or str(project.code).strip() == "":
+            if project.parent_id:
+                project.code = f"SUB-{int(time.time())}"
+            else:
+                next_num = get_next_project_num("RND" if is_rnd else "STANDARD")
+                mmyy = datetime.now().strftime("%m%y")
+                prefix = "RND" if is_rnd else "PRJ"
+                project.code = f"{next_num}/{prefix}/{mmyy}"
             
-        if not project.is_parent:
-            config = get_project_config()
-            subfolders = list(config["default_folders"])
-            if project.has_software:
-                subfolders.append("Software")
-            if project.has_firmware:
-                subfolders.append("Firmware")
-            if project.has_transformer:
-                subfolders.append("Transformer Design")
+        existing = [p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["code"] == project.code]
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Project with code '{project.code}' already exists.")
+        
+        full_path = None
+        subfolders = []
+
+        if not is_rnd:
+            # 1. Determine folder name and parent path
+            match = re.search(r"(\d+)", project.code)
+            if match:
+                proj_num = match.group(1)
+            else:
+                proj_num = get_next_project_num()
+
+            customer = project.client_name or "Unknown_Customer"
+            customer = re.sub(r'[\\/*?:"<>|]', "", customer)
+            proj_name = re.sub(r'[\\/*?:"<>|]', "", project.name)
+
+            base_dir = settings.PROJECTS_BASE_DIR
+
+            parent_project = None
+            if project.parent_id:
+                all_projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
+                parent_project = next((p for p in all_projects if p["id"] == project.parent_id), None)
+                if not parent_project:
+                    raise HTTPException(status_code=400, detail="Specified parent project does not exist.")
+
+            if parent_project:
+                # Automatically take the client of the major project
+                project.client_name = parent_project.get("client_name")
+
+                # Sub-Project: Nest directly inside parent project folder
+                parent_folder = parent_project.get("folder_path")
+                if not parent_folder:
+                    parent_folder = base_dir
+                    
+                # Calculate sub-project number by counting existing children
+                existing_sub_projects = [p for p in all_projects if p.get("parent_id") == project.parent_id]
+                sub_proj_num = str(len(existing_sub_projects) + 1).zfill(3)
+                    
+                folder_name = f"Sub No {sub_proj_num}_{proj_name}"
+                full_path = os.path.join(parent_folder, folder_name)
+            else:
+                # Standalone or Major Project container
+                folder_name = f"Project No {proj_num}_{customer}_{proj_name}"
+                full_path = os.path.join(base_dir, folder_name)
+            
+            # 2. Check physical directories
+            if os.path.exists(full_path):
+                raise HTTPException(status_code=400, detail=f"Project folder at '{full_path}' already exists.")
                 
-        background_tasks.add_task(_create_project_folders, full_path, subfolders)
+            if not project.is_parent:
+                config = get_project_config()
+                subfolders = list(config["default_folders"])
+                if project.has_software:
+                    subfolders.append("Software")
+                if project.has_firmware:
+                    subfolders.append("Firmware")
+                if project.has_transformer:
+                    subfolders.append("Transformer Design")
+                    
+            background_tasks.add_task(_create_project_folders, full_path, subfolders)
+            
+        # 3. Save to DB
+        proj_dict = project.model_dump()
+        proj_dict["folder_path"] = full_path
+        proj_dict["category"] = "RND" if is_rnd else "STANDARD"
+        saved_project = DBStore.add_project(proj_dict)
         
-    # 3. Save to DB
-    proj_dict = project.model_dump()
-    proj_dict["folder_path"] = full_path
-    proj_dict["category"] = "RND" if is_rnd else "STANDARD"
-    saved_project = DBStore.add_project(proj_dict)
-    
-    # 4. Create initial pending tasks in DB only if NOT a major parent project container and NOT an RND project
-    if not project.is_parent and not is_rnd:
-        for sf in subfolders:
-            DBStore.add_project_task(saved_project["id"], sf, "PENDING")
-        
-    if project.template_id:
-        template_tasks = DBStore.get_dynamic_tasks(project.template_id)
-        for t in template_tasks:
-            new_task = {
-                "title": t["title"],
-                "description": t.get("description"),
-                "status": "TODO",
-                "priority": t.get("priority", "MEDIUM"),
-                "estimated_hours": t.get("estimated_hours", 0.0)
-            }
-            DBStore.add_dynamic_task(saved_project["id"], new_task)
+        # 4. Create initial pending tasks in DB only if NOT a major parent project container and NOT an RND project
+        if not project.is_parent and not is_rnd:
+            for sf in subfolders:
+                try:
+                    DBStore.add_project_task(saved_project["id"], sf, "PENDING")
+                except Exception as e:
+                    print(f"Warning: Failed to add project task {sf}: {e}")
+            
+        if project.template_id:
+            try:
+                template_tasks = DBStore.get_dynamic_tasks(project.template_id)
+                for t in template_tasks:
+                    new_task = {
+                        "title": t["title"],
+                        "description": t.get("description"),
+                        "status": "TODO",
+                        "priority": t.get("priority", "MEDIUM"),
+                        "estimated_hours": t.get("estimated_hours", 0.0)
+                    }
+                    DBStore.add_dynamic_task(saved_project["id"], new_task)
+            except Exception as e:
+                print(f"Warning: Failed to copy template tasks: {e}")
 
-    DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
-    if project.description and project.description.strip():
-        DBStore.record_description_change("project", saved_project["id"], None, project.description.strip(), current_user["id"])
+        try:
+            DBStore.add_project_activity(saved_project["id"], "PROJECT_CREATED", f"Project {project.code} created", current_user["id"])
+        except Exception as e:
+            print(f"Warning: Failed to record project activity: {e}")
 
-    return saved_project
+        if project.description and project.description.strip():
+            try:
+                DBStore.record_description_change("project", saved_project["id"], None, project.description.strip(), current_user["id"])
+            except Exception as e:
+                print(f"Warning: Failed to record description change: {e}")
+
+        return saved_project
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
 
 @router.put("/{project_id}")
 def update_project(project_id: int, project: ProjectUpdate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):

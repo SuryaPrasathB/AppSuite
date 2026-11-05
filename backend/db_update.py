@@ -19,7 +19,14 @@ def update_db():
             "ALTER TABLE projects ADD COLUMN has_transformer BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE projects ADD COLUMN no_of_panels INT DEFAULT 1;",
             "ALTER TABLE projects ADD COLUMN folder_path VARCHAR(500);",
-            "ALTER TABLE projects ADD COLUMN date_of_delivery DATE;"
+            "ALTER TABLE projects ADD COLUMN date_of_delivery DATE;",
+            "ALTER TABLE projects ADD COLUMN milestone VARCHAR(255) DEFAULT NULL;",
+            "ALTER TABLE projects ADD COLUMN category VARCHAR(50) DEFAULT 'STANDARD';",
+            "ALTER TABLE projects ADD COLUMN parent_id INT NULL;",
+            "ALTER TABLE projects ADD COLUMN is_parent BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE projects ADD COLUMN is_template BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE projects ADD COLUMN template_id INT NULL;",
+            "ALTER TABLE projects ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL;"
         ]
         
         print("Running ALTER statements...")
@@ -139,6 +146,29 @@ def update_db():
             )
         """)
 
+        print("Creating global_milestones table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_milestones (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE
+            )
+        """)
+
+        print("Creating description_histories table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS description_histories (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id INT NOT NULL,
+                old_description TEXT,
+                new_description TEXT,
+                user_id INT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES employees(id) ON DELETE SET NULL,
+                INDEX idx_entity (entity_type, entity_id, created_at)
+            )
+        """)
+
         print("Creating project_milestones table...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS project_milestones (
@@ -199,6 +229,29 @@ def update_db():
             print("Added completed_at column to dynamic_tasks.")
         except Exception as e:
             print(f"Ignored completed_at alter error (column likely exists): {e}")
+
+        print("Ensuring BOM procurement and timeline columns exist on boms and bom_items...")
+        bom_alters = [
+            "ALTER TABLE boms ADD COLUMN issued_at TIMESTAMP NULL DEFAULT NULL;",
+            "ALTER TABLE boms ADD COLUMN customer_name VARCHAR(255) NULL DEFAULT NULL;",
+            "ALTER TABLE boms ADD COLUMN target_delivery_date DATE NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN manual_product_name VARCHAR(255) NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN part_number VARCHAR(255) NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN manufacturer VARCHAR(255) NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN link TEXT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN custom_fields TEXT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN unit_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00;",
+            "ALTER TABLE bom_items ADD COLUMN procurement_status VARCHAR(50) NOT NULL DEFAULT 'YET_TO_ORDER';",
+            "ALTER TABLE bom_items ADD COLUMN ordered_date DATE NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN expected_delivery_date DATE NULL DEFAULT NULL;",
+            "ALTER TABLE bom_items ADD COLUMN delivered_date DATE NULL DEFAULT NULL;"
+        ]
+        for stmt in bom_alters:
+            try:
+                cursor.execute(stmt)
+                print(f"Executed: {stmt}")
+            except Exception as e:
+                print(f"Ignored BOM alter error (column likely exists): {e}")
 
         conn.commit()
         cursor.close()
