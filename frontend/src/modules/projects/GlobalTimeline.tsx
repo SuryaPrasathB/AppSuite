@@ -16,6 +16,7 @@ export const GlobalTimeline: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All Active');
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
   const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
+  const employeeDropdownRef = useRef<HTMLDivElement>(null);
 
   // Interaction state
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
@@ -23,6 +24,21 @@ export const GlobalTimeline: React.FC = () => {
   const [hoverY, setHoverY] = useState<number>(0);
   const [isDraggingDate, setIsDraggingDate] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target as Node)) {
+        setIsEmployeeDropdownOpen(false);
+      }
+    };
+    if (isEmployeeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isEmployeeDropdownOpen]);
 
   const loadData = async () => {
     try {
@@ -49,6 +65,12 @@ export const GlobalTimeline: React.FC = () => {
     loadData();
   }, []);
 
+  const projectMap = useMemo(() => {
+    const map = new Map<number, any>();
+    projects.forEach(p => map.set(p.id, p));
+    return map;
+  }, [projects]);
+
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
       if (statusFilter === 'All Active') return !['COMPLETED', 'CANCELLED'].includes(p.status);
@@ -60,6 +82,9 @@ export const GlobalTimeline: React.FC = () => {
   const filteredEmployees = useMemo(() => {
     return employees.filter(e => selectedEmployeeIds.includes(e.id));
   }, [employees, selectedEmployeeIds]);
+
+  const rowCount = viewMode === 'project' ? filteredProjects.length : filteredEmployees.length;
+  const hasExtraSpace = rowCount <= 4;
 
   // Tasks assigned to selected employees
   const employeeTasks = useMemo(() => {
@@ -99,18 +124,19 @@ export const GlobalTimeline: React.FC = () => {
       });
     }
 
+    const nowTime = new Date().getTime();
     let start = new Date();
     start.setDate(start.getDate() - 7); 
     let end = new Date();
     end.setDate(end.getDate() + 30);
 
     if (dates.length > 0) {
-      const minTime = Math.min(...dates);
-      const maxTime = Math.max(...dates);
+      const minTime = Math.min(...dates, nowTime);
+      const maxTime = Math.max(...dates, nowTime);
       start = new Date(minTime);
-      start.setDate(start.getDate() - 3); 
+      start.setDate(start.getDate() - 7); 
       end = new Date(maxTime);
-      end.setDate(end.getDate() + 5); 
+      end.setDate(end.getDate() + 14); 
     }
 
     if (zoomLevel === 'week') {
@@ -154,7 +180,7 @@ export const GlobalTimeline: React.FC = () => {
     setSelectedEmployeeIds([]);
   };
 
-  const updateHoverDate = (e: React.MouseEvent) => {
+  const updateHoverDate = (e: React.MouseEvent | MouseEvent) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const scrollLeft = timelineRef.current.scrollLeft;
@@ -169,7 +195,7 @@ export const GlobalTimeline: React.FC = () => {
     }
     
     const scrollWidth = timelineRef.current.scrollWidth;
-    const ratio = timelineX / (scrollWidth - 250);
+    const ratio = Math.max(0, Math.min(1, timelineX / (scrollWidth - 250)));
     const dayOffset = Math.floor(ratio * timelineDays);
     
     if (dayOffset >= 0 && dayOffset < timelineDays) {
@@ -181,11 +207,70 @@ export const GlobalTimeline: React.FC = () => {
     }
   };
 
+  // Keep drag tracking active even if mouse leaves container during drag
+  useEffect(() => {
+    if (!isDraggingDate) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      updateHoverDate(e);
+    };
+
+    const handleGlobalMouseUp = () => {
+      setIsDraggingDate(false);
+      setHoverDate(null);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isDraggingDate, timelineDays, timelineStart]);
+
+  const scrollToToday = (behavior: ScrollBehavior = 'smooth') => {
+    if (!timelineRef.current) return;
+    const todayElement = timelineRef.current.querySelector('#timeline-today-col') as HTMLElement;
+    if (todayElement) {
+      const containerRect = timelineRef.current.getBoundingClientRect();
+      const todayRect = todayElement.getBoundingClientRect();
+      const currentScrollLeft = timelineRef.current.scrollLeft;
+      const todayCenter = (todayRect.left - containerRect.left + currentScrollLeft) + todayRect.width / 2;
+      const targetScrollLeft = todayCenter - (timelineRef.current.clientWidth + 250) / 2;
+      
+      timelineRef.current.scrollTo({
+        left: Math.max(0, targetScrollLeft),
+        behavior
+      });
+    }
+  };
+
+  // Scroll to today on initial data load
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        scrollToToday('auto');
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
+
+  // Also scroll when zoomLevel or viewMode changes
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        scrollToToday('smooth');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [zoomLevel, viewMode]);
+
   const renderTimelineHeader = () => {
     return (
       <>
         {/* Sticky top-left corner */}
-        <div className="bg-white p-3 text-xs font-bold text-slate-500 sticky left-0 top-0 z-50 border-b border-slate-200 border-r flex items-center shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.1)]">
+        <div className="bg-white p-3 text-xs font-bold text-slate-500 sticky left-0 top-0 z-50 border-b border-slate-200 border-r flex items-center shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.1)] h-[48px]">
           {viewMode === 'project' ? 'Project Name' : 'Employee Name'}
         </div>
         
@@ -203,13 +288,14 @@ export const GlobalTimeline: React.FC = () => {
           return (
             <div 
               key={idx} 
-              className={`p-1 pt-3 text-center border-b sticky top-0 z-40 bg-white flex flex-col justify-center items-center leading-none transition-colors border-r border-slate-100 relative ${
+              id={isToday ? "timeline-today-col" : undefined}
+              className={`p-1 text-center border-b sticky top-0 z-40 bg-white flex flex-col justify-center items-center leading-none transition-colors border-r border-slate-100 relative h-[48px] ${
                 isToday ? 'bg-indigo-50 text-indigo-700 shadow-[inset_0_-3px_0_rgba(99,102,241,1)]' : 'text-slate-500'
               }`}
             >
               {shouldShowText && (
                 <>
-                  <span className="text-[9px] uppercase tracking-widest opacity-60 mb-1">{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
+                  <span className="text-[9px] uppercase tracking-widest opacity-60 mb-0.5">{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
                   <span className="font-black text-sm">{date.getDate()}</span>
                   
                   {date.getDate() === 1 && (
@@ -224,6 +310,75 @@ export const GlobalTimeline: React.FC = () => {
         })}
       </>
     );
+  };
+
+  const getTaskDates = (task: any) => {
+    const startStr = task.start_date || task.created_at || new Date().toISOString();
+    const start = new Date(startStr);
+
+    let due: Date;
+    if (task.due_date) {
+      due = new Date(task.due_date);
+    } else if (task.status === 'DONE' && task.completed_at) {
+      due = new Date(task.completed_at);
+    } else {
+      const now = new Date();
+      due = now > start ? now : new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const safeDue = due < start ? start : due;
+    return { start, safeDue };
+  };
+
+  const assignTaskLanes = (taskList: any[]) => {
+    const tasksWithDates = taskList.map(task => {
+      const { start, safeDue } = getTaskDates(task);
+      return {
+        task,
+        startTime: start.getTime(),
+        endTime: safeDue.getTime(),
+        startDate: start,
+        safeDueDate: safeDue
+      };
+    });
+
+    // Sort by start date, then by end date
+    const sorted = [...tasksWithDates].sort((a, b) => {
+      if (a.startTime !== b.startTime) return a.startTime - b.startTime;
+      return a.endTime - b.endTime;
+    });
+
+    const laneEndTimes: number[] = [];
+    const placedTasks: { task: any; lane: number; startDate: Date; safeDueDate: Date }[] = [];
+
+    sorted.forEach(item => {
+      let placedLane = -1;
+      for (let i = 0; i < laneEndTimes.length; i++) {
+        // If the task starts after the previous task in this lane finished
+        if (laneEndTimes[i] < item.startTime) {
+          placedLane = i;
+          laneEndTimes[i] = item.endTime;
+          break;
+        }
+      }
+
+      if (placedLane === -1) {
+        placedLane = laneEndTimes.length;
+        laneEndTimes.push(item.endTime);
+      }
+
+      placedTasks.push({
+        task: item.task,
+        lane: placedLane,
+        startDate: item.startDate,
+        safeDueDate: item.safeDueDate
+      });
+    });
+
+    return {
+      tasksWithLanes: placedTasks,
+      totalLanes: Math.max(1, laneEndTimes.length)
+    };
   };
 
   const renderProjectRows = () => {
@@ -248,18 +403,29 @@ export const GlobalTimeline: React.FC = () => {
         project.status === 'ON_HOLD' ? 'from-rose-500 to-rose-400 border-rose-600/30 text-white' :
         'from-slate-200 to-slate-100 border-slate-300 text-slate-700'; 
 
+      const minRowH = hasExtraSpace ? 80 : 55;
+
       return (
         <React.Fragment key={project.id}>
           {/* Left sticky sidebar - Z-index 40 so tasks slide UNDER it */}
-          <div className="bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-40 flex flex-col justify-center text-xs text-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+          <div 
+            className="bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-40 flex flex-col justify-center text-xs text-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] h-full"
+            style={{ minHeight: `${minRowH}px` }}
+          >
             <span className="font-bold truncate" title={project.name}>{project.name}</span>
             <span className="text-[10px] text-slate-500 font-mono mt-0.5">{project.code}</span>
           </div>
 
-          <div className="border-b border-slate-100 relative group" style={{ gridColumn: `span ${timelineDays}` }}>
+          <div 
+            className="border-b border-slate-100 relative group h-full" 
+            style={{ 
+              gridColumn: `span ${timelineDays}`,
+              minHeight: `${minRowH}px`
+            }}
+          >
             {safeDueDate >= timelineStart && (
               <div 
-                className={`absolute top-3 bottom-3 rounded-lg bg-gradient-to-r ${statusColor} border shadow-md flex flex-col justify-center px-4 text-[10px] overflow-hidden select-none hover:shadow-lg hover:-translate-y-0.5 hover:brightness-110 transition-all duration-300 z-10 hover:z-20`}
+                className={`absolute ${hasExtraSpace ? 'top-4 bottom-4' : 'top-3 bottom-3'} rounded-lg bg-gradient-to-r ${statusColor} border shadow-md flex flex-col justify-center px-4 text-[10px] overflow-hidden select-none hover:shadow-lg hover:-translate-y-0.5 hover:brightness-110 transition-all duration-300 z-10 hover:z-20`}
                 style={{ 
                   left: `calc((${startOffset} / ${timelineDays}) * 100%)`, 
                   width: `calc((${duration} / ${timelineDays}) * 100%)`,
@@ -268,7 +434,7 @@ export const GlobalTimeline: React.FC = () => {
               >
                 {duration > 2 && (
                   <>
-                    <span className="font-black tracking-wide truncate opacity-95">{project.status.replace('_', ' ')}</span>
+                    <span className="font-black tracking-wide truncate opacity-95 text-[11px]">{project.status.replace('_', ' ')}</span>
                     {duration > 4 && (
                       <span className="text-[9px] font-bold truncate opacity-80 mt-0.5">{project.client_name || 'Internal'}</span>
                     )}
@@ -291,54 +457,83 @@ export const GlobalTimeline: React.FC = () => {
   const renderEmployeeRows = () => {
     return filteredEmployees.map((employee) => {
       const empTasks = employeeTasks.get(employee.id) || [];
-      const rowHeightClass = empTasks.length > 2 ? 'min-h-[90px]' : 'min-h-[55px]';
+      const { tasksWithLanes, totalLanes } = assignTaskLanes(empTasks);
+
+      const barHeight = hasExtraSpace ? 38 : 22;
+      const barGap = hasExtraSpace ? 8 : 4;
+      const paddingY = hasExtraSpace ? 14 : 8;
+      const calculatedRowHeight = empTasks.length === 0
+        ? (hasExtraSpace ? 80 : 50)
+        : (paddingY * 2 + totalLanes * barHeight + (totalLanes - 1) * barGap);
 
       return (
         <React.Fragment key={employee.id}>
           {/* Left sticky sidebar - Z-index 40 so tasks slide UNDER it */}
-          <div className={`bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-40 flex flex-col justify-center text-xs text-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${rowHeightClass}`}>
-            <span className="font-bold truncate" title={employee.full_name || employee.name || employee.username}>{employee.full_name || employee.name || employee.username}</span>
+          <div 
+            className={`bg-white border-b border-slate-200 border-r p-3 sticky left-0 z-40 flex flex-col text-xs text-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] h-full ${hasExtraSpace ? 'justify-start pt-3.5' : 'justify-center'}`}
+            style={{ minHeight: `${calculatedRowHeight}px` }}
+          >
+            <span className="font-bold truncate" title={employee.full_name || employee.name || employee.username}>
+              {employee.full_name || employee.name || employee.username}
+            </span>
             <span className="text-[10px] text-slate-500 font-medium mt-0.5">{employee.role}</span>
+            {hasExtraSpace && empTasks.length > 0 && (
+              <span className="text-[9px] text-indigo-600 font-bold mt-1 bg-indigo-50 px-1.5 py-0.5 rounded w-fit">
+                {empTasks.length} {empTasks.length === 1 ? 'task' : 'tasks'}
+              </span>
+            )}
           </div>
 
-          <div className={`border-b border-slate-100 relative group ${rowHeightClass}`} style={{ gridColumn: `span ${timelineDays}` }}>
-            {empTasks.map((task, tIdx) => {
-              const startDateStr = task.created_at || new Date().toISOString();
-              const dueDateStr = task.due_date || new Date().toISOString();
-              
-              const startDate = new Date(startDateStr);
-              const dueDate = new Date(dueDateStr);
-              const safeDueDate = dueDate < startDate ? startDate : dueDate;
-
+          <div 
+            className="border-b border-slate-100 relative group h-full" 
+            style={{ 
+              gridColumn: `span ${timelineDays}`,
+              minHeight: `${calculatedRowHeight}px`
+            }}
+          >
+            {tasksWithLanes.map(({ task, lane, startDate, safeDueDate }) => {
               // Bound rendering to timeline
               const actualStart = startDate < timelineStart ? timelineStart : startDate;
               const startOffset = Math.max(0, Math.ceil((actualStart.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)));
               const duration = Math.max(1, Math.ceil((safeDueDate.getTime() - actualStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
               
+              const isGreyTask = !['DONE', 'IN_PROGRESS', 'REVIEW'].includes(task.status);
+              
               const statusColor = 
                 task.status === 'DONE' ? 'from-emerald-500 to-emerald-400 border-emerald-600/30 text-white' :
                 task.status === 'IN_PROGRESS' ? 'from-indigo-500 to-sky-500 border-indigo-600/30 text-white' :
                 task.status === 'REVIEW' ? 'from-amber-500 to-amber-400 border-amber-600/30 text-white' :
-                'from-slate-200 to-slate-100 border-slate-300 text-slate-700'; 
+                'from-slate-200 to-slate-100 border-slate-300 text-slate-900'; 
                 
-              const topOffset = 8 + (tIdx % 3) * 24;
+              const topOffset = paddingY + lane * (barHeight + barGap);
 
               if (safeDueDate < timelineStart) return null;
+
+              const project = projectMap.get(task.project_id);
+              const projectName = task.project_name || project?.name || (task.project_id ? `Project #${task.project_id}` : 'General');
+              const projectCode = project?.code ? `[${project.code}] ` : '';
 
               return (
                 <div 
                   key={task.id}
-                  className={`absolute rounded-md bg-gradient-to-r ${statusColor} border shadow-sm flex flex-col justify-center px-2 text-[10px] overflow-hidden select-none hover:shadow-md hover:scale-[1.02] transition-all duration-300 z-10 hover:z-30 cursor-pointer`}
+                  className={`absolute rounded-lg bg-gradient-to-r ${statusColor} border shadow-sm flex flex-col justify-center px-2.5 overflow-hidden select-none hover:shadow-md hover:scale-[1.01] transition-all duration-200 z-10 hover:z-30 cursor-pointer`}
                   style={{ 
                     left: `calc((${startOffset} / ${timelineDays}) * 100%)`, 
                     width: `calc((${duration} / ${timelineDays}) * 100%)`,
-                    minWidth: '24px',
-                    height: '20px',
+                    minWidth: hasExtraSpace ? '36px' : '24px',
+                    height: `${barHeight}px`,
                     top: `${topOffset}px`
                   }}
-                  title={`[${task.project_name || 'Project'}] ${task.title} - ${task.status}`}
+                  title={`[${projectName}] ${task.title} - ${task.status}`}
                 >
-                  <span className="font-bold truncate drop-shadow-sm">{task.title}</span>
+                  <span className={`font-bold truncate ${isGreyTask ? 'text-slate-900' : 'drop-shadow-sm'} ${hasExtraSpace ? 'text-[11px] leading-tight' : 'text-[10px] leading-none'}`}>
+                    {task.title}
+                  </span>
+                  {hasExtraSpace && (
+                    <span className={`text-[9px] font-medium truncate leading-tight mt-0.5 ${isGreyTask ? 'text-slate-800 font-semibold' : 'text-white/95 opacity-90'}`}>
+                      {projectCode}{projectName}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -350,7 +545,7 @@ export const GlobalTimeline: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200 h-full flex flex-col">
-      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs shrink-0 z-10 relative">
+      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-xs shrink-0 z-50 relative">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600 bg-clip-text text-transparent flex items-center gap-3">
@@ -377,16 +572,26 @@ export const GlobalTimeline: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-              {['day', 'week', 'month'].map(z => (
-                <button 
-                  key={z}
-                  onClick={() => setZoomLevel(z as any)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-bold capitalize transition-colors ${zoomLevel === z ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  {z}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => scrollToToday('smooth')}
+                className="px-3 py-1.5 rounded-lg text-sm font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 transition-colors flex items-center gap-1.5 shadow-xs"
+                title="Scroll to Today"
+              >
+                <Calendar className="h-4 w-4" /> Today
+              </button>
+
+              <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                {['day', 'week', 'month'].map(z => (
+                  <button 
+                    key={z}
+                    onClick={() => setZoomLevel(z as any)}
+                    className={`px-3 py-1.5 rounded-md text-sm font-bold capitalize transition-colors ${zoomLevel === z ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {z}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -406,7 +611,7 @@ export const GlobalTimeline: React.FC = () => {
                   <option value="COMPLETED">Completed</option>
                 </select>
               ) : (
-                <div className="relative">
+                <div className="relative" ref={employeeDropdownRef}>
                   <button 
                     onClick={() => setIsEmployeeDropdownOpen(!isEmployeeDropdownOpen)}
                     className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 flex items-center justify-between w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -416,7 +621,7 @@ export const GlobalTimeline: React.FC = () => {
                   </button>
                   
                   {isEmployeeDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-80">
+                    <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-80 ring-1 ring-black/5">
                       <div className="p-2 border-b border-slate-100 flex justify-between bg-slate-50">
                         <button onClick={selectAllEmployees} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
                         <button onClick={deselectAllEmployees} className="text-xs text-slate-500 font-bold hover:underline">Clear</button>
@@ -461,7 +666,7 @@ export const GlobalTimeline: React.FC = () => {
               ref={timelineRef}
               style={{ 
                 gridTemplateColumns: `250px repeat(${timelineDays}, minmax(${zoomLevel === 'day' ? '30px' : zoomLevel === 'week' ? '15px' : '8px'}, 1fr))`,
-                gridTemplateRows: `auto repeat(${viewMode === 'project' ? filteredProjects.length : filteredEmployees.length}, auto)`
+                gridTemplateRows: `48px repeat(${rowCount}, ${hasExtraSpace ? 'minmax(auto, 1fr)' : 'auto'})`
               }}
               onMouseDown={(e) => {
                 setIsDraggingDate(true);
@@ -489,7 +694,9 @@ export const GlobalTimeline: React.FC = () => {
                     className="absolute top-0 bottom-0 border-l-[3px] border-rose-500 z-30 pointer-events-none opacity-60 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
                     style={{ 
                       gridColumn: daysArray.findIndex(d => d.toDateString() === new Date().toDateString()) + 2,
-                      left: '50%'
+                      gridRow: '1 / -1',
+                      left: '50%',
+                      minHeight: '100%'
                     }}
                   />
                 )}
@@ -498,7 +705,13 @@ export const GlobalTimeline: React.FC = () => {
                 {hoverDate && isDraggingDate && (
                   <div 
                     className="absolute border-l-2 border-indigo-500 border-dashed z-50 pointer-events-none"
-                    style={{ left: hoverX, top: 0, bottom: 0 }}
+                    style={{ 
+                      left: hoverX, 
+                      top: 0, 
+                      bottom: 0, 
+                      gridRow: '1 / -1', 
+                      minHeight: '100%' 
+                    }}
                   >
                     <div 
                       className="absolute bg-indigo-600 text-white text-xs px-3 py-1.5 rounded-full whitespace-nowrap shadow-xl font-bold flex items-center gap-1.5 pointer-events-none"

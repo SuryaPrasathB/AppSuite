@@ -135,9 +135,19 @@ export const apiClient = {
     },
   },
   boms: {
-    list: (projectId?: number) => request<any[]>(`/boms${projectId ? `?project_id=${projectId}` : ''}`),
+    list: (projectId?: number, isTemplate?: boolean) => {
+      const params = new URLSearchParams();
+      if (projectId !== undefined) params.append('project_id', String(projectId));
+      if (isTemplate !== undefined) params.append('is_template', String(isTemplate));
+      const q = params.toString();
+      return request<any[]>(`/boms${q ? `?${q}` : ''}`);
+    },
     get: (id: number | string) => request<any>(`/boms/${id}`),
     create: (body: any) => request<any>('/boms', { method: 'POST', body: JSON.stringify(body) }),
+    updateHeader: (id: number | string, body: any) => request<any>(`/boms/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    addItem: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    updateItem: (bomId: number | string, itemId: number | string, body: any) => request<any>(`/boms/${bomId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteItem: (bomId: number | string, itemId: number | string) => request<any>(`/boms/${bomId}/items/${itemId}`, { method: 'DELETE' }),
     updateStatus: (id: number | string, status: string, issued_at?: string, target_delivery_date?: string | null) =>
       request<any>(`/boms/${id}/status`, {
         method: 'PUT',
@@ -149,6 +159,24 @@ export const apiClient = {
       }),
     updateItemProcurement: (bomId: number | string, itemId: number | string, body: any) => request<any>(`/boms/${bomId}/items/${itemId}/procurement`, { method: 'PUT', body: JSON.stringify(body) }),
     bulkUpdateProcurement: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/items/bulk-procurement`, { method: 'PUT', body: JSON.stringify(body) }),
+    clone: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/clone`, { method: 'POST', body: JSON.stringify(body) }),
+    toggleTemplate: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/toggle-template`, { method: 'POST', body: JSON.stringify(body) }),
+    getStockReservation: (bomId: number | string) => request<any>(`/boms/${bomId}/stock-reservation`),
+    toggleStockReservation: (bomId: number | string, reserve: boolean) => request<any>(`/boms/${bomId}/reserve-stock`, { method: 'POST', body: JSON.stringify({ reserve }) }),
+    bulkPR: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/bulk-pr`, { method: 'POST', body: JSON.stringify(body) }),
+    createRevision: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/revisions`, { method: 'POST', body: JSON.stringify(body) }),
+    listRevisions: (bomId: number | string) => request<any[]>(`/boms/${bomId}/revisions`),
+    compare: (bomId: number | string, compareBomId: number | string) => request<any>(`/boms/${bomId}/diff/${compareBomId}`),
+    search: (params?: { q?: string; part_number?: string; product_id?: number; project_id?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.q) searchParams.append('q', params.q);
+      if (params?.part_number) searchParams.append('part_number', params.part_number);
+      if (params?.product_id) searchParams.append('product_id', String(params.product_id));
+      if (params?.project_id) searchParams.append('project_id', String(params.project_id));
+      const q = searchParams.toString();
+      return request<any>(`/boms/search${q ? `?${q}` : ''}`);
+    },
+    listEcos: () => request<any[]>('/boms/ecos'),
     delete: (id: number | string) => request<any>(`/boms/${id}`, { method: 'DELETE' }),
     issue: (id: number | string, body: any) => request<any>(`/boms/${id}/issue`, { method: 'POST', body: JSON.stringify(body) }),
   },

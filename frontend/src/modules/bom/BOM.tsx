@@ -27,9 +27,29 @@ import {
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
-  BarChart3
+  BarChart3,
+  GitBranch,
+  Copy,
+  Bookmark,
+  Edit3,
+  ChevronDown,
+  ChevronRight,
+  CornerDownRight,
+  ListTree,
+  Search,
+  CheckCircle,
+  Save,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { BOMDiffModal } from './BOMDiffModal';
+import { BOMItemAddModal } from './BOMItemAddModal';
+import { BOMBulkPRModal } from './BOMBulkPRModal';
+import { BOMCloneModal } from './BOMCloneModal';
+import { BOMRevisionModal } from './BOMRevisionModal';
+import { BOMHeaderModal } from './BOMHeaderModal';
+import { BOMTemplateSelectModal } from './BOMTemplateSelectModal';
 
 type ProcurementStatus = 'YET_TO_ORDER' | 'ORDERED' | 'DELIVERED';
 
@@ -53,6 +73,10 @@ interface BOMItem {
   ordered_date?: string | null;
   expected_delivery_date?: string | null;
   delivered_date?: string | null;
+  parent_item_id?: number | null;
+  is_assembly?: boolean;
+  level?: number;
+  total_reserved_stock?: number;
 }
 
 interface BOMData {
@@ -71,6 +95,13 @@ interface BOMData {
   ordered_count?: number;
   delivered_count?: number;
   yet_to_order_count?: number;
+  is_template?: boolean;
+  template_category?: string | null;
+  revision?: string;
+  root_bom_id?: number | null;
+  parent_bom_id?: number | null;
+  eco_id?: number | null;
+  is_reserved?: boolean;
   items: BOMItem[];
 }
 
@@ -191,6 +222,52 @@ export const BOM: React.FC = () => {
   const [bomListCollapsed, setBomListCollapsed] = useState(false);
   const [activeView, setActiveView] = useState<'items' | 'analytics'>('items');
 
+  // Advanced BOM Features State
+  const [listFilterTab, setListFilterTab] = useState<'ALL' | 'PROJECTS' | 'TEMPLATES'>('ALL');
+  const [hierarchyMode, setHierarchyMode] = useState<'flat' | 'tree'>('flat');
+  const [collapsedParentIds, setCollapsedParentIds] = useState<Set<number>>(new Set());
+
+  // In-place row editing
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editItemForm, setEditItemForm] = useState({
+    manual_product_name: '',
+    part_number: '',
+    manufacturer: '',
+    quantity_required: 1,
+    unit_price: 0,
+    remarks: ''
+  });
+
+  // Modals state
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [addItemParentId, setAddItemParentId] = useState<number | null>(null);
+  const [isBulkPRModalOpen, setIsBulkPRModalOpen] = useState(false);
+  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
+  const [isEditHeaderModalOpen, setIsEditHeaderModalOpen] = useState(false);
+  const [isTemplateSelectModalOpen, setIsTemplateSelectModalOpen] = useState(false);
+  const [diffCompareTargetId, setDiffCompareTargetId] = useState<number | null>(null);
+  const [revisionsList, setRevisionsList] = useState<BOMData[]>([]);
+
+  const handleViewDetails = async (bomId: number) => {
+    try {
+      const details = await apiClient.boms.get(bomId) as BOMData;
+      setDetailBom(details);
+      setSelectedLocationMap({});
+      setSelectedItemIds([]);
+      setStatusFilter('ALL');
+      setEditingItemId(null);
+      try {
+        const revs = await apiClient.boms.listRevisions(bomId) as BOMData[];
+        setRevisionsList(revs || []);
+      } catch {
+        setRevisionsList([]);
+      }
+    } catch (e: unknown) {
+      await showAlert('Failed to load BOM items: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   const fetchData = useCallback(async (selectBomId?: number) => {
     try {
       setLoading(true);
@@ -208,16 +285,14 @@ export const BOM: React.FC = () => {
       setProducts(prData);
       setLocations(lData);
 
-      if (selectBomId && bData.some(b => b.id === selectBomId)) {
-        const details = await apiClient.boms.get(selectBomId) as BOMData;
-        setDetailBom(details);
-        setSelectedItemIds([]);
+      const targetId = selectBomId || (new URLSearchParams(window.location.search).get('id') ? Number(new URLSearchParams(window.location.search).get('id')) : undefined);
+
+      if (targetId && bData.some(b => b.id === targetId)) {
+        await handleViewDetails(targetId);
       } else if (detailBom && bData.some(b => b.id === detailBom.id)) {
-        const refreshed = await apiClient.boms.get(detailBom.id) as BOMData;
-        setDetailBom(refreshed);
+        await handleViewDetails(detailBom.id);
       } else if (bData.length > 0) {
-        const firstDetails = await apiClient.boms.get(bData[0].id) as BOMData;
-        setDetailBom(firstDetails);
+        await handleViewDetails(bData[0].id);
       } else {
         setDetailBom(null);
       }
@@ -229,19 +304,127 @@ export const BOM: React.FC = () => {
   }, [detailBom?.id]);
 
   useEffect(() => {
-    fetchData();
+    const params = new URLSearchParams(window.location.search);
+    const idParam = params.get('id');
+    fetchData(idParam ? Number(idParam) : undefined);
   }, []);
 
-  const handleViewDetails = async (bomId: number) => {
+  // Handlers for in-place line editing and advanced features
+  const handleStartEdit = (item: BOMItem) => {
+    setEditingItemId(item.id);
+    setEditItemForm({
+      manual_product_name: item.product_name,
+      part_number: item.part_number || (item.product_code !== 'MANUAL' ? item.product_code : ''),
+      manufacturer: item.manufacturer || '',
+      quantity_required: item.quantity_required,
+      unit_price: item.unit_price,
+      remarks: item.remarks || ''
+    });
+  };
+
+  const handleSaveEditItem = async (item: BOMItem) => {
+    if (!detailBom) return;
     try {
-      const details = await apiClient.boms.get(bomId) as BOMData;
-      setDetailBom(details);
-      setSelectedLocationMap({});
-      setSelectedItemIds([]);
-      setStatusFilter('ALL');
-    } catch (e: unknown) {
-      await showAlert('Failed to load BOM items: ' + (e instanceof Error ? e.message : String(e)));
+      await apiClient.boms.updateItem(detailBom.id, item.id, {
+        manual_product_name: editItemForm.manual_product_name,
+        part_number: editItemForm.part_number,
+        manufacturer: editItemForm.manufacturer,
+        quantity_required: Number(editItemForm.quantity_required),
+        unit_price: Number(editItemForm.unit_price),
+        remarks: editItemForm.remarks
+      });
+      setEditingItemId(null);
+      await handleViewDetails(detailBom.id);
+      const bData = await apiClient.boms.list() as BOMData[];
+      setBoms(bData);
+    } catch (e: any) {
+      await showAlert(e?.message || 'Failed to update item');
     }
+  };
+
+  const handleDeleteItem = async (itemId: number) => {
+    if (!detailBom) return;
+    const ok = await showConfirm('Are you sure you want to delete this component from the BOM?');
+    if (!ok) return;
+    try {
+      await apiClient.boms.deleteItem(detailBom.id, itemId);
+      await handleViewDetails(detailBom.id);
+      const bData = await apiClient.boms.list() as BOMData[];
+      setBoms(bData);
+    } catch (e: any) {
+      await showAlert(e?.message || 'Failed to delete item');
+    }
+  };
+
+  const handleAddItem = async (itemData: any) => {
+    if (!detailBom) return;
+    await apiClient.boms.addItem(detailBom.id, itemData);
+    await handleViewDetails(detailBom.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleEditHeader = async (headerData: any) => {
+    if (!detailBom) return;
+    await apiClient.boms.updateHeader(detailBom.id, headerData);
+    await handleViewDetails(detailBom.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleCloneBOM = async (payload: any) => {
+    if (!detailBom) return;
+    const cloned = await apiClient.boms.clone(detailBom.id, payload);
+    await showAlert(`BOM duplicated successfully as "${cloned.name}".`);
+    await handleViewDetails(cloned.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleToggleTemplate = async () => {
+    if (!detailBom) return;
+    const nextState = !detailBom.is_template;
+    await apiClient.boms.toggleTemplate(detailBom.id, {
+      is_template: nextState,
+      template_category: nextState ? 'Standard Assembly' : null
+    });
+    await handleViewDetails(detailBom.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleToggleReservation = async () => {
+    if (!detailBom) return;
+    const nextRes = !detailBom.is_reserved;
+    await apiClient.boms.toggleStockReservation(detailBom.id, nextRes);
+    await handleViewDetails(detailBom.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleCreateRevision = async (payload: any) => {
+    if (!detailBom) return;
+    const newRev = await apiClient.boms.createRevision(detailBom.id, {
+      ...payload,
+      user_name: user?.username || 'Engineering'
+    });
+    await showAlert(`Revision ${newRev.revision} created successfully under ${payload.eco_number}!`);
+    await handleViewDetails(newRev.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleCreateFromTemplate = async (templateId: number, newName: string, targetProjectId: number | null) => {
+    const cloned = await apiClient.boms.clone(templateId, {
+      new_name: newName,
+      project_id: targetProjectId,
+      as_template: false,
+      reset_procurement: true
+    });
+    await showAlert(`Created BOM "${cloned.name}" from template!`);
+    await handleViewDetails(cloned.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
   };
 
   const handleLockBOM = async (bomId: number) => {
@@ -748,6 +931,113 @@ export const BOM: React.FC = () => {
     });
   }, [detailBom, statusFilter]);
 
+  // Advanced BOM memoized computations
+  const shortageItems = useMemo(() => {
+    if (!detailBom) return [];
+    return detailBom.items.filter(item => {
+      const shortage = Math.max(0, item.quantity_required - item.quantity_issued - item.current_stock);
+      return shortage > 0;
+    });
+  }, [detailBom]);
+
+  const reservationMetrics = useMemo(() => {
+    if (!detailBom) return { total: 0, reserved: 0, partial: 0, shortfall: 0 };
+    let total = 0, reserved = 0, partial = 0, shortfall = 0;
+    detailBom.items.forEach(item => {
+      if (!item.product_id) return;
+      total++;
+      const remaining = Math.max(0, item.quantity_required - item.quantity_issued);
+      const stock = item.current_stock || 0;
+      if (stock >= remaining) {
+        reserved++;
+      } else if (stock > 0) {
+        partial++;
+      } else {
+        shortfall++;
+      }
+    });
+    return { total, reserved, partial, shortfall };
+  }, [detailBom]);
+
+  const existingAssemblies = useMemo(() => {
+    if (!detailBom) return [];
+    return detailBom.items
+      .filter(i => i.is_assembly || detailBom.items.some(child => child.parent_item_id === i.id))
+      .map(i => ({ id: i.id, name: i.product_name, level: i.level || 1 }));
+  }, [detailBom]);
+
+  const displayedBoms = useMemo(() => {
+    if (listFilterTab === 'TEMPLATES') {
+      return boms.filter(b => b.is_template);
+    }
+    if (listFilterTab === 'PROJECTS') {
+      return boms.filter(b => !b.is_template && b.project_id);
+    }
+    return boms;
+  }, [boms, listFilterTab]);
+
+  const templateBoms = useMemo(() => {
+    return boms.filter(b => b.is_template);
+  }, [boms]);
+
+  const toggleParentCollapse = (parentId: number) => {
+    setCollapsedParentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) {
+        next.delete(parentId);
+      } else {
+        next.add(parentId);
+      }
+      return next;
+    });
+  };
+
+  const treeOrderedItems = useMemo(() => {
+    if (!detailBom) return [];
+    if (hierarchyMode === 'flat') {
+      return filteredItems.map(item => ({ item, hasChildren: false, isCollapsed: false }));
+    }
+
+    const itemMap = new Map<number, BOMItem>();
+    const childrenMap = new Map<number, BOMItem[]>();
+    const roots: BOMItem[] = [];
+    const filteredSet = new Set(filteredItems.map(i => i.id));
+
+    detailBom.items.forEach(item => {
+      itemMap.set(item.id, item);
+      if (!childrenMap.has(item.id)) {
+        childrenMap.set(item.id, []);
+      }
+    });
+
+    detailBom.items.forEach(item => {
+      if (item.parent_item_id && itemMap.has(item.parent_item_id)) {
+        childrenMap.get(item.parent_item_id)!.push(item);
+      } else {
+        roots.push(item);
+      }
+    });
+
+    const result: { item: BOMItem; hasChildren: boolean; isCollapsed: boolean }[] = [];
+
+    const traverse = (node: BOMItem) => {
+      const children = childrenMap.get(node.id) || [];
+      const hasChildren = children.length > 0;
+      const isCollapsed = collapsedParentIds.has(node.id);
+
+      if (filteredSet.has(node.id)) {
+        result.push({ item: node, hasChildren, isCollapsed });
+      }
+
+      if (!isCollapsed && hasChildren) {
+        children.forEach(child => traverse(child));
+      }
+    };
+
+    roots.forEach(r => traverse(r));
+    return result;
+  }, [detailBom, filteredItems, hierarchyMode, collapsedParentIds]);
+
   const toggleSelectAll = () => {
     if (selectedItemIds.length === filteredItems.length && filteredItems.length > 0) {
       setSelectedItemIds([]);
@@ -985,26 +1275,50 @@ export const BOM: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-purple-600" />
-            Bill of Materials (BOM) & Procurement Tracker
+            Bill of Materials (BOM) & Multi-Level Workspace
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Upload BOM spreadsheets for auto-conversion, track ordering & delivery timelines, and monitor lead-time delays.
+            Hierarchical assembly breakdown, engineering change orders (ECO), store stock earmarking, and timeline tracking.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
           >
-            <Upload className="h-4 w-4 text-purple-600" />
-            Upload BOM (.CSV / .XLSX)
+            <Upload className="h-3.5 w-3.5 text-purple-600" />
+            <span>Upload</span>
+          </button>
+          <button
+            onClick={() => setIsTemplateSelectModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Create a new BOM from an existing reusable template"
+          >
+            <Bookmark className="h-3.5 w-3.5 text-blue-600" />
+            <span>From Template</span>
+          </button>
+          <button
+            onClick={() => navigate('/bom/search')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Search parts across all BOMs and Where-Used cross references"
+          >
+            <Search className="h-3.5 w-3.5 text-purple-600" />
+            <span>Where-Used</span>
+          </button>
+          <button
+            onClick={() => navigate('/bom/eco')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="View Engineering Change Orders (ECO/ECN) audit logs"
+          >
+            <GitBranch className="h-3.5 w-3.5 text-purple-600" />
+            <span>ECOs</span>
           </button>
           <button
             onClick={() => navigate('/bom/create')}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-md transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-md transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            Create BOM
+            <span>Create BOM</span>
           </button>
         </div>
       </div>
@@ -1018,9 +1332,9 @@ export const BOM: React.FC = () => {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* BOMs List Panel (Compact Width & Collapsible) */}
         {!bomListCollapsed && (
-          <div className="w-full lg:w-56 shrink-0 bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-3">
+          <div className="w-full lg:w-64 shrink-0 bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">All BOMs ({boms.length})</h3>
+              <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">BOM Registry</h3>
               <button
                 onClick={() => setBomListCollapsed(true)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 cursor-pointer"
@@ -1029,20 +1343,49 @@ export const BOM: React.FC = () => {
                 <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
+
+            {/* List Filter Tabs */}
+            <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-[10px]">
+              <button
+                onClick={() => setListFilterTab('ALL')}
+                className={`flex-1 py-1 font-bold rounded cursor-pointer transition-all ${
+                  listFilterTab === 'ALL' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All ({boms.length})
+              </button>
+              <button
+                onClick={() => setListFilterTab('PROJECTS')}
+                className={`flex-1 py-1 font-bold rounded cursor-pointer transition-all ${
+                  listFilterTab === 'PROJECTS' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Projects ({boms.filter(b => !b.is_template && b.project_id).length})
+              </button>
+              <button
+                onClick={() => setListFilterTab('TEMPLATES')}
+                className={`flex-1 py-1 font-bold rounded cursor-pointer transition-all ${
+                  listFilterTab === 'TEMPLATES' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Templates ({templateBoms.length})
+              </button>
+            </div>
+
             <div className="space-y-2 max-h-[680px] overflow-y-auto pr-0.5">
-              {boms.length === 0 ? (
+              {displayedBoms.length === 0 ? (
                 <div className="text-center py-6 px-2 border border-dashed border-slate-200 rounded-lg">
                   <FileSpreadsheet className="h-7 w-7 text-slate-300 mx-auto mb-1.5" />
-                  <p className="text-[11px] text-slate-400">No BOMs uploaded yet.</p>
+                  <p className="text-[11px] text-slate-400">No matching BOMs found.</p>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-purple-600 hover:text-purple-800"
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-purple-600 hover:text-purple-800 cursor-pointer"
                   >
                     <Upload className="h-3 w-3" /> Upload BOM
                   </button>
                 </div>
               ) : (
-                boms.map(b => {
+                displayedBoms.map(b => {
                   const total = Number(b.total_items || 0);
                   const deliv = Number(b.delivered_count || 0);
                   const ord = Number(b.ordered_count || 0);
@@ -1063,24 +1406,34 @@ export const BOM: React.FC = () => {
                         <span className="font-bold text-[11px] text-slate-800 leading-snug line-clamp-2">
                           {b.name}
                         </span>
-                        <span
-                          className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${
-                            b.status === 'COMPLETED' || (deliv === total && total > 0)
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : b.status === 'APPROVED'
-                              ? 'bg-purple-100 text-purple-700'
-                              : 'bg-amber-100 text-amber-700'
-                          }`}
-                        >
-                          {b.status === 'COMPLETED' || (deliv === total && total > 0)
-                            ? 'COMPLETED'
-                            : b.status === 'UNDER_REVIEW' || b.status === 'DRAFT'
-                            ? 'UNDER REVIEW'
-                            : b.status}
-                        </span>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span
+                            className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                              b.status === 'COMPLETED' || (deliv === total && total > 0)
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : b.status === 'APPROVED'
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {b.status === 'COMPLETED' || (deliv === total && total > 0)
+                              ? 'COMPLETED'
+                              : b.status === 'UNDER_REVIEW' || b.status === 'DRAFT'
+                              ? 'UNDER REVIEW'
+                              : b.status}
+                          </span>
+                          <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
+                            Rev {b.revision || 'A'}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="text-[10px] text-slate-500 mt-1.5 space-y-0.5">
+                        {b.is_template && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 text-[9px] font-bold">
+                            <Bookmark className="h-2.5 w-2.5" /> Template
+                          </span>
+                        )}
                         {b.project_code && (
                           <p className="truncate">
                             Project: <strong className="text-slate-700">{b.project_code}</strong>
@@ -1141,6 +1494,38 @@ export const BOM: React.FC = () => {
                   <div>
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h3 className="text-lg font-extrabold text-slate-900">{detailBom.name}</h3>
+                      <button
+                        onClick={() => setIsEditHeaderModalOpen(true)}
+                        className="p-1 text-slate-400 hover:text-purple-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        title="Edit BOM Title, Project, Customer, Delivery Date"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-md bg-purple-600 text-white text-[11px] font-black tracking-wide">
+                          Rev {detailBom.revision || 'A'}
+                        </span>
+                        {revisionsList.length > 1 && (
+                          <select
+                            value={detailBom.id}
+                            onChange={e => handleViewDetails(Number(e.target.value))}
+                            className="text-[10px] font-bold bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5 cursor-pointer text-slate-700"
+                            title="Switch to another revision"
+                          >
+                            {revisionsList.map(r => (
+                              <option key={r.id} value={r.id}>
+                                Rev {r.revision || 'A'} ({r.status})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      {detailBom.is_template && (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold flex items-center gap-1">
+                          <Bookmark className="h-3 w-3" />
+                          <span>Template</span>
+                        </span>
+                      )}
                       <select
                         value={
                           bomMetrics.allDelivered
@@ -1211,6 +1596,101 @@ export const BOM: React.FC = () => {
                       </button>
                     </div>
                   )}
+
+                  {/* One-Click Bulk PR Generator Button */}
+                  <button
+                    onClick={() => setIsBulkPRModalOpen(true)}
+                    className="relative flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                    title="Auto-detect shortages and raise consolidated Store Purchase Request"
+                  >
+                    <ShoppingCart className="h-3.5 w-3.5" />
+                    <span>Bulk PR</span>
+                    {shortageItems.length > 0 && (
+                      <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[9px] font-black">
+                        {shortageItems.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Stock Reservation Earmark Button */}
+                  <button
+                    onClick={handleToggleReservation}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      detailBom.is_reserved || detailBom.status === 'APPROVED'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-purple-50 hover:text-purple-700'
+                    }`}
+                    title="Earmark / Reserve components in Store inventory for this BOM"
+                  >
+                    {detailBom.is_reserved || detailBom.status === 'APPROVED' ? (
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                    ) : (
+                      <ShieldAlert className="h-3.5 w-3.5 text-slate-400" />
+                    )}
+                    <span>{detailBom.is_reserved || detailBom.status === 'APPROVED' ? 'Stock Earmarked' : 'Earmark Stock'}</span>
+                  </button>
+
+                  {/* In-Place Add Item Button */}
+                  <button
+                    onClick={() => {
+                      setAddItemParentId(null);
+                      setIsAddItemModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Part</span>
+                  </button>
+
+                  {/* Clone BOM Button */}
+                  <button
+                    onClick={() => setIsCloneModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                    title="Duplicate this BOM specification"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Clone</span>
+                  </button>
+
+                  {/* Revisioning ECO Button */}
+                  <button
+                    onClick={() => setIsRevisionModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                    title="Branch new revision with an Engineering Change Order (ECO)"
+                  >
+                    <GitBranch className="h-3.5 w-3.5 text-purple-600" />
+                    <span>Revise</span>
+                  </button>
+
+                  {/* Diff Button */}
+                  {revisionsList.length > 1 && (
+                    <button
+                      onClick={() => {
+                        const other = revisionsList.find(r => r.id !== detailBom.id);
+                        if (other) setDiffCompareTargetId(other.id);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                      title="Compare BOM revisions visual diff"
+                    >
+                      <Layers className="h-3.5 w-3.5 text-purple-600" />
+                      <span>Diff</span>
+                    </button>
+                  )}
+
+                  {/* Toggle Template Button */}
+                  <button
+                    onClick={handleToggleTemplate}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      detailBom.is_template
+                        ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                    }`}
+                    title="Toggle Reusable Template flag"
+                  >
+                    <Bookmark className="h-3.5 w-3.5 text-blue-600" />
+                    <span>{detailBom.is_template ? 'Template Active' : 'Make Template'}</span>
+                  </button>
+
                   {detailBom.status === 'DRAFT' || detailBom.status === 'UNDER_REVIEW' ? (
                     <button
                       onClick={() => handleLockBOM(detailBom.id)}
@@ -1247,8 +1727,8 @@ export const BOM: React.FC = () => {
 
               {activeView === 'items' ? (
                 <>
-                  {/* Main BOM Timeline & Status Strip (Clean 2-Card Layout) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Main BOM Timeline & Status Strip (Clean 3-Card Layout) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Card 1: BOM Issue & Expected Completion */}
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
                       <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
@@ -1319,9 +1799,31 @@ export const BOM: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Card 3: Store Stock Allocation */}
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span>Store Stock Allocation</span>
+                        <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/70">
+                          <p className="text-base font-extrabold text-emerald-600">{reservationMetrics.reserved}</p>
+                          <p className="text-[10px] font-semibold text-slate-500">Fully In Store</p>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/70">
+                          <p className="text-base font-extrabold text-amber-500">{reservationMetrics.partial}</p>
+                          <p className="text-[10px] font-semibold text-slate-500">Partial Stock</p>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/70">
+                          <p className="text-base font-extrabold text-red-500">{reservationMetrics.shortfall}</p>
+                          <p className="text-[10px] font-semibold text-slate-500">Shortfalls</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Filter Tabs & Bulk Action Bar */}
+                  {/* Filter Tabs & View Mode Switcher */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {([
@@ -1342,6 +1844,28 @@ export const BOM: React.FC = () => {
                           {tab.label}
                         </button>
                       ))}
+                    </div>
+
+                    {/* Flat vs Indented Tree View Switcher */}
+                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                      <button
+                        onClick={() => setHierarchyMode('flat')}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          hierarchyMode === 'flat' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Flat View
+                      </button>
+                      <button
+                        onClick={() => setHierarchyMode('tree')}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          hierarchyMode === 'tree' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Multi-Level Hierarchical / Indented assembly view"
+                      >
+                        <ListTree className="h-3.5 w-3.5" />
+                        <span>Indented Tree</span>
+                      </button>
                     </div>
                   </div>
 
@@ -1419,7 +1943,7 @@ export const BOM: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Main BOM Items & Procurement Table (Without Delay/Lag Column) */}
+                  {/* Main BOM Items & Multi-Level / In-Place Editing Table */}
                   <div className="overflow-x-auto border border-slate-200 rounded-xl">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
@@ -1434,32 +1958,44 @@ export const BOM: React.FC = () => {
                             </button>
                           </th>
                           <th className="py-3 px-2.5 w-10">#</th>
-                          <th className="py-3 px-3 min-w-[200px]">Product Name</th>
-                          <th className="py-3 px-3 min-w-[130px]">Order Code</th>
-                          <th className="py-3 px-2.5 text-center">Qty</th>
-                          <th className="py-3 px-2.5 text-right">Unit (₹)</th>
-                          <th className="py-3 px-2.5 text-right">Total (₹)</th>
-                          <th className="py-3 px-3 min-w-[140px]">Order Status</th>
-                          <th className="py-3 px-3 min-w-[135px]">Ordered Date</th>
-                          <th className="py-3 px-3 min-w-[135px]">Expected Delivery</th>
-                          <th className="py-3 px-3 min-w-[135px]">Received Date</th>
+                          <th className="py-3 px-3 min-w-[220px]">Product / Assembly Name</th>
+                          <th className="py-3 px-3 min-w-[130px]">Part # / Code</th>
+                          <th className="py-3 px-2.5 text-center min-w-[100px]">Stock Status</th>
+                          <th className="py-3 px-2.5 text-center w-20">Req. Qty</th>
+                          <th className="py-3 px-2.5 text-right w-24">Unit (₹)</th>
+                          <th className="py-3 px-2.5 text-right w-24">Total (₹)</th>
+                          <th className="py-3 px-3 min-w-[130px]">Order Status</th>
+                          <th className="py-3 px-3 min-w-[130px]">Ordered Date</th>
+                          <th className="py-3 px-3 min-w-[130px]">Expected Date</th>
+                          <th className="py-3 px-3 min-w-[130px]">Received Date</th>
+                          <th className="py-3 px-3 text-right w-28">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredItems.map((item, idx) => {
+                        {treeOrderedItems.map(({ item, hasChildren, isCollapsed }, idx) => {
                           const status: ProcurementStatus = item.procurement_status || 'YET_TO_ORDER';
                           const ordDate = toDateOnlyStr(item.ordered_date);
                           const expDate = toDateOnlyStr(item.expected_delivery_date);
                           const delDate = toDateOnlyStr(item.delivered_date);
 
                           const isChecked = selectedItemIds.includes(item.id);
+                          const isEditing = editingItemId === item.id;
                           const lineTotal = (item.unit_price || 0) * (item.quantity_required || 0);
+
+                          const remainingReq = Math.max(0, item.quantity_required - item.quantity_issued);
+                          const isStockSufficient = item.current_stock >= remainingReq;
+
+                          const indentPadding = hierarchyMode === 'tree' ? Math.max(12, ((item.level || 1) - 1) * 20 + 12) : 12;
 
                           return (
                             <tr
                               key={item.id}
                               className={`border-b border-slate-100 transition-colors ${
-                                isChecked ? 'bg-purple-50/40' : 'hover:bg-slate-50/70'
+                                isEditing
+                                  ? 'bg-amber-50/60'
+                                  : isChecked
+                                  ? 'bg-purple-50/40'
+                                  : 'hover:bg-slate-50/70'
                               }`}
                             >
                               <td className="py-2.5 px-3 text-center">
@@ -1472,36 +2008,143 @@ export const BOM: React.FC = () => {
                                 </button>
                               </td>
                               <td className="py-2.5 px-2.5 text-slate-400 font-semibold">{idx + 1}</td>
-                              <td className="py-2.5 px-3">
-                                <span className="font-bold text-slate-800 block leading-snug">{item.product_name}</span>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  {item.product_id ? (
-                                    <span className="text-[10px] text-emerald-600 font-semibold">
-                                      In Store: {item.current_stock} {item.product_unit}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400">Non-catalog item</span>
+
+                              {/* Product / Assembly Name with Hierarchy Tree Indentation */}
+                              <td className="py-2.5 px-3" style={{ paddingLeft: `${indentPadding}px` }}>
+                                <div className="flex items-center gap-1.5">
+                                  {hierarchyMode === 'tree' && (
+                                    <>
+                                      {item.level && item.level > 1 && (
+                                        <CornerDownRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                      )}
+                                      {(hasChildren || item.is_assembly) ? (
+                                        <button
+                                          onClick={() => toggleParentCollapse(item.id)}
+                                          className="p-0.5 rounded hover:bg-slate-200/60 text-slate-600 cursor-pointer"
+                                          title={isCollapsed ? 'Expand sub-assembly' : 'Collapse sub-assembly'}
+                                        >
+                                          {isCollapsed ? (
+                                            <ChevronRight className="h-3.5 w-3.5 text-purple-600" />
+                                          ) : (
+                                            <ChevronDown className="h-3.5 w-3.5 text-purple-600" />
+                                          )}
+                                        </button>
+                                      ) : null}
+                                    </>
                                   )}
-                                  {item.product_id && item.current_stock < (item.quantity_required - item.quantity_issued) && (
-                                    <button
-                                      onClick={() => handleAutoRaisePR(item)}
-                                      className="inline-flex items-center gap-0.5 text-[10px] text-purple-600 hover:text-purple-800 font-bold"
-                                      title="Raise Store Purchase Request"
-                                    >
-                                      <ShoppingCart className="h-2.5 w-2.5" /> PR
-                                    </button>
-                                  )}
+
+                                  <div className="flex-1 min-w-0">
+                                    {isEditing ? (
+                                      <input
+                                        type="text"
+                                        value={editItemForm.manual_product_name}
+                                        onChange={e => setEditItemForm({ ...editItemForm, manual_product_name: e.target.value })}
+                                        className="w-full px-2 py-1 bg-white border border-purple-300 rounded text-xs font-bold"
+                                      />
+                                    ) : (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-slate-800 leading-snug truncate">
+                                          {item.product_name}
+                                        </span>
+                                        {item.is_assembly && (
+                                          <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 text-[9px] font-black shrink-0">
+                                            Assembly L{item.level || 1}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {item.product_id ? (
+                                        <span className={`text-[10px] font-semibold ${isStockSufficient ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                          In Store: {item.current_stock} {item.product_unit}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400">Non-catalog item</span>
+                                      )}
+                                      {item.product_id && !isStockSufficient && (
+                                        <button
+                                          onClick={() => handleAutoRaisePR(item)}
+                                          className="inline-flex items-center gap-0.5 text-[10px] text-purple-600 hover:text-purple-800 font-bold"
+                                          title="Raise Store Purchase Request"
+                                        >
+                                          <ShoppingCart className="h-2.5 w-2.5" /> PR
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
+
+                              {/* Part Number */}
                               <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 font-semibold">
-                                {item.part_number || (item.product_code !== 'MANUAL' ? item.product_code : '-')}
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={editItemForm.part_number}
+                                    onChange={e => setEditItemForm({ ...editItemForm, part_number: e.target.value })}
+                                    className="w-full px-2 py-1 bg-white border border-purple-300 rounded text-xs font-mono"
+                                  />
+                                ) : (
+                                  item.part_number || (item.product_code !== 'MANUAL' ? item.product_code : '-')
+                                )}
                               </td>
+
+                              {/* Store Stock Reservation Allocation Badge */}
+                              <td className="py-2.5 px-2.5 text-center">
+                                {!item.product_id ? (
+                                  <span className="text-[10px] text-slate-400 italic">Custom</span>
+                                ) : isStockSufficient ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                    <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                                    <span>Secured</span>
+                                  </span>
+                                ) : item.current_stock > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                    <ShieldAlert className="h-3 w-3 text-amber-600" />
+                                    <span>Partial ({item.current_stock})</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">
+                                    <AlertTriangle className="h-3 w-3 text-red-500" />
+                                    <span>Shortfall</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Qty Required */}
                               <td className="py-2.5 px-2.5 text-center font-bold text-slate-800">
-                                {item.quantity_required}
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.1"
+                                    value={editItemForm.quantity_required}
+                                    onChange={e => setEditItemForm({ ...editItemForm, quantity_required: Number(e.target.value) })}
+                                    className="w-16 px-1.5 py-1 bg-white border border-purple-300 rounded text-xs text-center font-bold"
+                                  />
+                                ) : (
+                                  item.quantity_required
+                                )}
                               </td>
+
+                              {/* Unit Price */}
                               <td className="py-2.5 px-2.5 text-right text-slate-600">
-                                {(item.unit_price || 0).toLocaleString('en-IN')}
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    value={editItemForm.unit_price}
+                                    onChange={e => setEditItemForm({ ...editItemForm, unit_price: Number(e.target.value) })}
+                                    className="w-20 px-1.5 py-1 bg-white border border-purple-300 rounded text-xs text-right font-bold"
+                                  />
+                                ) : (
+                                  (item.unit_price || 0).toLocaleString('en-IN')
+                                )}
                               </td>
+
+                              {/* Line Total */}
                               <td className="py-2.5 px-2.5 text-right font-bold text-slate-800">
                                 {lineTotal.toLocaleString('en-IN')}
                               </td>
@@ -1590,12 +2233,63 @@ export const BOM: React.FC = () => {
                                   }`}
                                 />
                               </td>
+
+                              {/* In-Place Row Actions */}
+                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                {isEditing ? (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button
+                                      onClick={() => handleSaveEditItem(item)}
+                                      className="p-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer"
+                                      title="Save changes"
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingItemId(null)}
+                                      className="p-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+                                      title="Cancel editing"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-1">
+                                    {item.is_assembly && (
+                                      <button
+                                        onClick={() => {
+                                          setAddItemParentId(item.id);
+                                          setIsAddItemModalOpen(true);
+                                        }}
+                                        className="p-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors cursor-pointer"
+                                        title="Add child component to this sub-assembly"
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleStartEdit(item)}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                      title="Edit component inline"
+                                    >
+                                      <Edit3 className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteItem(item.id)}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                      title="Delete component from BOM"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
                             </tr>
                           );
                         })}
-                        {filteredItems.length === 0 && (
+                        {treeOrderedItems.length === 0 && (
                           <tr>
-                            <td colSpan={11} className="py-8 text-center text-slate-400 text-xs">
+                            <td colSpan={13} className="py-8 text-center text-slate-400 text-xs">
                               No BOM items match the selected filter.
                             </td>
                           </tr>
@@ -2223,6 +2917,85 @@ export const BOM: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* ADVANCED BOM MODULE MODALS                               */}
+      {/* ======================================================== */}
+      {isAddItemModalOpen && detailBom && (
+        <BOMItemAddModal
+          products={products}
+          existingAssemblies={(detailBom.items || [])
+            .filter(i => i.is_assembly)
+            .map(i => ({ id: i.id, name: i.product_name, level: i.level || 0 }))}
+          defaultParentId={addItemParentId}
+          onAdd={handleAddItem}
+          onClose={() => {
+            setIsAddItemModalOpen(false);
+            setAddItemParentId(null);
+          }}
+        />
+      )}
+
+      {isBulkPRModalOpen && detailBom && (
+        <BOMBulkPRModal
+          bomId={detailBom.id}
+          bomName={detailBom.name}
+          projectName={detailBom.project_name || undefined}
+          userName={user?.username || 'Store Specialist'}
+          items={detailBom.items || []}
+          onSuccess={async () => {
+            await handleViewDetails(detailBom.id);
+            const bData = await apiClient.boms.list() as BOMData[];
+            setBoms(bData);
+            setIsBulkPRModalOpen(false);
+          }}
+          onClose={() => setIsBulkPRModalOpen(false)}
+        />
+      )}
+
+      {isCloneModalOpen && detailBom && (
+        <BOMCloneModal
+          sourceBom={detailBom}
+          projects={projects}
+          onClone={handleCloneBOM}
+          onClose={() => setIsCloneModalOpen(false)}
+        />
+      )}
+
+      {isRevisionModalOpen && detailBom && (
+        <BOMRevisionModal
+          currentBomName={detailBom.name}
+          currentRevision={detailBom.revision || 'A'}
+          onCreateRevision={handleCreateRevision}
+          onClose={() => setIsRevisionModalOpen(false)}
+        />
+      )}
+
+      {isEditHeaderModalOpen && detailBom && (
+        <BOMHeaderModal
+          bom={detailBom}
+          projects={projects}
+          onSave={handleEditHeader}
+          onClose={() => setIsEditHeaderModalOpen(false)}
+        />
+      )}
+
+      {isTemplateSelectModalOpen && (
+        <BOMTemplateSelectModal
+          templates={boms.filter(b => b.is_template)}
+          projects={projects}
+          onSelect={handleCreateFromTemplate}
+          onClose={() => setIsTemplateSelectModalOpen(false)}
+        />
+      )}
+
+      {diffCompareTargetId !== null && detailBom && (
+        <BOMDiffModal
+          sourceBomId={detailBom.id}
+          targetBomId={diffCompareTargetId}
+          onClose={() => setDiffCompareTargetId(null)}
+        />
       )}
     </div>
   );

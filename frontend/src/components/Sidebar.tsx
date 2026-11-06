@@ -23,7 +23,9 @@ import {
   Minus,
   Bookmark,
   AlertCircle,
-  Monitor
+  Monitor,
+  Search,
+  GitBranch
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -82,7 +84,9 @@ export const Sidebar: React.FC = () => {
   } else if (activeModule === 'bom') {
     moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };
     menuItems = [
-      { name: 'BOM Workspace', path: '/bom', icon: ClipboardList }
+      { name: 'BOM Workspace', path: '/bom', icon: ClipboardList },
+      { name: 'Search & Where-Used', path: '/bom/search', icon: Search },
+      { name: 'Change Orders (ECO)', path: '/bom/eco', icon: GitBranch }
     ];
   } else if (activeModule === 'store' && hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
     // Store Module (Default)
