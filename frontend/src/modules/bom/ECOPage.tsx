@@ -32,26 +32,27 @@ export const ECOPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-900/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Uniform Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold mb-2 border border-purple-500/30">
-            <GitBranch className="h-3.5 w-3.5" />
-            <span>Product Lifecycle Management (PLM)</span>
-          </div>
-          <h1 className="text-2xl font-black tracking-tight">Engineering Change Orders (ECO / ECN)</h1>
-          <p className="text-sm text-slate-300 mt-1 max-w-2xl">
+          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <GitBranch className="h-5 w-5 text-purple-600" />
+            Engineering Change Orders (ECO / ECN)
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
             Audit trail of design revisions, component replacements, obsolescence notices, and visual BOM differences across project lifecycles.
           </p>
         </div>
 
-        <button
-          onClick={fetchEcos}
-          className="self-start md:self-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchEcos}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-purple-600 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Main List */}

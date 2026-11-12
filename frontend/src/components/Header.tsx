@@ -88,7 +88,10 @@ export const Header: React.FC = () => {
     if (path.startsWith('/projects/')) return { title: 'Project Workspace', desc: 'Detailed view and management of project' };
 
     // BOM Module
-    if (path.startsWith('/bom/create')) return { title: 'Create BOM', desc: 'Build a new Bill of Materials' };
+    if (path.startsWith('/bom/create')) return { title: 'Create BOM', desc: 'Build a new Bill of Materials with products and sub-assemblies' };
+    if (path.startsWith('/bom/sub-assemblies')) return { title: 'Sub-Assemblies Library', desc: 'Build, preview, and reuse modular sub-assemblies across BOMs' };
+    if (path.startsWith('/bom/search')) return { title: 'Where-Used & Part Search', desc: 'Search components across BOMs and trace assembly usage' };
+    if (path.startsWith('/bom/eco')) return { title: 'Engineering Change Orders', desc: 'Track design revisions, ECO audit logs, and visual BOM diffs' };
     if (path.startsWith('/bom')) return { title: 'Bill of Materials', desc: 'Manage manufacturing and assembly formulas' };
 
     // Other Modules

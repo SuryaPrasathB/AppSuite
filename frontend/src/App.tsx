@@ -35,6 +35,7 @@ import { BOM } from './modules/bom/BOM';
 import { CreateBOMPage } from './modules/bom/CreateBOMPage';
 import { BOMSearchPage } from './modules/bom/BOMSearchPage';
 import { ECOPage } from './modules/bom/ECOPage';
+import { SubAssembliesPage } from './modules/bom/SubAssembliesPage';
 import { Profile } from './modules/profile/Profile';
 import { GlobalDashboard } from './modules/dashboard/GlobalDashboard';
 
@@ -169,6 +170,7 @@ const AppContent: React.FC = () => {
 
             <Route path="/bom" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><BOM /></ProtectedRoute>} />
             <Route path="/bom/create" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><CreateBOMPage /></ProtectedRoute>} />
+            <Route path="/bom/sub-assemblies" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><SubAssembliesPage /></ProtectedRoute>} />
             <Route path="/bom/search" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><BOMSearchPage /></ProtectedRoute>} />
             <Route path="/bom/eco" element={<ProtectedRoute allowedRoles={['Administrator', 'Employee', 'Store Operator', 'Store Manager']}><ECOPage /></ProtectedRoute>} />
             

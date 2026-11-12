@@ -9,18 +9,21 @@ export function CreateBOMPage() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [boms, setBoms] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [projectsResponse, productsData] = await Promise.all([
+        const [projectsResponse, productsData, bomsData] = await Promise.all([
           apiClient.projects.list(),
           apiClient.products.list(),
+          apiClient.boms.list()
         ]);
         const pData = (projectsResponse as any).data ? (projectsResponse as any).data : projectsResponse;
         setProjects(pData);
         setProducts(productsData);
+        setBoms(bomsData || []);
       } catch (e: any) {
         setError(e.message || 'Failed to load necessary data');
       } finally {
@@ -50,6 +53,7 @@ export function CreateBOMPage() {
     <BOMCreator 
       projects={projects}
       products={products}
+      boms={boms}
       onCancel={() => navigate('/bom')}
       onSuccess={() => navigate('/bom')}
     />

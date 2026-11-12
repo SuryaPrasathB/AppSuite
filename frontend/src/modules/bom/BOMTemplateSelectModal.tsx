@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, Bookmark, Building2, Check, Sparkles, Layers } from 'lucide-react';
+import { X, Bookmark, Sparkles, Eye, CornerDownRight } from 'lucide-react';
 
 interface BOMData {
   id: number;
   name: string;
   total_items?: number;
+  total_cost?: number;
   template_category?: string | null;
   items?: any[];
 }
@@ -32,7 +33,9 @@ export const BOMTemplateSelectModal: React.FC<BOMTemplateSelectModalProps> = ({
     templates.length > 0 ? templates[0].id : null
   );
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
-  const [newName, setNewName] = useState(() => (selectedTemplate ? `${selectedTemplate.name} Instance` : ''));
+  const [newName, setNewName] = useState(() =>
+    selectedTemplate ? `${selectedTemplate.name} Instance` : ''
+  );
   const [projectId, setProjectId] = useState<number | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,17 +68,23 @@ export const BOMTemplateSelectModal: React.FC<BOMTemplateSelectModalProps> = ({
     }
   };
 
+  const previewItems = selectedTemplate?.items || [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
               <Bookmark className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-850">Create BOM from Reusable Template</h2>
-              <p className="text-xs text-slate-500">Instantiate standard panel or board specifications for a project</p>
+              <h2 className="text-base font-bold text-slate-850">
+                Create BOM from Reusable Template / Sub-Assembly
+              </h2>
+              <p className="text-xs text-slate-500">
+                Inspect parts inside a saved template and instantiate a new project BOM
+              </p>
             </div>
           </div>
           <button
@@ -95,8 +104,10 @@ export const BOMTemplateSelectModal: React.FC<BOMTemplateSelectModalProps> = ({
 
           {/* Template Selection List */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700">Select Standard Assembly Template</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto pr-1">
+            <label className="text-xs font-bold text-slate-700">
+              Select Standard Assembly Template
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-44 overflow-y-auto pr-1">
               {templates.map(tmpl => (
                 <div
                   key={tmpl.id}
@@ -110,48 +121,98 @@ export const BOMTemplateSelectModal: React.FC<BOMTemplateSelectModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-slate-800 truncate">{tmpl.name}</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-700">
-                      {tmpl.total_items || 0} items
+                      {tmpl.items?.length ?? tmpl.total_items ?? 0} parts
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Category: {tmpl.template_category || 'Standard Panel'}
-                  </p>
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                    <span>Category: {tmpl.template_category || 'Standard Panel'}</span>
+                    {tmpl.total_cost !== undefined && (
+                      <span className="font-bold text-slate-700">
+                        ₹{Number(tmpl.total_cost).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
               {templates.length === 0 && (
                 <p className="p-4 text-xs text-slate-400 col-span-2 text-center">
-                  No saved templates found. You can mark any BOM as a template by clicking "Save as Template".
+                  No saved templates found. You can mark any BOM as a template or create one in Sub-Assemblies.
                 </p>
               )}
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">New BOM Name *</label>
-            <input
-              type="text"
-              required
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              placeholder="e.g. Factory Control Panel - Main Switchboard"
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-400"
-            />
-          </div>
+          {/* Live Parts Preview of Selected Template */}
+          {selectedTemplate && (
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/40">
+              <div className="px-3.5 py-2 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <Eye className="h-3.5 w-3.5 text-purple-600" />
+                  <span>Parts Inside "{selectedTemplate.name}" ({previewItems.length})</span>
+                </span>
+                {selectedTemplate.total_cost !== undefined && (
+                  <span className="font-extrabold text-purple-700">
+                    Est. Cost: ₹{Number(selectedTemplate.total_cost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+              <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 bg-white">
+                {previewItems.map((it: any, idx: number) => (
+                  <div key={idx} className="px-3.5 py-1.5 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                      <CornerDownRight className="h-3 w-3 text-purple-400 shrink-0" />
+                      <span className="font-semibold text-slate-800 truncate">
+                        {it.product_name || it.manual_product_name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                        ({it.part_number || it.product_code || 'Manual'})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-bold text-purple-700">
+                        ×{it.quantity_required} {it.product_unit || 'pcs'}
+                      </span>
+                      <span className="text-slate-500 w-20 text-right">
+                        ₹{((it.unit_price || 0) * (it.quantity_required || 1)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {previewItems.length === 0 && (
+                  <p className="p-3 text-xs text-slate-400 text-center">No parts in this template.</p>
+                )}
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">Target Project (Optional)</label>
-            <select
-              value={projectId}
-              onChange={e => setProjectId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
-            >
-              <option value="">No Project Assigned (Standalone)</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.name}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">New BOM Name *</label>
+              <input
+                type="text"
+                required
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="e.g. Factory Control Panel - Main Switchboard"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Target Project (Optional)</label>
+              <select
+                value={projectId}
+                onChange={e => setProjectId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <option value="">No Project Assigned (Standalone)</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} — {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">

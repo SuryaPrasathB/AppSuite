@@ -177,6 +177,12 @@ export const apiClient = {
       return request<any>(`/boms/search${q ? `?${q}` : ''}`);
     },
     listEcos: () => request<any[]>('/boms/ecos'),
+    listSubAssemblies: () => request<any[]>('/boms/sub-assemblies'),
+    createSubAssembly: (body: any) => request<any>('/boms/sub-assemblies', { method: 'POST', body: JSON.stringify(body) }),
+    updateSubAssembly: (id: number | string, body: any) => request<any>(`/boms/sub-assemblies/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteSubAssembly: (id: number | string) => request<any>(`/boms/sub-assemblies/${id}`, { method: 'DELETE' }),
+    insertSubAssembly: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/insert-subassembly`, { method: 'POST', body: JSON.stringify(body) }),
+    groupItemsIntoSubAssembly: (bomId: number | string, body: any) => request<any>(`/boms/${bomId}/group-items`, { method: 'POST', body: JSON.stringify(body) }),
     delete: (id: number | string) => request<any>(`/boms/${id}`, { method: 'DELETE' }),
     issue: (id: number | string, body: any) => request<any>(`/boms/${id}/issue`, { method: 'POST', body: JSON.stringify(body) }),
   },

@@ -25,7 +25,8 @@ import {
   AlertCircle,
   Monitor,
   Search,
-  GitBranch
+  GitBranch,
+  Layers
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -85,6 +86,7 @@ export const Sidebar: React.FC = () => {
     moduleHeader = { title: 'BOM BUILDER', subtitle: 'PRODUCT LISTS', icon: ClipboardList, color: 'bg-purple-600' };
     menuItems = [
       { name: 'BOM Workspace', path: '/bom', icon: ClipboardList },
+      { name: 'Sub-Assemblies', path: '/bom/sub-assemblies', icon: Layers },
       { name: 'Search & Where-Used', path: '/bom/search', icon: Search },
       { name: 'Change Orders (ECO)', path: '/bom/eco', icon: GitBranch }
     ];
@@ -135,7 +137,7 @@ export const Sidebar: React.FC = () => {
           <div key={item.name}>
             <NavLink
               to={item.path}
-              end={item.path === '/' || item.path === '/store' || item.path === '/projects'}
+              end={item.path === '/' || item.path === '/store' || item.path === '/projects' || (item.path === '/bom' && path !== '/bom/create')}
               title={isCollapsed ? item.name : undefined}
               className={({ isActive }) => {
                 let activeStyle = 'bg-primary-600 text-white shadow-md shadow-primary-900/30';

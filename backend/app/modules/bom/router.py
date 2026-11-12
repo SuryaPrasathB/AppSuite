@@ -22,6 +22,8 @@ class BOMItemCreate(BaseModel):
     parent_item_id: Optional[int] = None
     is_assembly: Optional[bool] = False
     level: Optional[int] = 1
+    temp_id: Optional[str] = None
+    parent_temp_id: Optional[str] = None
 
 class BOMItemUpdate(BaseModel):
     product_id: Optional[int] = None
@@ -40,6 +42,7 @@ class BOMItemUpdate(BaseModel):
     parent_item_id: Optional[int] = None
     is_assembly: Optional[bool] = None
     level: Optional[int] = None
+    scale_children: Optional[bool] = True
 
 class BOMCreate(BaseModel):
     project_id: Optional[int] = None
@@ -139,6 +142,37 @@ def search_boms(
 @router.get("/ecos")
 def list_ecos():
     return DBStore.get_ecos()
+
+# 2b. Dedicated Sub-Assemblies Library CRUD (Stored separately from BOMs!)
+@router.get("/sub-assemblies")
+def list_sub_assemblies():
+    return DBStore.get_sub_assemblies()
+
+@router.post("/sub-assemblies")
+def create_sub_assembly(payload: Dict[str, Any]):
+    try:
+        return DBStore.create_sub_assembly(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/sub-assemblies/{sa_id}")
+def update_sub_assembly(sa_id: int, payload: Dict[str, Any]):
+    try:
+        return DBStore.update_sub_assembly(sa_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/sub-assemblies/{sa_id}")
+def delete_sub_assembly(sa_id: int):
+    try:
+        DBStore.delete_sub_assembly(sa_id)
+        return {"message": "Sub-Assembly deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 3. List BOMs (with optional template filter)
 @router.get("")
@@ -386,6 +420,26 @@ def issue_bom_items(bom_id: int, request: BOMIssueRequest):
             request.user_role
         )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 23. Insert Sub-Assembly into BOM (grouped or exploded)
+@router.post("/{bom_id}/insert-subassembly")
+def insert_subassembly(bom_id: int, payload: Dict[str, Any]):
+    try:
+        return DBStore.insert_subassembly_into_bom(bom_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 24. Group Selected BOM Items into a Sub-Assembly (with optional Save to Library)
+@router.post("/{bom_id}/group-items")
+def group_bom_items(bom_id: int, payload: Dict[str, Any]):
+    try:
+        return DBStore.group_bom_items_into_subassembly(bom_id, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

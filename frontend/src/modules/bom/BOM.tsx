@@ -50,6 +50,7 @@ import { BOMCloneModal } from './BOMCloneModal';
 import { BOMRevisionModal } from './BOMRevisionModal';
 import { BOMHeaderModal } from './BOMHeaderModal';
 import { BOMTemplateSelectModal } from './BOMTemplateSelectModal';
+import { extractSubAssemblies } from './subAssemblyUtils';
 
 type ProcurementStatus = 'YET_TO_ORDER' | 'ORDERED' | 'DELIVERED';
 
@@ -185,6 +186,7 @@ export const BOM: React.FC = () => {
   const isAdmin = hasRole(['Administrator', 'Admin']) || user?.role?.toLowerCase() === 'admin';
 
   const [boms, setBoms] = useState<BOMData[]>([]);
+  const [librarySubAssemblies, setLibrarySubAssemblies] = useState<any[]>([]);
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [products, setProducts] = useState<ProductData[]>([]);
   const [locations, setLocations] = useState<LocationData[]>([]);
@@ -224,7 +226,7 @@ export const BOM: React.FC = () => {
 
   // Advanced BOM Features State
   const [listFilterTab, setListFilterTab] = useState<'ALL' | 'PROJECTS' | 'TEMPLATES'>('ALL');
-  const [hierarchyMode, setHierarchyMode] = useState<'flat' | 'tree'>('flat');
+  const [hierarchyMode, setHierarchyMode] = useState<'flat' | 'tree'>('tree');
   const [collapsedParentIds, setCollapsedParentIds] = useState<Set<number>>(new Set());
 
   // In-place row editing
@@ -241,6 +243,13 @@ export const BOM: React.FC = () => {
   // Modals state
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [addItemParentId, setAddItemParentId] = useState<number | null>(null);
+  const [addItemInitialMode, setAddItemInitialMode] = useState<'catalog' | 'subassembly' | 'manual'>('catalog');
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupAssemblyName, setGroupAssemblyName] = useState('');
+  const [groupAssemblyCode, setGroupAssemblyCode] = useState('');
+  const [groupAssemblyQty, setGroupAssemblyQty] = useState<number>(1);
+  const [groupSaveToLibrary, setGroupSaveToLibrary] = useState<boolean>(true);
+  const [groupingItems, setGroupingItems] = useState(false);
   const [isBulkPRModalOpen, setIsBulkPRModalOpen] = useState(false);
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
@@ -272,8 +281,9 @@ export const BOM: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const [bData, pResponse, prData, lData] = await Promise.all([
+      const [bData, saData, pResponse, prData, lData] = await Promise.all([
         apiClient.boms.list() as Promise<BOMData[]>,
+        apiClient.boms.listSubAssemblies() as Promise<any[]>,
         apiClient.projects.list() as Promise<any>,
         apiClient.products.list() as Promise<ProductData[]>,
         apiClient.layout.locations() as Promise<LocationData[]>
@@ -281,6 +291,7 @@ export const BOM: React.FC = () => {
       const pData = (pResponse?.data ? pResponse.data : pResponse) as ProjectData[];
 
       setBoms(bData);
+      setLibrarySubAssemblies(saData || []);
       setProjects(pData);
       setProducts(prData);
       setLocations(lData);
@@ -362,6 +373,84 @@ export const BOM: React.FC = () => {
     await handleViewDetails(detailBom.id);
     const bData = await apiClient.boms.list() as BOMData[];
     setBoms(bData);
+  };
+
+  const handleInsertSubAssembly = async (payload: any) => {
+    if (!detailBom) return;
+    await apiClient.boms.insertSubAssembly(detailBom.id, payload);
+    setHierarchyMode('tree');
+    await handleViewDetails(detailBom.id);
+    const bData = await apiClient.boms.list() as BOMData[];
+    setBoms(bData);
+  };
+
+  const handleGroupSelectedIntoSubAssembly = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailBom || selectedItemIds.length === 0) return;
+    if (!groupAssemblyName.trim()) {
+      await showAlert('Please provide a Sub-Assembly Name.');
+      return;
+    }
+    try {
+      setGroupingItems(true);
+      await apiClient.boms.groupItemsIntoSubAssembly(detailBom.id, {
+        item_ids: selectedItemIds,
+        assembly_name: groupAssemblyName.trim(),
+        part_number: groupAssemblyCode.trim(),
+        quantity_required: Math.max(1, Number(groupAssemblyQty) || 1),
+        save_to_library: groupSaveToLibrary,
+        template_category: 'Sub-Assembly'
+      });
+      setIsGroupModalOpen(false);
+      setSelectedItemIds([]);
+      setHierarchyMode('tree');
+      await handleViewDetails(detailBom.id);
+      const [bData, saData] = await Promise.all([
+        apiClient.boms.list() as Promise<BOMData[]>,
+        apiClient.boms.listSubAssemblies() as Promise<any[]>
+      ]);
+      setBoms(bData);
+      setLibrarySubAssemblies(saData || []);
+      if (groupSaveToLibrary) {
+        await showAlert(`Grouped items into "${groupAssemblyName.trim()}" and saved it to the Sub-Assemblies Library!`);
+      }
+    } catch (err: any) {
+      await showAlert(err?.message || 'Failed to group items into sub-assembly');
+    } finally {
+      setGroupingItems(false);
+    }
+  };
+
+  const handleSaveInlineAssemblyToLibrary = async (parentItem: BOMItem) => {
+    if (!detailBom) return;
+    const children = (detailBom.items || []).filter(i => i.parent_item_id === parentItem.id);
+    if (children.length === 0) {
+      await showAlert('Add at least one child component to this sub-assembly before saving it to the library.');
+      return;
+    }
+    const parentQty = Math.max(1, Number(parentItem.quantity_required) || 1);
+    try {
+      await apiClient.boms.createSubAssembly({
+        name: parentItem.product_name,
+        code: parentItem.part_number || null,
+        category: 'Sub-Assembly',
+        items: children.map(c => ({
+          product_id: c.product_id,
+          manual_product_name: c.product_name,
+          part_number: c.part_number || (c.product_code !== 'MANUAL' ? c.product_code : ''),
+          manufacturer: c.manufacturer || '',
+          link: c.link || '',
+          quantity_required: Number(((c.quantity_required || 1) / parentQty).toFixed(4)),
+          unit_price: c.unit_price || 0,
+          remarks: c.remarks || ''
+        }))
+      });
+      const saData = await apiClient.boms.listSubAssemblies() as any[];
+      setLibrarySubAssemblies(saData || []);
+      await showAlert(`Saved "${parentItem.product_name}" (${children.length} parts) to the reusable Sub-Assemblies Library!`);
+    } catch (err: any) {
+      await showAlert(err?.message || 'Failed to save sub-assembly to library');
+    }
   };
 
   const handleEditHeader = async (headerData: any) => {
@@ -836,13 +925,19 @@ export const BOM: React.FC = () => {
     let maxExpectedDate = '';
     let maxDeliveredDate = '';
 
+    const parentIdsWithChildren = new Set(
+      items.filter(it => it.parent_item_id).map(it => it.parent_item_id as number)
+    );
+
     items.forEach(item => {
       const status = item.procurement_status || 'YET_TO_ORDER';
       if (status === 'YET_TO_ORDER') yetToOrder++;
       else if (status === 'ORDERED') ordered++;
       else if (status === 'DELIVERED') delivered++;
 
-      totalCost += (item.unit_price || 0) * (item.quantity_required || 0);
+      if (!(item.is_assembly && parentIdsWithChildren.has(item.id))) {
+        totalCost += (item.unit_price || 0) * (item.quantity_required || 0);
+      }
 
       const ordDate = toDateOnlyStr(item.ordered_date);
       const expDate = toDateOnlyStr(item.expected_delivery_date);
@@ -973,12 +1068,17 @@ export const BOM: React.FC = () => {
     if (listFilterTab === 'PROJECTS') {
       return boms.filter(b => !b.is_template && b.project_id);
     }
-    return boms;
+    return boms.filter(b => !b.is_template);
   }, [boms, listFilterTab]);
 
   const templateBoms = useMemo(() => {
     return boms.filter(b => b.is_template);
   }, [boms]);
+
+  const subAssemblies = useMemo(
+    () => extractSubAssemblies(librarySubAssemblies, boms),
+    [librarySubAssemblies, boms]
+  );
 
   const toggleParentCollapse = (parentId: number) => {
     setCollapsedParentIds(prev => {
@@ -1290,6 +1390,14 @@ export const BOM: React.FC = () => {
             <span>Upload</span>
           </button>
           <button
+            onClick={() => navigate('/bom/sub-assemblies')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Manage reusable Sub-Assemblies and preview their parts"
+          >
+            <Layers className="h-3.5 w-3.5 text-purple-600" />
+            <span>Sub-Assemblies ({subAssemblies.length})</span>
+          </button>
+          <button
             onClick={() => setIsTemplateSelectModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
             title="Create a new BOM from an existing reusable template"
@@ -1352,7 +1460,7 @@ export const BOM: React.FC = () => {
                   listFilterTab === 'ALL' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                All ({boms.length})
+                All ({boms.filter(b => !b.is_template).length})
               </button>
               <button
                 onClick={() => setListFilterTab('PROJECTS')}
@@ -1569,7 +1677,7 @@ export const BOM: React.FC = () => {
 
                 <div className="flex flex-wrap items-center gap-2">
                   {isAdmin && (
-                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 mr-1">
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                       <button
                         onClick={() => {
                           setActiveView('items');
@@ -1597,104 +1705,10 @@ export const BOM: React.FC = () => {
                     </div>
                   )}
 
-                  {/* One-Click Bulk PR Generator Button */}
-                  <button
-                    onClick={() => setIsBulkPRModalOpen(true)}
-                    className="relative flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
-                    title="Auto-detect shortages and raise consolidated Store Purchase Request"
-                  >
-                    <ShoppingCart className="h-3.5 w-3.5" />
-                    <span>Bulk PR</span>
-                    {shortageItems.length > 0 && (
-                      <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[9px] font-black">
-                        {shortageItems.length}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Stock Reservation Earmark Button */}
-                  <button
-                    onClick={handleToggleReservation}
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                      detailBom.is_reserved || detailBom.status === 'APPROVED'
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-purple-50 hover:text-purple-700'
-                    }`}
-                    title="Earmark / Reserve components in Store inventory for this BOM"
-                  >
-                    {detailBom.is_reserved || detailBom.status === 'APPROVED' ? (
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <ShieldAlert className="h-3.5 w-3.5 text-slate-400" />
-                    )}
-                    <span>{detailBom.is_reserved || detailBom.status === 'APPROVED' ? 'Stock Earmarked' : 'Earmark Stock'}</span>
-                  </button>
-
-                  {/* In-Place Add Item Button */}
-                  <button
-                    onClick={() => {
-                      setAddItemParentId(null);
-                      setIsAddItemModalOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Part</span>
-                  </button>
-
-                  {/* Clone BOM Button */}
-                  <button
-                    onClick={() => setIsCloneModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    title="Duplicate this BOM specification"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    <span>Clone</span>
-                  </button>
-
-                  {/* Revisioning ECO Button */}
-                  <button
-                    onClick={() => setIsRevisionModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    title="Branch new revision with an Engineering Change Order (ECO)"
-                  >
-                    <GitBranch className="h-3.5 w-3.5 text-purple-600" />
-                    <span>Revise</span>
-                  </button>
-
-                  {/* Diff Button */}
-                  {revisionsList.length > 1 && (
-                    <button
-                      onClick={() => {
-                        const other = revisionsList.find(r => r.id !== detailBom.id);
-                        if (other) setDiffCompareTargetId(other.id);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                      title="Compare BOM revisions visual diff"
-                    >
-                      <Layers className="h-3.5 w-3.5 text-purple-600" />
-                      <span>Diff</span>
-                    </button>
-                  )}
-
-                  {/* Toggle Template Button */}
-                  <button
-                    onClick={handleToggleTemplate}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                      detailBom.is_template
-                        ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                    }`}
-                    title="Toggle Reusable Template flag"
-                  >
-                    <Bookmark className="h-3.5 w-3.5 text-blue-600" />
-                    <span>{detailBom.is_template ? 'Template Active' : 'Make Template'}</span>
-                  </button>
-
                   {detailBom.status === 'DRAFT' || detailBom.status === 'UNDER_REVIEW' ? (
                     <button
                       onClick={() => handleLockBOM(detailBom.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
                     >
                       <Check className="h-3.5 w-3.5" />
                       Approve BOM
@@ -1702,26 +1716,164 @@ export const BOM: React.FC = () => {
                   ) : (
                     <button
                       onClick={() => setIssueModalOpen(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
                     >
                       <ArrowUpRight className="h-3.5 w-3.5" />
                       Issue Store Stock
                     </button>
                   )}
-                  <button
-                    onClick={handleExportToExcel}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                  >
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-                    Export Excel
-                  </button>
-                  <button
-                    onClick={() => handleDeleteBOM(detailBom.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </button>
+
+                  <div className="flex items-center bg-white border border-slate-200 rounded-lg divide-x divide-slate-200 shadow-2xs overflow-hidden">
+                    <button
+                      onClick={handleExportToExcel}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+                      title="Export BOM to Excel"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Export Excel</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteBOM(detailBom.id)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-red-50 text-red-600 text-xs font-semibold transition-all cursor-pointer"
+                      title="Delete BOM"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grouped Action Toolbar */}
+              <div className="bg-slate-50/90 border border-slate-200/80 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                {/* Left Group: Add Components & Store Actions */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Group 1: Structure / Add */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-0.5 hidden sm:inline">
+                      Add:
+                    </span>
+                    <button
+                      onClick={() => {
+                        setAddItemParentId(null);
+                        setAddItemInitialMode('catalog');
+                        setIsAddItemModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Part</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setAddItemParentId(null);
+                        setAddItemInitialMode('subassembly');
+                        setIsAddItemModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                      title="Preview parts inside a Sub-Assembly and insert into this BOM"
+                    >
+                      <Layers className="h-3.5 w-3.5 text-purple-600" />
+                      <span>+ Sub-Assembly</span>
+                    </button>
+                  </div>
+
+                  <div className="h-5 w-px bg-slate-200 mx-1 hidden sm:block" />
+
+                  {/* Group 2: Store & Procurement */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-0.5 hidden sm:inline">
+                      Store:
+                    </span>
+                    <button
+                      onClick={() => setIsBulkPRModalOpen(true)}
+                      className="relative flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-50 text-slate-700 hover:text-purple-700 border border-slate-200 rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                      title="Auto-detect shortages and raise consolidated Store Purchase Request"
+                    >
+                      <ShoppingCart className="h-3.5 w-3.5 text-purple-600" />
+                      <span>Bulk PR</span>
+                      {shortageItems.length > 0 && (
+                        <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[9px] font-black">
+                          {shortageItems.length}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={handleToggleReservation}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border shadow-2xs transition-all cursor-pointer ${
+                        detailBom.is_reserved || detailBom.status === 'APPROVED'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-purple-50 hover:text-purple-700'
+                      }`}
+                      title="Earmark / Reserve components in Store inventory for this BOM"
+                    >
+                      {detailBom.is_reserved || detailBom.status === 'APPROVED' ? (
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <ShieldAlert className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                      <span>
+                        {detailBom.is_reserved || detailBom.status === 'APPROVED'
+                          ? 'Stock Earmarked'
+                          : 'Earmark Stock'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Group: Engineering Version & Template Controls */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-0.5 hidden xl:inline">
+                    Revision:
+                  </span>
+                  <div className="flex items-center bg-white border border-slate-200 rounded-lg divide-x divide-slate-200 shadow-2xs overflow-hidden">
+                    <button
+                      onClick={() => setIsCloneModalOpen(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+                      title="Duplicate this BOM specification"
+                    >
+                      <Copy className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Clone</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsRevisionModalOpen(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+                      title="Branch new revision with an Engineering Change Order (ECO)"
+                    >
+                      <GitBranch className="h-3.5 w-3.5 text-purple-600" />
+                      <span>Revise</span>
+                    </button>
+
+                    {revisionsList.length > 1 && (
+                      <button
+                        onClick={() => {
+                          const other = revisionsList.find(r => r.id !== detailBom.id);
+                          if (other) setDiffCompareTargetId(other.id);
+                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+                        title="Compare BOM revisions visual diff"
+                      >
+                        <Layers className="h-3.5 w-3.5 text-purple-600" />
+                        <span>Diff</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={handleToggleTemplate}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        detailBom.is_template
+                          ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                      title="Toggle Reusable Template flag"
+                    >
+                      <Bookmark className="h-3.5 w-3.5 text-blue-600" />
+                      <span>{detailBom.is_template ? 'Template Active' : 'Make Template'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1938,6 +2090,22 @@ export const BOM: React.FC = () => {
                           className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer transition-all"
                         >
                           {updatingItems ? 'Updating...' : 'Apply to Selected'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGroupAssemblyName('');
+                            setGroupAssemblyCode(`SA-${String(existingAssemblies.length + 1).padStart(2, '0')}`);
+                            setGroupAssemblyQty(1);
+                            setGroupSaveToLibrary(true);
+                            setIsGroupModalOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-purple-100 text-purple-700 border border-purple-300 rounded-lg text-xs font-bold shadow-xs cursor-pointer transition-all"
+                          title="Group selected items into a collapsible Sub-Assembly section"
+                        >
+                          <Layers className="h-3.5 w-3.5 text-purple-600" />
+                          <span>Group into Sub-Assembly</span>
                         </button>
                       </div>
                     </div>
@@ -2256,16 +2424,26 @@ export const BOM: React.FC = () => {
                                 ) : (
                                   <div className="flex items-center justify-end gap-1">
                                     {item.is_assembly && (
-                                      <button
-                                        onClick={() => {
-                                          setAddItemParentId(item.id);
-                                          setIsAddItemModalOpen(true);
-                                        }}
-                                        className="p-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors cursor-pointer"
-                                        title="Add child component to this sub-assembly"
-                                      >
-                                        <Plus className="h-3 w-3" />
-                                      </button>
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            setAddItemParentId(item.id);
+                                            setAddItemInitialMode('catalog');
+                                            setIsAddItemModalOpen(true);
+                                          }}
+                                          className="p-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors cursor-pointer"
+                                          title="Add child component to this sub-assembly"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleSaveInlineAssemblyToLibrary(item)}
+                                          className="p-1 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors cursor-pointer"
+                                          title="Save this Sub-Assembly to the reusable Sub-Assemblies Library"
+                                        >
+                                          <Bookmark className="h-3 w-3" />
+                                        </button>
+                                      </>
                                     )}
                                     <button
                                       onClick={() => handleStartEdit(item)}
@@ -2928,13 +3106,127 @@ export const BOM: React.FC = () => {
           existingAssemblies={(detailBom.items || [])
             .filter(i => i.is_assembly)
             .map(i => ({ id: i.id, name: i.product_name, level: i.level || 0 }))}
+          subAssemblies={subAssemblies}
           defaultParentId={addItemParentId}
+          initialMode={addItemInitialMode}
           onAdd={handleAddItem}
+          onInsertSubAssembly={handleInsertSubAssembly}
           onClose={() => {
             setIsAddItemModalOpen(false);
             setAddItemParentId(null);
+            setAddItemInitialMode('catalog');
           }}
         />
+      )}
+
+      {/* Group Selected BOM Items into a Sub-Assembly Modal */}
+      {isGroupModalOpen && detailBom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in duration-200">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
+                  <Layers className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Group {selectedItemIds.length} Selected Item(s) into Sub-Assembly
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Organize selected rows under a collapsible Sub-Assembly header
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsGroupModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGroupSelectedIntoSubAssembly} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Sub-Assembly Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={groupAssemblyName}
+                  onChange={e => setGroupAssemblyName(e.target.value)}
+                  placeholder="e.g. 24V Control Relay Bank Assembly"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold"
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Sub-Assembly Code / Part #
+                  </label>
+                  <input
+                    type="text"
+                    value={groupAssemblyCode}
+                    onChange={e => setGroupAssemblyCode(e.target.value)}
+                    placeholder="e.g. SA-RLY-01"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Quantity (Sets) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={groupAssemblyQty}
+                    onChange={e => setGroupAssemblyQty(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={groupSaveToLibrary}
+                    onChange={e => setGroupSaveToLibrary(e.target.checked)}
+                    className="mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-purple-950 block">
+                      Save to Reusable Sub-Assemblies Library
+                    </span>
+                    <span className="text-[11px] text-slate-600">
+                      Makes this sub-assembly available in the Sub-Assemblies sidebar for future BOMs with full parts preview.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={groupingItems}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {groupingItems ? 'Grouping...' : 'Group Items'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {isBulkPRModalOpen && detailBom && (

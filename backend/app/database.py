@@ -145,11 +145,86 @@ class DBStore:
             cursor.execute("UPDATE boms SET root_bom_id = id WHERE root_bom_id IS NULL")
 
             cursor.execute("UPDATE boms SET issued_at = created_at WHERE issued_at IS NULL AND status IN ('APPROVED', 'ISSUED', 'COMPLETED')")
+            DBStore._ensure_sub_assemblies_tables(cursor)
             conn.commit()
             cursor.close()
             conn.close()
         except Exception as e:
             print("init_bom_procurement_columns error:", e)
+
+    @staticmethod
+    def _ensure_sub_assemblies_tables(cursor) -> None:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sub_assemblies (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                code VARCHAR(100) NULL DEFAULT NULL,
+                category VARCHAR(100) NOT NULL DEFAULT 'Sub-Assembly',
+                remarks TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sub_assembly_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                sub_assembly_id INT NOT NULL,
+                product_id INT NULL DEFAULT NULL,
+                manual_product_name VARCHAR(255) NULL DEFAULT NULL,
+                part_number VARCHAR(255) NULL DEFAULT NULL,
+                manufacturer VARCHAR(255) NULL DEFAULT NULL,
+                link TEXT NULL,
+                quantity_required DECIMAL(12, 4) NOT NULL DEFAULT 1.0000,
+                unit_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                remarks TEXT NULL,
+                custom_fields TEXT NULL,
+                INDEX idx_sa_id (sub_assembly_id)
+            )
+        """)
+        # Migrate any sub-assemblies that were previously stored in `boms` with template_category = 'Sub-Assembly'
+        cursor.execute("SELECT * FROM boms WHERE is_template = TRUE AND template_category = 'Sub-Assembly'")
+        legacy_sa_boms = cursor.fetchall()
+        for lb in legacy_sa_boms:
+            lb_id = lb['id'] if isinstance(lb, dict) else lb[0]
+            lb_name = lb['name'] if isinstance(lb, dict) else lb[2]
+            lb_code = lb['customer_name'] if isinstance(lb, dict) else lb[4]
+            lb_cat = (lb['template_category'] if isinstance(lb, dict) else 'Sub-Assembly') or 'Sub-Assembly'
+
+            cursor.execute(
+                "INSERT INTO sub_assemblies (name, code, category) VALUES (%s, %s, %s)",
+                (lb_name, lb_code, lb_cat)
+            )
+            new_sa_id = cursor.lastrowid
+
+            cursor.execute(
+                "SELECT product_id, manual_product_name, part_number, manufacturer, link, quantity_required, unit_price, remarks, custom_fields FROM bom_items WHERE bom_id = %s",
+                (lb_id,)
+            )
+            legacy_items = cursor.fetchall()
+            for li in legacy_items:
+                vals = (
+                    new_sa_id,
+                    li['product_id'] if isinstance(li, dict) else li[0],
+                    li['manual_product_name'] if isinstance(li, dict) else li[1],
+                    li['part_number'] if isinstance(li, dict) else li[2],
+                    li['manufacturer'] if isinstance(li, dict) else li[3],
+                    li['link'] if isinstance(li, dict) else li[4],
+                    li['quantity_required'] if isinstance(li, dict) else li[5],
+                    li['unit_price'] if isinstance(li, dict) else li[6],
+                    li['remarks'] if isinstance(li, dict) else li[7],
+                    li['custom_fields'] if isinstance(li, dict) else li[8],
+                )
+                cursor.execute("""
+                    INSERT INTO sub_assembly_items (
+                        sub_assembly_id, product_id, manual_product_name, part_number,
+                        manufacturer, link, quantity_required, unit_price, remarks, custom_fields
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, vals)
+
+            cursor.execute("DELETE FROM bom_items WHERE bom_id = %s", (lb_id,))
+            cursor.execute("DELETE FROM boms WHERE id = %s", (lb_id,))
+            cursor.execute("DELETE FROM notifications WHERE title = 'New BOM Created' AND message LIKE %s", (f"%{lb_name}%",))
 
     @staticmethod
     def get_vendors() -> List[Dict[str, Any]]:
@@ -1976,6 +2051,47 @@ class DBStore:
 
         cursor.execute(base_query + " ORDER BY b.id DESC", tuple(params))
         boms = cursor.fetchall()
+
+        # Fetch items for all returned BOMs so templates & sub-assemblies have full part previews
+        items_by_bom: Dict[int, List[Dict[str, Any]]] = {}
+        if boms:
+            bom_ids = [b['id'] for b in boms]
+            placeholders = ", ".join(["%s"] * len(bom_ids))
+            cursor.execute(f"""
+                SELECT bi.id, bi.bom_id, bi.product_id, bi.quantity_required, bi.quantity_issued, bi.remarks,
+                       bi.manual_product_name, bi.part_number, bi.manufacturer, bi.link, bi.custom_fields,
+                       bi.unit_price, bi.procurement_status, bi.ordered_date, bi.expected_delivery_date, bi.delivered_date,
+                       bi.parent_item_id, bi.is_assembly, bi.level,
+                       p.name as product_name, p.code as product_code, p.unit as product_unit,
+                       COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock
+                FROM bom_items bi
+                LEFT JOIN products p ON bi.product_id = p.id
+                WHERE bi.bom_id IN ({placeholders})
+                ORDER BY bi.level ASC, bi.id ASC
+            """, tuple(bom_ids))
+            all_items = cursor.fetchall()
+            for item in all_items:
+                item["quantity_required"] = float(item["quantity_required"] or 0)
+                item["quantity_issued"] = float(item["quantity_issued"] or 0)
+                item["current_stock"] = float(item["current_stock"] or 0)
+                item["unit_price"] = float(item.get("unit_price") or 0)
+                item["procurement_status"] = item.get("procurement_status") or "YET_TO_ORDER"
+                for d_col in ("ordered_date", "expected_delivery_date", "delivered_date"):
+                    if item.get(d_col) and hasattr(item[d_col], 'isoformat'):
+                        item[d_col] = item[d_col].isoformat()
+                if not item.get("product_id"):
+                    item["product_name"] = item.get("manual_product_name") or "Manual Item"
+                    item["product_code"] = "MANUAL"
+                    item["product_unit"] = "pcs"
+                try:
+                    item["custom_fields"] = json.loads(item.get("custom_fields") or "{}")
+                except:
+                    item["custom_fields"] = {}
+                item["is_assembly"] = bool(item.get("is_assembly"))
+                item["level"] = int(item.get("level") or 1)
+                item["parent_item_id"] = item.get("parent_item_id")
+                items_by_bom.setdefault(item["bom_id"], []).append(item)
+
         cursor.close()
         conn.close()
         for b in boms:
@@ -1983,6 +2099,15 @@ class DBStore:
             b['is_reserved'] = bool(b.get('is_reserved'))
             b['revision'] = b.get('revision') or 'A'
             b['root_bom_id'] = b.get('root_bom_id') or b['id']
+            b_items = items_by_bom.get(b['id'], [])
+            b['items'] = b_items
+            # Compute total cost avoiding double counting assembly headers that have child items
+            parent_ids = {it.get('parent_item_id') for it in b_items if it.get('parent_item_id')}
+            b['total_cost'] = sum(
+                (it.get('unit_price') or 0) * (it.get('quantity_required') or 0)
+                for it in b_items
+                if it['id'] not in parent_ids
+            )
             if b.get('created_at') and hasattr(b['created_at'], 'isoformat'):
                 b['created_at'] = b['created_at'].isoformat()
             if b.get('updated_at') and hasattr(b['updated_at'], 'isoformat'):
@@ -2040,9 +2165,16 @@ class DBStore:
         if not root_bom_id:
             cursor.execute("UPDATE boms SET root_bom_id = %s WHERE id = %s", (bom_id, bom_id))
         
-        for item in items:
+        temp_to_db_id: Dict[str, int] = {}
+        # Insert parent / root items before child items that reference parent_temp_id
+        ordered_items = sorted(items, key=lambda x: (1 if x.get("parent_temp_id") else 0, int(x.get("level") or 1)))
+        for item in ordered_items:
             product_id = item.get("product_id")
             proc_status = item.get("procurement_status") or "YET_TO_ORDER"
+            resolved_parent_id = item.get("parent_item_id") or None
+            if not resolved_parent_id and item.get("parent_temp_id"):
+                resolved_parent_id = temp_to_db_id.get(str(item.get("parent_temp_id")))
+
             cursor.execute("""
                 INSERT INTO bom_items (
                     bom_id, product_id, manual_product_name, part_number, manufacturer,
@@ -2067,10 +2199,13 @@ class DBStore:
                 item.get("ordered_date") or None,
                 item.get("expected_delivery_date") or None,
                 item.get("delivered_date") or None,
-                item.get("parent_item_id") or None,
+                resolved_parent_id,
                 bool(item.get("is_assembly", False)),
-                item.get("level", 1)
+                item.get("level", 2 if resolved_parent_id else 1)
             ))
+            inserted_id = cursor.lastrowid
+            if item.get("temp_id"):
+                temp_to_db_id[str(item.get("temp_id"))] = inserted_id
             
         conn.commit()
         cursor.close()
@@ -2488,11 +2623,375 @@ class DBStore:
             params.extend([item_id, bom_id])
             cursor.execute(f"UPDATE bom_items SET {', '.join(updates)} WHERE id = %s AND bom_id = %s", tuple(params))
 
+        # If this is a parent sub-assembly and quantity_required changed, optionally scale child quantities
+        old_qty = float(existing.get("quantity_required") or 1.0)
+        new_qty = float(data.get("quantity_required") or old_qty) if "quantity_required" in data else old_qty
+        if bool(data.get("scale_children", True)) and "quantity_required" in data and old_qty > 0 and new_qty > 0 and abs(new_qty - old_qty) > 1e-6:
+            ratio = new_qty / old_qty
+            cursor.execute(
+                "UPDATE bom_items SET quantity_required = ROUND(quantity_required * %s, 4) WHERE bom_id = %s AND parent_item_id = %s",
+                (ratio, bom_id, item_id)
+            )
+
         DBStore._sync_bom_completion_status(cursor, bom_id)
         conn.commit()
         cursor.close()
         conn.close()
         return DBStore.get_bom_details(bom_id)
+
+    @staticmethod
+    def insert_subassembly_into_bom(bom_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM boms WHERE id = %s", (bom_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            raise ValueError(f"BOM {bom_id} not found")
+
+        source_bom_id = data.get("source_bom_id")
+        assembly_name = data.get("assembly_name") or "Sub-Assembly"
+        part_number = data.get("part_number") or ""
+        manufacturer = data.get("manufacturer") or ""
+        remarks = data.get("remarks") or ""
+        multiplier = float(data.get("quantity_multiplier") or 1.0)
+        mode = data.get("mode") or "grouped"  # 'grouped' or 'explode'
+        target_parent_id = data.get("parent_item_id") or None
+        source_items = data.get("items") or []
+
+        if source_bom_id and not source_items:
+            src_bom = DBStore.get_bom_details(int(source_bom_id))
+            if src_bom:
+                assembly_name = data.get("assembly_name") or src_bom.get("name") or assembly_name
+                part_number = data.get("part_number") or src_bom.get("customer_name") or part_number
+                # Take leaf/component items from source sub-assembly
+                all_src = src_bom.get("items", [])
+                parent_ids_in_src = {it.get("parent_item_id") for it in all_src if it.get("parent_item_id")}
+                source_items = [it for it in all_src if not (it.get("is_assembly") and it["id"] in parent_ids_in_src)]
+
+        base_level = 1
+        if target_parent_id:
+            cursor.execute("SELECT level FROM bom_items WHERE id = %s AND bom_id = %s", (target_parent_id, bom_id))
+            p_row = cursor.fetchone()
+            if p_row:
+                base_level = int(p_row.get("level") or 1) + 1
+
+        parent_row_id = target_parent_id
+        child_level = base_level
+
+        if mode == "grouped":
+            unit_cost_single_set = sum(
+                float(it.get("unit_price") or 0.0) * float(it.get("quantity_required") or 1.0)
+                for it in source_items
+            )
+            cursor.execute("""
+                INSERT INTO bom_items (
+                    bom_id, product_id, manual_product_name, part_number, manufacturer,
+                    link, quantity_required, quantity_issued, unit_price, remarks,
+                    custom_fields, procurement_status, parent_item_id, is_assembly, level
+                )
+                VALUES (%s, NULL, %s, %s, %s, '', %s, 0.00, %s, %s, '{}', 'YET_TO_ORDER', %s, TRUE, %s)
+            """, (
+                bom_id,
+                assembly_name,
+                part_number,
+                manufacturer,
+                multiplier,
+                unit_cost_single_set,
+                remarks or f"Sub-Assembly ({len(source_items)} parts)",
+                target_parent_id,
+                base_level
+            ))
+            parent_row_id = cursor.lastrowid
+            child_level = base_level + 1
+
+        for it in source_items:
+            base_qty = float(it.get("quantity_required") or 1.0)
+            scaled_qty = round(base_qty * multiplier, 4)
+            cursor.execute("""
+                INSERT INTO bom_items (
+                    bom_id, product_id, manual_product_name, part_number, manufacturer,
+                    link, quantity_required, quantity_issued, unit_price, remarks,
+                    custom_fields, procurement_status, parent_item_id, is_assembly, level
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 0.00, %s, %s, %s, 'YET_TO_ORDER', %s, FALSE, %s)
+            """, (
+                bom_id,
+                it.get("product_id") or None,
+                it.get("manual_product_name") or it.get("product_name") or "Component",
+                it.get("part_number") or (it.get("product_code") if it.get("product_code") != "MANUAL" else "") or "",
+                it.get("manufacturer") or "",
+                it.get("link") or "",
+                scaled_qty,
+                float(it.get("unit_price") or 0.0),
+                it.get("remarks") or "",
+                json.dumps(it.get("custom_fields") or {}),
+                parent_row_id,
+                child_level
+            ))
+
+        DBStore._sync_bom_completion_status(cursor, bom_id)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_bom_details(bom_id)
+
+    @staticmethod
+    def group_bom_items_into_subassembly(bom_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        item_ids = [int(i) for i in (data.get("item_ids") or [])]
+        assembly_name = (data.get("assembly_name") or "").strip()
+        if not assembly_name:
+            raise ValueError("Sub-Assembly name is required")
+        if not item_ids:
+            raise ValueError("Select at least one item to group into a sub-assembly")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        placeholders = ", ".join(["%s"] * len(item_ids))
+        cursor.execute(
+            f"SELECT * FROM bom_items WHERE bom_id = %s AND id IN ({placeholders})",
+            tuple([bom_id, *item_ids])
+        )
+        selected_rows = cursor.fetchall()
+        if not selected_rows:
+            cursor.close()
+            conn.close()
+            raise ValueError("Selected items not found in BOM")
+
+        qty_req = float(data.get("quantity_required") or 1.0)
+        part_number = (data.get("part_number") or "").strip()
+        manufacturer = (data.get("manufacturer") or "").strip()
+        remarks = (data.get("remarks") or f"Grouped Sub-Assembly ({len(selected_rows)} parts)").strip()
+        rollup_unit_price = sum(
+            float(r.get("unit_price") or 0.0) * float(r.get("quantity_required") or 1.0)
+            for r in selected_rows
+        ) / max(1.0, qty_req)
+
+        cursor.execute("""
+            INSERT INTO bom_items (
+                bom_id, product_id, manual_product_name, part_number, manufacturer,
+                link, quantity_required, quantity_issued, unit_price, remarks,
+                custom_fields, procurement_status, parent_item_id, is_assembly, level
+            )
+            VALUES (%s, NULL, %s, %s, %s, '', %s, 0.00, %s, %s, '{}', 'YET_TO_ORDER', NULL, TRUE, 1)
+        """, (
+            bom_id,
+            assembly_name,
+            part_number,
+            manufacturer,
+            qty_req,
+            rollup_unit_price,
+            remarks
+        ))
+        new_parent_id = cursor.lastrowid
+
+        cursor.execute(
+            f"UPDATE bom_items SET parent_item_id = %s, level = 2 WHERE bom_id = %s AND id IN ({placeholders})",
+            tuple([new_parent_id, bom_id, *item_ids])
+        )
+
+        # Optionally also save to Reusable Sub-Assemblies Library (dedicated sub_assemblies table, NOT boms!)
+        if bool(data.get("save_to_library", False)):
+            DBStore._ensure_sub_assemblies_tables(cursor)
+            category = (data.get("template_category") or "Sub-Assembly").strip()
+            cursor.execute("""
+                INSERT INTO sub_assemblies (name, code, category, remarks)
+                VALUES (%s, %s, %s, %s)
+            """, (assembly_name, part_number or None, category, remarks))
+            lib_sa_id = cursor.lastrowid
+            for r in selected_rows:
+                norm_qty = round(float(r.get("quantity_required") or 1.0) / max(1.0, qty_req), 4)
+                cursor.execute("""
+                    INSERT INTO sub_assembly_items (
+                        sub_assembly_id, product_id, manual_product_name, part_number, manufacturer,
+                        link, quantity_required, unit_price, remarks, custom_fields
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    lib_sa_id,
+                    r.get("product_id"),
+                    r.get("manual_product_name"),
+                    r.get("part_number"),
+                    r.get("manufacturer"),
+                    r.get("link"),
+                    norm_qty,
+                    float(r.get("unit_price") or 0.0),
+                    r.get("remarks") or "",
+                    r.get("custom_fields") if isinstance(r.get("custom_fields"), str) else json.dumps(r.get("custom_fields") or {})
+                ))
+
+        DBStore._sync_bom_completion_status(cursor, bom_id)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_bom_details(bom_id)
+
+    @staticmethod
+    def get_sub_assemblies() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        DBStore._ensure_sub_assemblies_tables(cursor)
+        conn.commit()
+
+        cursor.execute("SELECT * FROM sub_assemblies ORDER BY id DESC")
+        sub_assemblies = cursor.fetchall()
+        if not sub_assemblies:
+            cursor.close()
+            conn.close()
+            return []
+
+        sa_ids = [s["id"] for s in sub_assemblies]
+        placeholders = ", ".join(["%s"] * len(sa_ids))
+        cursor.execute(f"""
+            SELECT sai.*,
+                   p.name as product_name, p.code as product_code, p.unit as product_unit,
+                   COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = sai.product_id), 0.00) as current_stock
+            FROM sub_assembly_items sai
+            LEFT JOIN products p ON sai.product_id = p.id
+            WHERE sai.sub_assembly_id IN ({placeholders})
+            ORDER BY sai.id ASC
+        """, tuple(sa_ids))
+        all_items = cursor.fetchall()
+        items_by_sa: Dict[int, List[Dict[str, Any]]] = {}
+        for it in all_items:
+            it["quantity_required"] = float(it.get("quantity_required") or 0)
+            it["unit_price"] = float(it.get("unit_price") or 0)
+            it["current_stock"] = float(it.get("current_stock") or 0)
+            if not it.get("product_id"):
+                it["product_name"] = it.get("manual_product_name") or "Manual Item"
+                it["product_code"] = "MANUAL"
+                it["product_unit"] = "pcs"
+            try:
+                it["custom_fields"] = json.loads(it.get("custom_fields") or "{}")
+            except:
+                it["custom_fields"] = {}
+            items_by_sa.setdefault(it["sub_assembly_id"], []).append(it)
+
+        cursor.close()
+        conn.close()
+
+        for sa in sub_assemblies:
+            if sa.get("created_at") and hasattr(sa["created_at"], "isoformat"):
+                sa["created_at"] = sa["created_at"].isoformat()
+            if sa.get("updated_at") and hasattr(sa["updated_at"], "isoformat"):
+                sa["updated_at"] = sa["updated_at"].isoformat()
+            parts = items_by_sa.get(sa["id"], [])
+            sa["items"] = parts
+            sa["total_cost"] = sum((p.get("unit_price") or 0) * (p.get("quantity_required") or 0) for p in parts)
+
+        return sub_assemblies
+
+    @staticmethod
+    def create_sub_assembly(data: Dict[str, Any]) -> Dict[str, Any]:
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise ValueError("Sub-Assembly name is required")
+        code = (data.get("code") or "").strip() or None
+        category = (data.get("category") or "Sub-Assembly").strip()
+        remarks = (data.get("remarks") or "").strip()
+        items = data.get("items") or []
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        DBStore._ensure_sub_assemblies_tables(cursor)
+
+        cursor.execute(
+            "INSERT INTO sub_assemblies (name, code, category, remarks) VALUES (%s, %s, %s, %s)",
+            (name, code, category, remarks)
+        )
+        sa_id = cursor.lastrowid
+        if not code:
+            auto_code = f"SA-{str(sa_id).zfill(3)}"
+            cursor.execute("UPDATE sub_assemblies SET code = %s WHERE id = %s", (auto_code, sa_id))
+
+        for it in items:
+            cursor.execute("""
+                INSERT INTO sub_assembly_items (
+                    sub_assembly_id, product_id, manual_product_name, part_number, manufacturer,
+                    link, quantity_required, unit_price, remarks, custom_fields
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                sa_id,
+                it.get("product_id") or None,
+                it.get("manual_product_name") or it.get("product_name") or "",
+                it.get("part_number") or "",
+                it.get("manufacturer") or "",
+                it.get("link") or "",
+                float(it.get("quantity_required") or 1.0),
+                float(it.get("unit_price") or 0.0),
+                it.get("remarks") or "",
+                json.dumps(it.get("custom_fields") or {})
+            ))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        all_sa = DBStore.get_sub_assemblies()
+        return next((s for s in all_sa if s["id"] == sa_id), {"id": sa_id, "name": name})
+
+    @staticmethod
+    def update_sub_assembly(sa_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        DBStore._ensure_sub_assemblies_tables(cursor)
+
+        cursor.execute("SELECT * FROM sub_assemblies WHERE id = %s", (sa_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Sub-Assembly {sa_id} not found")
+
+        name = (data.get("name") or existing.get("name") or "").strip()
+        code = (data.get("code") if "code" in data else existing.get("code")) or None
+        category = (data.get("category") or existing.get("category") or "Sub-Assembly").strip()
+        remarks = (data.get("remarks") if "remarks" in data else existing.get("remarks")) or ""
+
+        cursor.execute(
+            "UPDATE sub_assemblies SET name = %s, code = %s, category = %s, remarks = %s WHERE id = %s",
+            (name, code, category, remarks, sa_id)
+        )
+
+        if "items" in data and isinstance(data["items"], list):
+            cursor.execute("DELETE FROM sub_assembly_items WHERE sub_assembly_id = %s", (sa_id,))
+            for it in data["items"]:
+                cursor.execute("""
+                    INSERT INTO sub_assembly_items (
+                        sub_assembly_id, product_id, manual_product_name, part_number, manufacturer,
+                        link, quantity_required, unit_price, remarks, custom_fields
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    sa_id,
+                    it.get("product_id") or None,
+                    it.get("manual_product_name") or it.get("product_name") or "",
+                    it.get("part_number") or "",
+                    it.get("manufacturer") or "",
+                    it.get("link") or "",
+                    float(it.get("quantity_required") or 1.0),
+                    float(it.get("unit_price") or 0.0),
+                    it.get("remarks") or "",
+                    json.dumps(it.get("custom_fields") or {})
+                ))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        all_sa = DBStore.get_sub_assemblies()
+        return next((s for s in all_sa if s["id"] == sa_id), {"id": sa_id, "name": name})
+
+    @staticmethod
+    def delete_sub_assembly(sa_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        DBStore._ensure_sub_assemblies_tables(cursor)
+        cursor.execute("DELETE FROM sub_assembly_items WHERE sub_assembly_id = %s", (sa_id,))
+        cursor.execute("DELETE FROM sub_assemblies WHERE id = %s", (sa_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
 
     @staticmethod
     def delete_bom_item(bom_id: int, item_id: int) -> bool:
