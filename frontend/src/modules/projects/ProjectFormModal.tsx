@@ -2,7 +2,7 @@ import { DescriptionHistorySection } from './components/DescriptionHistorySectio
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Folder, CheckCircle2, Building2, User, CalendarDays, Layers, 
-  Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X
+  Cpu, Zap, Hash, FileCode2, Edit2, ClipboardCheck, X, MapPin
 } from 'lucide-react';
 import { fetchEmployees, fetchNextProjectCode } from './api';
 import { useDialog } from '../../context/DialogContext';
@@ -44,10 +44,13 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     name: '',
     po_number: '',
     client_name: '',
+    client_location: '',
     project_incharge: '',
     description: '',
     start_date: '',
     date_of_delivery: '',
+    expected_completion_mode: 'AUTO' as 'AUTO' | 'MANUAL',
+    expected_completion_date: '',
     status: 'PLANNING',
     has_software: false,
     has_firmware: false,
@@ -91,10 +94,13 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           name: project.name || '',
           po_number: project.po_number || '',
           client_name: project.client_name || '',
+          client_location: project.client_location || '',
           project_incharge: project.project_incharge || '',
           description: project.description || '',
           start_date: project.start_date ? project.start_date.split('T')[0] : '',
           date_of_delivery: project.date_of_delivery ? project.date_of_delivery.split('T')[0] : '',
+          expected_completion_mode: (project.expected_completion_mode === 'MANUAL' ? 'MANUAL' : 'AUTO'),
+          expected_completion_date: project.expected_completion_date ? project.expected_completion_date.split('T')[0] : '',
           status: project.status || 'PLANNING',
           has_software: project.has_software || false,
           has_firmware: project.has_firmware || false,
@@ -126,10 +132,13 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
           name: '',
           po_number: '',
           client_name: '',
+          client_location: '',
           project_incharge: '',
           description: '',
           start_date: today,
           date_of_delivery: '',
+          expected_completion_mode: 'AUTO',
+          expected_completion_date: '',
           status: initialStatus || 'PLANNING',
           has_software: false,
           has_firmware: false,
@@ -608,21 +617,40 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {projectTypeOption !== 'sub' && (
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Customer Name</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Building2 className="h-4 w-4 text-slate-400" />
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Customer Name</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Building2 className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={form.client_name}
+                          onChange={(e) => setForm({...form, client_name: e.target.value.toUpperCase()})}
+                          placeholder="Acme Corp"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        value={form.client_name}
-                        onChange={(e) => setForm({...form, client_name: e.target.value.toUpperCase()})}
-                        placeholder="Acme Corp"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
-                      />
                     </div>
-                  </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+                        Customer Location <span className="text-[10px] font-normal text-slate-400 normal-case">(Optional)</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <MapPin className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={form.client_location}
+                          onChange={(e) => setForm({...form, client_location: e.target.value})}
+                          placeholder="e.g. Chennai, Mumbai"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </>
                 )}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">Project Incharge</label>
@@ -674,6 +702,47 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                     onChange={(e) => setForm({...form, date_of_delivery: e.target.value})}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
                   />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide">Expected Completion</label>
+                    <div className="inline-flex rounded-md bg-slate-100 p-0.5 border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, expected_completion_mode: 'AUTO' })}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                          form.expected_completion_mode === 'AUTO'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, expected_completion_mode: 'MANUAL' })}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded transition-colors ${
+                          form.expected_completion_mode === 'MANUAL'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-800'
+                        }`}
+                      >
+                        Manual
+                      </button>
+                    </div>
+                  </div>
+                  {form.expected_completion_mode === 'MANUAL' ? (
+                    <input
+                      type="date"
+                      value={form.expected_completion_date}
+                      onChange={(e) => setForm({ ...form, expected_completion_date: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
+                    />
+                  ) : (
+                    <div className="w-full bg-indigo-50/60 border border-indigo-200/80 rounded-lg px-3 py-2.5 text-xs font-semibold text-indigo-700">
+                      Auto-calculated from task schedule (CPM)
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1.5">No. of Panels</label>

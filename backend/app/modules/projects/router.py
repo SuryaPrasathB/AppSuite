@@ -54,12 +54,15 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., description="Name of the project")
     po_number: Optional[str] = None
     client_name: Optional[str] = None
+    client_location: Optional[str] = None
     project_incharge: Optional[str] = None
     description: Optional[str] = None
     status: str = "PLANNING"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     date_of_delivery: Optional[str] = None
+    expected_completion_mode: Optional[str] = "AUTO"
+    expected_completion_date: Optional[str] = None
     has_software: bool = False
     has_firmware: bool = False
     has_transformer: bool = False
@@ -78,12 +81,15 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     po_number: Optional[str] = None
     client_name: Optional[str] = None
+    client_location: Optional[str] = None
     project_incharge: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     date_of_delivery: Optional[str] = None
+    expected_completion_mode: Optional[str] = None
+    expected_completion_date: Optional[str] = None
     has_software: Optional[bool] = None
     has_firmware: Optional[bool] = None
     has_transformer: Optional[bool] = None
@@ -715,6 +721,8 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
             if parent_project:
                 # Automatically take the client of the major project
                 project.client_name = parent_project.get("client_name")
+                if not project.client_location:
+                    project.client_location = parent_project.get("client_location")
 
                 # Sub-Project: Nest directly inside parent project folder
                 parent_folder = parent_project.get("folder_path")

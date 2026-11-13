@@ -39,6 +39,7 @@ interface TaskFormModalProps {
 
 interface BulkP6Row {
   rowId: string;
+  parentRowId?: string;
   activity_code: string;
   title: string;
   task_type: string;
@@ -46,143 +47,39 @@ interface BulkP6Row {
   calendar_type: string;
   start_date: string;
   due_date: string;
-  estimated_hours: number;
+  estimated_hours: number | '';
   predecessorSpec: string; // e.g. "W1000" or "W1050:SS:2" or "W1080:FS:0, W1100:FS:0"
 }
 
-const SAMPLE_P6_ROWS: BulkP6Row[] = [
-  {
-    rowId: 's1',
-    activity_code: 'W1000',
-    title: 'Notice to Proceed',
-    task_type: 'START_MILESTONE',
-    wbs_code: '1.0 Mobilization',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-02',
-    due_date: '2026-11-02',
-    estimated_hours: 0,
-    predecessorSpec: '',
-  },
-  {
-    rowId: 's2',
-    activity_code: 'W1020',
-    title: 'Project Management',
-    task_type: 'LOE',
-    wbs_code: '1.0 Mobilization',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-02',
-    due_date: '2026-12-24',
-    estimated_hours: 120,
-    predecessorSpec: 'W1000:SS:0',
-  },
-  {
-    rowId: 's3',
-    activity_code: 'W1040',
-    title: 'Mobilize Site',
-    task_type: 'TASK',
-    wbs_code: '1.0 Mobilization',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-02',
-    due_date: '2026-11-06',
-    estimated_hours: 40,
-    predecessorSpec: 'W1000:FS:0',
-  },
-  {
-    rowId: 's4',
-    activity_code: 'W1050',
-    title: 'Grade Site',
-    task_type: 'TASK',
-    wbs_code: '2.1 Below Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-09',
-    due_date: '2026-11-16',
-    estimated_hours: 48,
-    predecessorSpec: 'W1040:FS:0',
-  },
-  {
-    rowId: 's5',
-    activity_code: 'W1060',
-    title: 'Set Foundations',
-    task_type: 'TASK',
-    wbs_code: '2.1 Below Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-11',
-    due_date: '2026-11-20',
-    estimated_hours: 64,
-    predecessorSpec: 'W1050:SS:2',
-  },
-  {
-    rowId: 's6',
-    activity_code: 'W1080',
-    title: 'Dig Cable Trench',
-    task_type: 'TASK',
-    wbs_code: '2.1 Below Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-23',
-    due_date: '2026-11-26',
-    estimated_hours: 32,
-    predecessorSpec: 'W1060:FS:0',
-  },
-  {
-    rowId: 's7',
-    activity_code: 'W1090',
-    title: 'Erect Steel Structures',
-    task_type: 'TASK',
-    wbs_code: '2.2 Above Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-11-23',
-    due_date: '2026-12-02',
-    estimated_hours: 64,
-    predecessorSpec: 'W1060:FS:0',
-  },
-  {
-    rowId: 's8',
-    activity_code: 'W1100',
-    title: 'Install Equipment',
-    task_type: 'TASK',
-    wbs_code: '2.2 Above Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-12-03',
-    due_date: '2026-12-10',
-    estimated_hours: 48,
-    predecessorSpec: 'W1090:FS:0',
-  },
-  {
-    rowId: 's9',
-    activity_code: 'W1130',
-    title: 'Lay Control Cable',
-    task_type: 'TASK',
-    wbs_code: '2.2 Above Grade',
-    calendar_type: '5_DAY',
-    start_date: '2026-12-11',
-    due_date: '2026-12-24',
-    estimated_hours: 80,
-    predecessorSpec: 'W1080:FS:0, W1100:FS:0',
-  },
-  {
-    rowId: 's10',
-    activity_code: 'W1140',
-    title: 'Install Perimeter Fence',
-    task_type: 'TASK',
-    wbs_code: '3.0 Site Fence',
-    calendar_type: '6_DAY',
-    start_date: '2026-11-17',
-    due_date: '2026-11-23',
-    estimated_hours: 40,
-    predecessorSpec: 'W1050:FS:0',
-  },
-  {
-    rowId: 's11',
-    activity_code: 'W1180',
-    title: 'Substantial Completion',
-    task_type: 'FINISH_MILESTONE',
-    wbs_code: '4.0 Closeout',
-    calendar_type: '5_DAY',
-    start_date: '2026-12-24',
-    due_date: '2026-12-24',
-    estimated_hours: 0,
-    predecessorSpec: 'W1130:FS:0, W1140:FS:0',
-  },
+interface MandatoryTaskTemplate {
+  key: string;
+  parentKey?: string;
+  title: string;
+}
+
+const MANDATORY_TASKS: MandatoryTaskTemplate[] = [
+  { key: 'm1', title: 'Initial Project Requirements Discussion' },
+  { key: 'm2', title: 'Schematic Preparation' },
+  { key: 'm3', parentKey: 'm2', title: 'Schematic Verification' },
+  { key: 'm4', title: 'BOM Preparation' },
+  { key: 'm5', title: 'Mechanical Design' },
+  { key: 'm6', parentKey: 'm5', title: 'Design Review' },
+  { key: 'm7', title: 'Mechanical BOM' },
+  { key: 'm8', title: 'Material Procurement' },
+  { key: 'm9', title: 'Fabrication' },
+  { key: 'm10', title: 'Assembly' },
+  { key: 'm11', title: 'Wiring' },
+  { key: 'm12', parentKey: 'm11', title: 'Wiring Verification' },
+  { key: 'm13', title: 'Electronics' },
+  { key: 'm14', title: 'Electronics Testing' },
+  { key: 'm15', title: 'PLC / HMI / Software Development' },
+  { key: 'm16', title: 'Integrated Testing' },
+  { key: 'm17', title: 'Documentation' },
+  { key: 'm18', parentKey: 'm17', title: 'Test Reports' },
+  { key: 'm19', parentKey: 'm17', title: 'User Manual' },
+  { key: 'm20', parentKey: 'm17', title: 'Calibration Reports' },
+  { key: 'm21', parentKey: 'm17', title: 'Warranty Certificate' },
+  { key: 'm22', title: 'Packing' },
 ];
 
 export const TaskFormModal: React.FC<TaskFormModalProps> = ({
@@ -204,36 +101,14 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
   // Mode switcher: 'single' vs 'bulk' (P6 Activity Table List)
   const [entryMode, setEntryMode] = useState<'single' | 'bulk'>('single');
-  const [bulkRows, setBulkRows] = useState<BulkP6Row[]>([
-    {
-      rowId: 'r-1',
-      activity_code: 'A1010',
-      title: '',
-      task_type: 'TASK',
-      wbs_code: '1.0 Engineering',
-      calendar_type: '5_DAY',
-      start_date: new Date().toISOString().split('T')[0],
-      due_date: new Date().toISOString().split('T')[0],
-      estimated_hours: 8,
-      predecessorSpec: '',
-    },
-    {
-      rowId: 'r-2',
-      activity_code: 'A1020',
-      title: '',
-      task_type: 'TASK',
-      wbs_code: '1.0 Engineering',
-      calendar_type: '5_DAY',
-      start_date: new Date().toISOString().split('T')[0],
-      due_date: new Date().toISOString().split('T')[0],
-      estimated_hours: 16,
-      predecessorSpec: 'A1010:FS:0',
-    },
-  ]);
+  const [bulkRows, setBulkRows] = useState<BulkP6Row[]>([]);
   const [bulkCreating, setBulkCreating] = useState(false);
 
   useEffect(() => {
-    if (editingTask) {
+    if (!isOpen) {
+      setBulkRows([]);
+      setEntryMode('single');
+    } else if (editingTask) {
       setEntryMode('single');
     }
   }, [editingTask, isOpen]);
@@ -256,11 +131,19 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   const currentProjectName = 'Project Task';
 
   const handleAddBulkRow = () => {
-    const nextNum = (bulkRows.length + 1) * 10 + 1000;
+    let maxNum = 1000;
+    [...dynamicTasks, ...bulkRows].forEach((item) => {
+      const code = String(item.activity_code || '').trim().toUpperCase();
+      const match = /^A(\d+)$/.exec(code);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!Number.isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    const nextNum = maxNum + 10;
     const prevCode = bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].activity_code : '';
-    const prevWbs = bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].wbs_code : '1.0 Engineering';
-    const prevEnd =
-      bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].due_date : new Date().toISOString().split('T')[0];
+    const prevWbs = bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].wbs_code : '';
+    const prevEnd = bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].due_date : '';
 
     setBulkRows((prev) => [
       ...prev,
@@ -273,15 +156,46 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         calendar_type: '5_DAY',
         start_date: prevEnd,
         due_date: prevEnd,
-        estimated_hours: 8,
+        estimated_hours: '',
         predecessorSpec: prevCode ? `${prevCode}:FS:0` : '',
       },
     ]);
   };
 
-  const handleLoadSampleSchedule = () => {
+  const handleLoadMandatoryTasks = () => {
     setEntryMode('bulk');
-    setBulkRows(SAMPLE_P6_ROWS.map((r) => ({ ...r, rowId: `${r.rowId}-${Date.now()}` })));
+    const stamp = Date.now();
+    // Find highest existing A-prefixed numeric activity code so auto-generated IDs don't collide
+    let maxNum = 1000;
+    dynamicTasks.forEach((dt) => {
+      const code = String(dt.activity_code || '').trim().toUpperCase();
+      const match = /^A(\d+)$/.exec(code);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!Number.isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+
+    const keyToRowId = new Map<string, string>();
+    const rows: BulkP6Row[] = MANDATORY_TASKS.map((item, idx) => {
+      const rowId = `${item.key}-${stamp}`;
+      keyToRowId.set(item.key, rowId);
+      const nextCodeNum = maxNum + (idx + 1) * 10;
+      return {
+        rowId,
+        parentRowId: item.parentKey ? keyToRowId.get(item.parentKey) : undefined,
+        activity_code: `A${nextCodeNum}`,
+        title: item.title,
+        task_type: 'TASK',
+        wbs_code: '',
+        calendar_type: '5_DAY',
+        start_date: '',
+        due_date: '',
+        estimated_hours: '',
+        predecessorSpec: '',
+      };
+    });
+    setBulkRows(rows);
   };
 
   const handleBulkRowChange = (rowId: string, field: keyof BulkP6Row, value: any) => {
@@ -319,15 +233,18 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       });
 
       const createdRecords: { row: BulkP6Row; taskId: number }[] = [];
+      const rowIdToTaskId = new Map<string, number>();
 
-      // Pass 1: Create all tasks
+      // Pass 1: Create all tasks (parents appear before subtasks)
       for (const row of validRows) {
         const isMilestone = row.task_type === 'START_MILESTONE' || row.task_type === 'FINISH_MILESTONE';
+        const parentTaskId = row.parentRowId ? (rowIdToTaskId.get(row.parentRowId) ?? null) : null;
         const res = await createDynamicTask(Number(targetProjectId), {
           title: row.title.trim(),
           description: '',
           status: 'TODO',
           priority: 'MEDIUM',
+          parent_id: parentTaskId,
           start_date: row.start_date || null,
           due_date: isMilestone ? row.start_date || null : row.due_date || row.start_date || null,
           activity_code: row.activity_code.trim() || null,
@@ -337,11 +254,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
           estimated_hours: Number(row.estimated_hours) || 0,
           actual_hours: 0,
           progress_pct: 0,
-          dependencies: [],
-          blocking: [],
+          dependencies: null,
+          blocking: null,
         });
         const newId = Number(res?.id || res?.task?.id || res?.data?.id);
         if (newId) {
+          rowIdToTaskId.set(row.rowId, newId);
           if (row.activity_code.trim()) {
             codeToTaskId.set(row.activity_code.trim().toUpperCase(), newId);
           }
@@ -388,8 +306,8 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       const affectedIds = new Set<number>([...depsMap.keys(), ...blockingMap.keys()]);
       for (const tId of affectedIds) {
         const payload: any = {};
-        if (depsMap.has(tId)) payload.dependencies = depsMap.get(tId);
-        if (blockingMap.has(tId)) payload.blocking = blockingMap.get(tId);
+        if (depsMap.has(tId)) payload.dependencies = JSON.stringify(depsMap.get(tId));
+        if (blockingMap.has(tId)) payload.blocking = JSON.stringify(blockingMap.get(tId));
         await updateDynamicTask(Number(targetProjectId), tId, payload);
       }
 
@@ -459,15 +377,15 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               </div>
             )}
 
-            {!editingTask && (
+            {!editingTask && dynamicTasks.length === 0 && (
               <button
                 type="button"
-                onClick={handleLoadSampleSchedule}
+                onClick={handleLoadMandatoryTasks}
                 className="text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Load all 11 sample schedule activities"
+                title="Load all 22 mandatory project tasks and subtasks"
               >
                 <Sparkles className="h-3.5 w-3.5 text-amber-600" />
-                Load Sample Project (11 Tasks)
+                Load Mandatory Tasks
               </button>
             )}
           </div>
@@ -522,28 +440,54 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
+                  {bulkRows.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-400">
+                        No activities added yet. Click{' '}
+                        <span className="font-semibold text-indigo-600">+ Add Activity Row</span>
+                        {dynamicTasks.length === 0 ? ' or Load Mandatory Tasks' : ''} to begin.
+                      </td>
+                    </tr>
+                  )}
                   {bulkRows.map((row) => {
                     const isMilestone =
                       row.task_type === 'START_MILESTONE' || row.task_type === 'FINISH_MILESTONE';
                     return (
-                      <tr key={row.rowId} className="hover:bg-indigo-50/30 transition-colors">
+                      <tr
+                        key={row.rowId}
+                        className={`hover:bg-indigo-50/30 transition-colors ${
+                          row.parentRowId ? 'bg-slate-50/50' : ''
+                        }`}
+                      >
                         <td className="p-1.5">
                           <input
                             type="text"
                             value={row.activity_code}
                             onChange={(e) => handleBulkRowChange(row.rowId, 'activity_code', e.target.value)}
-                            placeholder="W1000"
+                            placeholder="A1010"
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 focus:outline-none"
                           />
                         </td>
                         <td className="p-1.5">
-                          <input
-                            type="text"
-                            value={row.title}
-                            onChange={(e) => handleBulkRowChange(row.rowId, 'title', e.target.value)}
-                            placeholder="e.g. Notice to Proceed"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none"
-                          />
+                          <div className={`flex items-center gap-1.5 ${row.parentRowId ? 'pl-5' : ''}`}>
+                            {row.parentRowId && (
+                              <span
+                                className="text-indigo-500 font-bold text-xs shrink-0 select-none"
+                                title="Subtask"
+                              >
+                                ↳
+                              </span>
+                            )}
+                            <input
+                              type="text"
+                              value={row.title}
+                              onChange={(e) => handleBulkRowChange(row.rowId, 'title', e.target.value)}
+                              placeholder={row.parentRowId ? 'Subtask name' : 'e.g. Initial Project Requirements Discussion'}
+                              className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none ${
+                                row.parentRowId ? 'font-medium' : 'font-semibold'
+                              }`}
+                            />
+                          </div>
                         </td>
                         <td className="p-1.5">
                           <select
@@ -600,8 +544,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                             type="number"
                             min={0}
                             value={row.estimated_hours}
+                            placeholder="0"
                             onChange={(e) =>
-                              handleBulkRowChange(row.rowId, 'estimated_hours', parseFloat(e.target.value) || 0)
+                              handleBulkRowChange(
+                                row.rowId,
+                                'estimated_hours',
+                                e.target.value === '' ? '' : parseFloat(e.target.value) || 0
+                              )
                             }
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:outline-none"
                           />
@@ -611,7 +560,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                             type="text"
                             value={row.predecessorSpec}
                             onChange={(e) => handleBulkRowChange(row.rowId, 'predecessorSpec', e.target.value)}
-                            placeholder="e.g. W1040:FS:0"
+                            placeholder="e.g. A1010:FS:0"
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:outline-none"
                           />
                         </td>
@@ -619,7 +568,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                           <button
                             type="button"
                             onClick={() =>
-                              setBulkRows((prev) => (prev.length > 1 ? prev.filter((r) => r.rowId !== row.rowId) : prev))
+                              setBulkRows((prev) =>
+                                prev
+                                  .filter((r) => r.rowId !== row.rowId)
+                                  .map((r) =>
+                                    r.parentRowId === row.rowId ? { ...r, parentRowId: undefined } : r
+                                  )
+                              )
                             }
                             className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
                             title="Remove row"
@@ -665,7 +620,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 placeholder={
                   taskForm.parent_id
                     ? 'Subtask Name'
-                    : 'Enter Task / Activity Name (e.g. Notice to Proceed, Mobilize Site)'
+                    : 'Enter Task / Activity Name'
                 }
                 className="w-full bg-transparent border-0 border-b border-slate-200 focus:border-indigo-500 text-xl font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 pb-1.5 transition-all"
                 required

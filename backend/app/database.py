@@ -60,6 +60,9 @@ class DBStore:
                 ("no_of_panels", "INT DEFAULT 1"),
                 ("folder_path", "VARCHAR(500) DEFAULT NULL"),
                 ("date_of_delivery", "DATE DEFAULT NULL"),
+                ("expected_completion_mode", "VARCHAR(20) DEFAULT 'AUTO'"),
+                ("expected_completion_date", "DATE DEFAULT NULL"),
+                ("client_location", "VARCHAR(255) DEFAULT NULL"),
             ]
             for col_name, col_type in cols:
                 cursor.execute(f"SHOW COLUMNS FROM projects LIKE '{col_name}'")
@@ -1353,8 +1356,8 @@ class DBStore:
             params.extend(inv_params)
 
         if search:
-            where_clauses.append("(p.name LIKE %s OR p.code LIKE %s OR p.client_name LIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            where_clauses.append("(p.name LIKE %s OR p.code LIKE %s OR p.client_name LIKE %s OR p.client_location LIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
 
         if status and status != 'All':
             where_clauses.append("p.status = %s")
@@ -1386,6 +1389,7 @@ class DBStore:
             SELECT p.*,
                 parent_proj.name as parent_name,
                 parent_proj.client_name as parent_client_name,
+                parent_proj.client_location as parent_client_location,
                 (SELECT COUNT(*) FROM projects sub_p WHERE sub_p.parent_id = p.id) as sub_projects_count,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id) as total_dynamic_tasks,
                 (SELECT COUNT(*) FROM dynamic_tasks dt WHERE dt.project_id = p.id AND dt.status = 'COMPLETED') as completed_dynamic_tasks,
@@ -1410,7 +1414,10 @@ class DBStore:
                 p['created_at'] = p['created_at'].isoformat()
             if p.get('parent_id') and p.get('parent_client_name'):
                 p['client_name'] = p.get('parent_client_name')
+            if p.get('parent_id') and p.get('parent_client_location'):
+                p['client_location'] = p.get('parent_client_location')
             p.pop('parent_client_name', None)
+            p.pop('parent_client_location', None)
             
             if p.get('start_date') and hasattr(p['start_date'], 'isoformat'):
                 p['start_date'] = p['start_date'].isoformat()
@@ -1456,7 +1463,7 @@ class DBStore:
 
         where_str = " WHERE " + " AND ".join(where_clauses)
         cursor.execute(f"""
-            SELECT p.*, parent_proj.name as parent_name, parent_proj.client_name as parent_client_name
+            SELECT p.*, parent_proj.name as parent_name, parent_proj.client_name as parent_client_name, parent_proj.client_location as parent_client_location
             FROM projects p
             LEFT JOIN projects parent_proj ON p.parent_id = parent_proj.id
             {where_str}
@@ -1467,11 +1474,15 @@ class DBStore:
         for p in projects:
             if p.get('parent_id') and p.get('parent_client_name'):
                 p['client_name'] = p.get('parent_client_name')
+            if p.get('parent_id') and p.get('parent_client_location'):
+                p['client_location'] = p.get('parent_client_location')
             p.pop('parent_client_name', None)
+            p.pop('parent_client_location', None)
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
             p['category'] = p.get('category') or 'STANDARD'
+            p['expected_completion_mode'] = p.get('expected_completion_mode') or 'AUTO'
         return projects
 
     @staticmethod
@@ -1497,6 +1508,7 @@ class DBStore:
                 "name": project.get("name"),
                 "po_number": project.get("po_number"),
                 "client_name": project.get("client_name"),
+                "client_location": project.get("client_location") or None,
                 "description": project.get("description"),
                 "status": project.get("status", "PLANNING"),
                 "start_date": project.get("start_date") or None,
@@ -1508,6 +1520,8 @@ class DBStore:
                 "no_of_panels": project.get("no_of_panels", 1),
                 "folder_path": project.get("folder_path"),
                 "date_of_delivery": project.get("date_of_delivery") or None,
+                "expected_completion_mode": project.get("expected_completion_mode") or "AUTO",
+                "expected_completion_date": project.get("expected_completion_date") or None,
                 "parent_id": project.get("parent_id") or None,
                 "is_parent": 1 if project.get("is_parent") else 0,
                 "is_template": 1 if project.get("is_template") else 0,
@@ -1537,10 +1551,10 @@ class DBStore:
         
         updates = []
         values = []
-        for key in ["code", "name", "po_number", "client_name", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "parent_id", "category", "milestone"]:
+        for key in ["code", "name", "po_number", "client_name", "client_location", "description", "status", "start_date", "end_date", "project_incharge", "no_of_panels", "folder_path", "date_of_delivery", "expected_completion_mode", "expected_completion_date", "parent_id", "category", "milestone"]:
             if key in data:
                 updates.append(f"{key} = %s")
-                if key in ["start_date", "end_date", "date_of_delivery", "parent_id"] and not data[key]:
+                if key in ["start_date", "end_date", "date_of_delivery", "expected_completion_date", "parent_id"] and not data[key]:
                     values.append(None)
                 else:
                     values.append(data[key])
@@ -1572,10 +1586,13 @@ class DBStore:
                 p['end_date'] = p['end_date'].isoformat()
             if p.get('date_of_delivery') and hasattr(p['date_of_delivery'], 'isoformat'):
                 p['date_of_delivery'] = p['date_of_delivery'].isoformat()
+            if p.get('expected_completion_date') and hasattr(p['expected_completion_date'], 'isoformat'):
+                p['expected_completion_date'] = p['expected_completion_date'].isoformat()
             for k in ['has_software', 'has_firmware', 'has_transformer', 'is_parent', 'is_template']:
                 if k in p:
                     p[k] = bool(p[k])
             p['category'] = p.get('category') or 'STANDARD'
+            p['expected_completion_mode'] = p.get('expected_completion_mode') or 'AUTO'
         return p
 
     @staticmethod

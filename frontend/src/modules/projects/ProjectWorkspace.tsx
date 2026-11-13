@@ -1,17 +1,21 @@
 import { DescriptionHistorySection } from './components/DescriptionHistorySection';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, LayoutDashboard, CheckSquare, LayoutGrid, List,
   Clock, Package, FileText, StickyNote, Activity,
   Briefcase, Layers, CornerDownRight, Folder, BarChart2,
-  TrendingUp, Plus, CheckCircle2, FolderPlus, ShieldAlert
+  TrendingUp, Plus, CheckCircle2, FolderPlus, ShieldAlert,
+  Calendar, Flag, Sparkles, Edit3, User, Building2, MapPin, Hash
 } from 'lucide-react';
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
   uploadTaskFile, createDynamicTask, updateDynamicTask, deleteDynamicTask, fetchProjects, relinkProjectFolder,
-  reorderDynamicTasks, fetchNextProjectCode
+  reorderDynamicTasks, fetchNextProjectCode, fetchProjectBaselines
 } from './api';
+import {
+  computeP6Schedule, computeDeadlineImpactAnalysis, formatP6Date, diffCalendarDays, toIsoDateStr
+} from './p6ScheduleEngine';
 import { ProjectFormModal } from './ProjectFormModal';
 import { TasksTab } from './workspace-tabs/TasksTab';
 import { AnalyticsTab } from './workspace-tabs/AnalyticsTab';
@@ -44,6 +48,12 @@ export const ProjectWorkspace: React.FC = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   
   const [subProjects, setSubProjects] = useState<any[]>([]);
+  const [baselines, setBaselines] = useState<any[]>([]);
+  const [isExpectedEditorOpen, setIsExpectedEditorOpen] = useState(false);
+  const [expectedDraftMode, setExpectedDraftMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
+  const [expectedDraftDate, setExpectedDraftDate] = useState('');
+  const [savingExpected, setSavingExpected] = useState(false);
+  const expectedEditorRef = useRef<HTMLDivElement>(null);
   
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
@@ -77,16 +87,18 @@ export const ProjectWorkspace: React.FC = () => {
   const loadData = async (projectId: number, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [projDetails, taskList, empList, allProjs] = await Promise.all([
+      const [projDetails, taskList, empList, allProjs, baselineList] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
         fetchEmployees(true).catch(() => []),
-        fetchProjects(1, 1000).catch(() => ({ data: [] }))
+        fetchProjects(1, 1000).catch(() => ({ data: [] })),
+        fetchProjectBaselines(projectId).catch(() => [])
       ]);
       setProject(projDetails.project);
       setStaticTasks(projDetails.tasks);
       setFiles(projDetails.files);
       setSubProjects(projDetails.sub_projects || []);
+      setBaselines(Array.isArray(baselineList) ? baselineList : []);
       setDynamicTasks(taskList);
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
@@ -114,6 +126,106 @@ export const ProjectWorkspace: React.FC = () => {
       loadData(parseInt(id));
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!isExpectedEditorOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (expectedEditorRef.current && !expectedEditorRef.current.contains(e.target as Node)) {
+        setIsExpectedEditorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isExpectedEditorOpen]);
+
+  const activeBaseline = useMemo(
+    () => baselines.find((b) => b.is_active) || baselines[0] || null,
+    [baselines]
+  );
+
+  const scheduleSummary = useMemo(() => {
+    const enriched = computeP6Schedule(dynamicTasks, activeBaseline?.snapshot || null);
+    const impact = computeDeadlineImpactAnalysis(enriched, null);
+
+    let baselineDeadline: string | null = null;
+    if (activeBaseline?.snapshot && Array.isArray(activeBaseline.snapshot) && activeBaseline.snapshot.length > 0) {
+      const snapDates = activeBaseline.snapshot
+        .map((t: any) => toIsoDateStr(t.due_date))
+        .filter(Boolean);
+      if (snapDates.length > 0) {
+        baselineDeadline = snapDates.reduce((max: string, d: string) => (d > max ? d : max), snapDates[0]);
+      }
+    }
+    if (!baselineDeadline) {
+      baselineDeadline = impact.baselineDeadline;
+    }
+
+    const autoExpectedDate: string | null =
+      dynamicTasks.length > 0
+        ? (impact.cpmForecastFinish > impact.scheduledFinish ? impact.cpmForecastFinish : impact.scheduledFinish)
+        : null;
+
+    const mode: 'AUTO' | 'MANUAL' =
+      (project?.expected_completion_mode || 'AUTO').toUpperCase() === 'MANUAL' ? 'MANUAL' : 'AUTO';
+    const manualExpectedDate: string | null = project?.expected_completion_date
+      ? toIsoDateStr(project.expected_completion_date)
+      : null;
+
+    const expectedCompletionDate = mode === 'MANUAL' ? manualExpectedDate : autoExpectedDate;
+    const varianceDays =
+      baselineDeadline && expectedCompletionDate
+        ? diffCalendarDays(baselineDeadline, expectedCompletionDate)
+        : null;
+
+    return {
+      baselineDeadline,
+      autoExpectedDate,
+      mode,
+      manualExpectedDate,
+      expectedCompletionDate,
+      varianceDays,
+      baselineName: activeBaseline?.name || null,
+    };
+  }, [dynamicTasks, activeBaseline, project?.expected_completion_mode, project?.expected_completion_date]);
+
+  const handleOpenExpectedEditor = () => {
+    setExpectedDraftMode(scheduleSummary.mode);
+    setExpectedDraftDate(
+      scheduleSummary.manualExpectedDate ||
+      scheduleSummary.autoExpectedDate ||
+      scheduleSummary.baselineDeadline ||
+      new Date().toISOString().split('T')[0]
+    );
+    setIsExpectedEditorOpen((prev) => !prev);
+  };
+
+  const handleSaveExpectedCompletion = async (modeToSave: 'AUTO' | 'MANUAL', dateToSave?: string) => {
+    if (!project?.id) return;
+    if (modeToSave === 'MANUAL' && !dateToSave) {
+      showError('Please select a valid expected completion date', 'Validation');
+      return;
+    }
+    try {
+      setSavingExpected(true);
+      const payload = {
+        expected_completion_mode: modeToSave,
+        expected_completion_date: modeToSave === 'MANUAL' ? dateToSave : null,
+      };
+      const updated = await updateProject(project.id, payload);
+      setProject((prev: any) => ({ ...prev, ...updated, ...payload }));
+      setIsExpectedEditorOpen(false);
+      success(
+        modeToSave === 'AUTO'
+          ? 'Expected completion set to auto-calculate from schedule'
+          : `Expected completion set to ${formatP6Date(dateToSave)}`,
+        'Updated'
+      );
+    } catch (err: any) {
+      showError(err.message || 'Failed to update expected completion date', 'Error');
+    } finally {
+      setSavingExpected(false);
+    }
+  };
 
   // Real-time SSE Live Sync + Tab Focus Revalidation
   useEffect(() => {
@@ -592,7 +704,7 @@ export const ProjectWorkspace: React.FC = () => {
     <div className="flex flex-col bg-slate-50 -m-6 flex-1 min-h-0">
       {/* Workspace Header */}
       <div className="bg-white border-b border-slate-200 px-4 lg:px-6 py-2 sticky -top-6 z-20 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-3">
             <Link to="/projects" className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800">
               <ChevronLeft className="h-4 w-4" />
@@ -627,7 +739,10 @@ export const ProjectWorkspace: React.FC = () => {
                   )}
                   <span className="font-mono text-slate-600">{project.code}</span>
                   <span>•</span>
-                  <span>{project.client_name || 'Internal'}</span>
+                  <span>
+                    {project.client_name || 'Internal'}
+                    {project.client_location ? ` (${project.client_location})` : ''}
+                  </span>
                   <span>•</span>
                   <span className={`px-1.5 py-px rounded font-bold ${
                     project.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
@@ -646,7 +761,167 @@ export const ProjectWorkspace: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Project Deadline (Baseline) & Expected Completion */}
+            {!project.is_parent && (
+              <div className="flex items-center gap-2 mr-1">
+                {/* Baseline Deadline Pill */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('timeline')}
+                  title={
+                    scheduleSummary.baselineName
+                      ? `Baseline Deadline from "${scheduleSummary.baselineName}" (Click to view Timeline & Baselines)`
+                      : 'No active baseline set. Click to open Timeline & Baselines'
+                  }
+                  className="flex items-center gap-2 px-2.5 py-1 rounded-lg border border-amber-200/80 bg-amber-50/70 hover:bg-amber-100/70 transition-colors text-left"
+                >
+                  <Flag className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <div className="leading-tight">
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700/80">
+                      Deadline <span className="font-medium normal-case">(Baseline)</span>
+                    </div>
+                    <div className="text-xs font-extrabold text-slate-800">
+                      {scheduleSummary.baselineDeadline ? formatP6Date(scheduleSummary.baselineDeadline) : 'No Baseline'}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Expected Completion Pill + Popover */}
+                <div className="relative" ref={expectedEditorRef}>
+                  <button
+                    type="button"
+                    onClick={handleOpenExpectedEditor}
+                    title="Click to switch between Auto-calculated and Manual expected completion date"
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border transition-colors text-left ${
+                      scheduleSummary.varianceDays !== null && scheduleSummary.varianceDays > 0
+                        ? 'border-rose-200 bg-rose-50/70 hover:bg-rose-100/70'
+                        : scheduleSummary.varianceDays !== null && scheduleSummary.varianceDays <= 0
+                        ? 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70'
+                        : 'border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/60'
+                    }`}
+                  >
+                    <Calendar className={`h-3.5 w-3.5 shrink-0 ${
+                      scheduleSummary.varianceDays !== null && scheduleSummary.varianceDays > 0
+                        ? 'text-rose-600'
+                        : scheduleSummary.varianceDays !== null && scheduleSummary.varianceDays <= 0
+                        ? 'text-emerald-600'
+                        : 'text-indigo-600'
+                    }`} />
+                    <div className="leading-tight">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                          Expected Completion
+                        </span>
+                        <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded text-[8px] font-extrabold uppercase ${
+                          scheduleSummary.mode === 'MANUAL'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                        }`}>
+                          {scheduleSummary.mode === 'MANUAL' ? (
+                            <><Edit3 className="h-2 w-2" /> Manual</>
+                          ) : (
+                            <><Sparkles className="h-2 w-2" /> Auto</>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-extrabold text-slate-800">
+                          {scheduleSummary.expectedCompletionDate ? formatP6Date(scheduleSummary.expectedCompletionDate) : 'TBD'}
+                        </span>
+                        {scheduleSummary.varianceDays !== null && (
+                          <span className={`text-[10px] font-bold px-1 rounded ${
+                            scheduleSummary.varianceDays > 0
+                              ? 'bg-rose-100 text-rose-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {scheduleSummary.varianceDays > 0
+                              ? `+${scheduleSummary.varianceDays}d`
+                              : scheduleSummary.varianceDays < 0
+                              ? `${scheduleSummary.varianceDays}d`
+                              : 'On Track'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+
+                  {isExpectedEditorOpen && (
+                    <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-3.5 z-50">
+                      <div className="text-xs font-bold text-slate-800 mb-2">Expected Completion Date</div>
+                      <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setExpectedDraftMode('AUTO')}
+                          className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-bold transition-all ${
+                            expectedDraftMode === 'AUTO'
+                              ? 'bg-white text-indigo-700 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-800'
+                          }`}
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          Auto (CPM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpectedDraftMode('MANUAL')}
+                          className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-bold transition-all ${
+                            expectedDraftMode === 'MANUAL'
+                              ? 'bg-white text-amber-700 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-800'
+                          }`}
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          Manual
+                        </button>
+                      </div>
+
+                      {expectedDraftMode === 'AUTO' ? (
+                        <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-lg p-2.5 mb-3">
+                          <div className="text-[10px] font-bold uppercase text-indigo-700/80 mb-0.5">
+                            Calculated from Task Schedule
+                          </div>
+                          <div className="text-sm font-extrabold text-indigo-900">
+                            {scheduleSummary.autoExpectedDate ? formatP6Date(scheduleSummary.autoExpectedDate) : 'TBD (No scheduled tasks)'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mb-3">
+                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                            Manual Completion Date
+                          </label>
+                          <input
+                            type="date"
+                            value={expectedDraftDate}
+                            onChange={(e) => setExpectedDraftDate(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsExpectedEditorOpen(false)}
+                          className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingExpected}
+                          onClick={() => handleSaveExpectedCompletion(expectedDraftMode, expectedDraftDate)}
+                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-md transition-colors"
+                        >
+                          {savingExpected ? 'Saving...' : 'Apply'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {!project.is_parent ? (
               <button 
                 onClick={() => handleOpenEditTask()}
@@ -807,59 +1082,222 @@ export const ProjectWorkspace: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
-            <div className="md:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
-                  <LayoutDashboard className="h-5 w-5 mr-2 text-slate-400" />
-                  Project Specifications
-                </h3>
-                <DescriptionHistorySection
-                  entityType="project"
-                  projectId={project.id}
-                  entityId={project.id}
-                  isReadOnly
-                />
-                {project.description ? (
-                  <div className="prose prose-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6">
-                    {project.description.split('\n').map((line: string, i: number) => (
-                      <p key={i} className="mb-2 last:mb-0">{line}</p>
-                    ))}
+        {activeTab === 'overview' && (() => {
+          const totalTasksCount = dynamicTasks.length;
+          const completedTasksCount = dynamicTasks.filter((t) => t.status === 'COMPLETED').length;
+          const taskProgressPct = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+
+          return (
+            <div className="w-full max-w-7xl mx-auto space-y-5 pt-2">
+              {/* Top Schedule & Progress Summary Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Date</span>
+                    <div className="text-lg font-extrabold text-slate-800 mt-1">
+                      {project.start_date ? formatP6Date(project.start_date) : 'TBD'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-medium">Project Kickoff</div>
                   </div>
-                ) : null}
+                  <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-amber-200/80 p-4 shadow-xs flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Deadline (Baseline)</span>
+                    <div className="text-lg font-extrabold text-slate-800 mt-1">
+                      {scheduleSummary.baselineDeadline ? formatP6Date(scheduleSummary.baselineDeadline) : 'No Baseline'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-medium truncate max-w-[160px]">
+                      {scheduleSummary.baselineName || 'No active baseline'}
+                    </div>
+                  </div>
+                  <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/70 flex items-center justify-center shrink-0">
+                    <Flag className="h-4 w-4" />
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-indigo-200/80 p-4 shadow-xs flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Expected Completion</span>
+                      <span className={`px-1.5 py-px rounded text-[9px] font-extrabold uppercase ${
+                        scheduleSummary.mode === 'MANUAL'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-indigo-100 text-indigo-700'
+                      }`}>
+                        {scheduleSummary.mode === 'MANUAL' ? 'Manual' : 'Auto'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-lg font-extrabold text-slate-800">
+                        {scheduleSummary.expectedCompletionDate ? formatP6Date(scheduleSummary.expectedCompletionDate) : 'TBD'}
+                      </span>
+                      {scheduleSummary.varianceDays !== null && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          scheduleSummary.varianceDays > 0
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {scheduleSummary.varianceDays > 0
+                            ? `+${scheduleSummary.varianceDays}d`
+                            : scheduleSummary.varianceDays < 0
+                            ? `${scheduleSummary.varianceDays}d`
+                            : 'On Track'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-medium">
+                      {scheduleSummary.mode === 'MANUAL' ? 'Manually overridden' : 'Auto-calculated (CPM)'}
+                    </div>
+                  </div>
+                  <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200/70 flex items-center justify-center shrink-0">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Task Progress</span>
+                      <div className="text-lg font-extrabold text-slate-800 mt-1">{taskProgressPct}%</div>
+                    </div>
+                    <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200/70 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${taskProgressPct}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1 font-medium">
+                    {completedTasksCount} of {totalTasksCount} tasks completed
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                {/* Left: Specifications & Description */}
+                <div className="lg:col-span-2 bg-white rounded-2xl shadow-xs border border-slate-200/90 p-5 sm:p-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-indigo-500" />
+                      Project Specifications
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditModalOpen(true)}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2.5 py-1 rounded-md transition-colors"
+                    >
+                      Edit Details
+                    </button>
+                  </div>
+
+                  {project.description ? (
+                    <div className="prose prose-sm max-w-none text-slate-600 bg-slate-50/80 p-4 rounded-xl border border-slate-100 leading-relaxed">
+                      {project.description.split('\n').map((line: string, i: number) => (
+                        <p key={i} className="mb-2 last:mb-0">{line}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50/70 border border-dashed border-slate-200 rounded-xl p-6 text-center">
+                      <p className="text-xs font-medium text-slate-500">No project description or specifications added yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditModalOpen(true)}
+                        className="mt-2.5 inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-700 text-xs font-bold rounded-lg shadow-2xs transition-colors"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                        Add Specifications
+                      </button>
+                    </div>
+                  )}
+
+                  {(project.has_software || project.has_firmware || project.has_transformer) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">Scope:</span>
+                      {project.has_software && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/70">Software</span>
+                      )}
+                      {project.has_firmware && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200/70">Firmware</span>
+                      )}
+                      {project.has_transformer && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/70">Transformer Design</span>
+                      )}
+                    </div>
+                  )}
+
+                  <DescriptionHistorySection
+                    entityType="project"
+                    projectId={project.id}
+                    entityId={project.id}
+                    isReadOnly
+                  />
+                </div>
+
+                {/* Right: Clean Key Details Card */}
+                <div className="bg-white rounded-2xl shadow-xs border border-slate-200/90 p-5 sm:p-6">
+                  <h3 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-3 flex items-center gap-2">
+                    <LayoutDashboard className="h-4 w-4 text-slate-400" />
+                    Key Details
+                  </h3>
+                  <dl className="divide-y divide-slate-100 text-sm">
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                        Customer
+                      </dt>
+                      <dd className="font-bold text-slate-800 text-right">{project.client_name || 'Internal'}</dd>
+                    </div>
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                        Location
+                      </dt>
+                      <dd className="font-bold text-slate-800 text-right">{project.client_location || '—'}</dd>
+                    </div>
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <User className="h-3.5 w-3.5 text-slate-400" />
+                        Project Manager
+                      </dt>
+                      <dd className="font-bold text-slate-800 text-right">{project.project_incharge || 'Unassigned'}</dd>
+                    </div>
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <Hash className="h-3.5 w-3.5 text-slate-400" />
+                        PO Number
+                      </dt>
+                      <dd className="font-bold text-slate-800 font-mono text-xs text-right">{project.po_number || '—'}</dd>
+                    </div>
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        Target Delivery
+                      </dt>
+                      <dd className="font-bold text-slate-800 text-right">
+                        {project.date_of_delivery ? formatP6Date(project.date_of_delivery) : 'TBD'}
+                      </dd>
+                    </div>
+                    <div className="py-2.5 flex items-center justify-between gap-3">
+                      <dt className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <Layers className="h-3.5 w-3.5 text-slate-400" />
+                        No. of Panels
+                      </dt>
+                      <dd className="font-bold text-slate-800 text-right">{project.no_of_panels ?? 1}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </div>
-            
-            <div className="space-y-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-800 mb-4">Key Details</h3>
-                <dl className="space-y-4 text-sm">
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Project Manager</dt>
-                    <dd className="font-bold text-slate-800">{project.project_incharge || 'Unassigned'}</dd>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">PO Number</dt>
-                    <dd className="font-bold text-slate-800">{project.po_number || 'N/A'}</dd>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Start Date</dt>
-                    <dd className="font-bold text-slate-800">{project.start_date ? new Date(project.start_date).toLocaleDateString() : 'TBD'}</dd>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">Target Delivery</dt>
-                    <dd className="font-bold text-slate-800">{project.date_of_delivery ? new Date(project.date_of_delivery).toLocaleDateString() : 'TBD'}</dd>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <dt className="text-slate-500 text-xs font-bold uppercase mb-1">No. of Panels</dt>
-                    <dd className="font-bold text-slate-800">{project.no_of_panels}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-          </div>
-        )}
+          );
+        })()}
         
         {activeTab === 'analytics' && (
           <AnalyticsTab dynamicTasks={dynamicTasks} project={project} handleOpenEditTask={handleOpenEditTask} />

@@ -108,6 +108,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
   const [showLeftTable, setShowLeftTable] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isColumnPickerOpen, setIsColumnPickerOpen] = useState<boolean>(false);
+  const [isViewOptionsOpen, setIsViewOptionsOpen] = useState<boolean>(false);
   const [visibleCols, setVisibleCols] = useState<Record<TimelineColumnKey, boolean>>({
     orig_dur: true,
     rem_dur: false,
@@ -710,37 +711,39 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
       }`}
     >
       {/* 1. TOP SCHEDULE CONTROL BAR */}
-      <div className="px-3.5 py-2 bg-slate-900 text-slate-100 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        {/* Left: Layout, Fields Selector, Table Toggle & WBS Grouping */}
+      <div className="px-3 py-1.5 bg-white text-slate-700 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        {/* Left: Table, Layout Preset, Fields & Grouping */}
         <div className="flex flex-wrap items-center gap-1.5">
           {/* Show / Hide Left Activity Table to maximize chart space */}
           <button
             type="button"
             onClick={() => setShowLeftTable(!showLeftTable)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
               showLeftTable
-                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-                : 'bg-indigo-600 border-indigo-400 text-white'
+                ? 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                : 'bg-indigo-50 border-indigo-200 text-indigo-700'
             }`}
             title={showLeftTable ? 'Collapse table to allocate 100% width to Gantt chart' : 'Show Activity Table'}
           >
-            <Layers className="h-3.5 w-3.5" />
+            <Layers className="h-3.5 w-3.5 text-slate-500" />
             {showLeftTable ? 'Table' : 'Show Table'}
           </button>
 
-          <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
-            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Preset:</span>
+          <div
+            className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 hover:border-slate-300 transition-colors"
+            title="Table Layout Preset"
+          >
+            <Sliders className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
             <select
               value={layoutPreset}
               onChange={(e) => handleLayoutPresetChange(e.target.value as LayoutPreset)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
             >
-              <option value="classic" className="bg-slate-900 text-white">Classic Schedule</option>
-              <option value="status" className="bg-slate-900 text-white">Schedule & Effort</option>
-              <option value="baseline" className="bg-slate-900 text-white">Baseline & Variance</option>
-              <option value="compact" className="bg-slate-900 text-white">Compact Chart Focus</option>
-              <option value="custom" className="bg-slate-900 text-white">Custom Fields</option>
+              <option value="classic" className="bg-white text-slate-800">Classic Schedule</option>
+              <option value="status" className="bg-white text-slate-800">Schedule &amp; Effort</option>
+              <option value="baseline" className="bg-white text-slate-800">Baseline &amp; Variance</option>
+              <option value="compact" className="bg-white text-slate-800">Compact Chart Focus</option>
+              <option value="custom" className="bg-white text-slate-800">Custom Fields</option>
             </select>
           </div>
 
@@ -749,22 +752,21 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
             <button
               type="button"
               onClick={() => setIsColumnPickerOpen(!isColumnPickerOpen)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
                 isColumnPickerOpen
-                  ? 'bg-indigo-600 border-indigo-400 text-white'
-                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
               }`}
               title="Add or remove Schedule & Effort columns in the table"
             >
-              <Sliders className="h-3 w-3 text-indigo-400" />
               Fields ({activeColDefs.length})
-              <ChevronDown className="h-3 w-3 opacity-70" />
+              <ChevronDown className="h-3 w-3 opacity-60" />
             </button>
 
             {isColumnPickerOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setIsColumnPickerOpen(false)} />
-                <div className="absolute left-0 mt-1.5 w-64 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 p-3 z-40">
+                <div className="absolute left-0 mt-1.5 w-64 bg-white text-slate-800 rounded-xl shadow-xl border border-slate-200 p-3 z-40">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
                     <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
                       Table Fields (Add / Hide)
@@ -798,88 +800,152 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Group:</span>
+          <div
+            className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 hover:border-slate-300 transition-colors"
+            title="Group rows by"
+          >
             <select
               value={groupBy}
               onChange={(e) => setGroupBy(e.target.value as any)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+              className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
             >
-              <option value="wbs" className="bg-slate-900 text-white">WBS Hierarchy</option>
-              <option value="status" className="bg-slate-900 text-white">Status Phase</option>
-              <option value="priority" className="bg-slate-900 text-white">Priority Level</option>
-              <option value="none" className="bg-slate-900 text-white">Flat Activity List</option>
+              <option value="wbs" className="bg-white text-slate-800">WBS Hierarchy</option>
+              <option value="status" className="bg-white text-slate-800">Status Phase</option>
+              <option value="priority" className="bg-white text-slate-800">Priority Level</option>
+              <option value="none" className="bg-white text-slate-800">Flat Activity List</option>
             </select>
           </div>
+        </div>
 
+        {/* Center: Data Date, Overlays & Baselines */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* Data Date Picker */}
-          <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1" title="Schedule Status Date (Data Date Line)">
-            <Calendar className="h-3.5 w-3.5 text-sky-400" />
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Data Date:</span>
+          <div
+            className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 hover:border-slate-300 transition-colors"
+            title="Schedule Status Date (Data Date Line)"
+          >
+            <Calendar className="h-3.5 w-3.5 text-sky-600 shrink-0" />
             <input
               type="date"
               value={dataDate}
               onChange={(e) => e.target.value && setDataDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-sky-300 focus:outline-none cursor-pointer"
+              className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
             />
           </div>
-        </div>
 
-        {/* Right: Schedule Action Toggles & Scale Switcher */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Critical Path Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowCriticalPath(!showCriticalPath)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-              showCriticalPath
-                ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Highlight Critical Path (Total Float <= 0) in Red"
-          >
-            <span className={`w-2 h-2 rounded-full ${showCriticalPath ? 'bg-rose-500 animate-pulse' : 'bg-slate-500'}`} />
-            Critical ({criticalCount})
-          </button>
+          {/* Overlays Popover (Critical Path, Baseline Bars, Progress Line, Histogram) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsViewOptionsOpen(!isViewOptionsOpen)}
+              className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
+                isViewOptionsOpen
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+              }`}
+              title="Toggle Gantt chart overlays (Critical Path, Baselines, Progress Line, Histogram)"
+            >
+              <Eye className="h-3.5 w-3.5 text-indigo-600" />
+              Overlays ({[showCriticalPath, showBaselineBars, showProgressLine, showHistogram].filter(Boolean).length})
+              <ChevronDown className="h-3 w-3 opacity-60" />
+            </button>
 
-          {/* Baseline Bars Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowBaselineBars(!showBaselineBars)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-              showBaselineBars
-                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Show/Hide Yellow Project Baseline Bars underneath live bars"
-          >
-            <span className="w-2.5 h-1.5 rounded-xs bg-amber-400 inline-block" />
-            {activeBaseline ? 'BL Active' : 'Baseline'}
-          </button>
+            {isViewOptionsOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setIsViewOptionsOpen(false)} />
+                <div className="absolute left-0 mt-1.5 w-64 bg-white text-slate-800 rounded-xl shadow-xl border border-slate-200 p-2.5 z-40 space-y-1">
+                  <div className="px-2 pb-1.5 mb-1 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Chart Overlays
+                  </div>
 
-          {/* Progress Line Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowProgressLine(!showProgressLine)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
-              showProgressLine
-                ? 'bg-red-500/20 border-red-500/50 text-red-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Toggle Jagged Progress Spotlight Line relative to Data Date"
-          >
-            <Zap className="h-3 w-3" />
-            Progress Line
-          </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCriticalPath(!showCriticalPath)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      showCriticalPath ? 'bg-rose-50 text-rose-700' : 'hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${showCriticalPath ? 'bg-rose-500' : 'bg-slate-300'}`} />
+                      Critical Path ({criticalCount})
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={showCriticalPath}
+                      readOnly
+                      className="rounded border-slate-300 text-rose-600 pointer-events-none"
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowBaselineBars(!showBaselineBars)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      showBaselineBars ? 'bg-amber-50 text-amber-800' : 'hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-1.5 rounded-xs bg-amber-400 inline-block" />
+                      {activeBaseline ? 'Baseline Bars (Active)' : 'Baseline Bars'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={showBaselineBars}
+                      readOnly
+                      className="rounded border-slate-300 text-amber-600 pointer-events-none"
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowProgressLine(!showProgressLine)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      showProgressLine ? 'bg-red-50 text-red-700' : 'hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Zap className="h-3.5 w-3.5 text-red-500" />
+                      Progress Line
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={showProgressLine}
+                      readOnly
+                      className="rounded border-slate-300 text-red-600 pointer-events-none"
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowHistogram(!showHistogram)}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      showHistogram ? 'bg-teal-50 text-teal-700' : 'hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <BarChart3 className="h-3.5 w-3.5 text-teal-600" />
+                      Resource Histogram
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={showHistogram}
+                      readOnly
+                      className="rounded border-slate-300 text-teal-600 pointer-events-none"
+                    />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Baselines Manager Button */}
           <button
             type="button"
             onClick={() => setIsBaselineModalOpen(true)}
-            className="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
             title="Capture or switch Project Baselines"
           >
-            <Bookmark className="h-3 w-3 text-amber-400" />
+            <Bookmark className="h-3 w-3 text-amber-500" />
             Baselines ({baselines.length})
           </button>
 
@@ -887,13 +953,16 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
           <button
             type="button"
             onClick={() => setIsClaimDiggerOpen(true)}
-            className="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
             title="Compare Current Schedule vs Baseline"
           >
-            <FileDiff className="h-3 w-3 text-indigo-400" />
+            <FileDiff className="h-3 w-3 text-indigo-600" />
             Compare
           </button>
+        </div>
 
+        {/* Right: Deadline Status, Scheduler, Scale & Fullscreen */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* Project Deadline, Domino Ripple & Shift History Button */}
           <button
             type="button"
@@ -901,65 +970,39 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
               loadScheduleHistory();
               setIsDeadlineModalOpen(true);
             }}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border transition-colors cursor-pointer ${
+            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
               deadlineImpact.deadlineSlipDays > 0
-                ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/60 text-rose-200 shadow-xs'
-                : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/50 text-emerald-200'
+                ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
             }`}
-            title="Inspect Project Deadline Shift, Domino Attribution Chain (Which Task Moved Which), and Shift History"
+            title={`Deadline: ${formatP6Date(liveFinishDateStr)} — Click to inspect Project Deadline Shift & Domino Chain`}
           >
-            <ShieldAlert className={`h-3.5 w-3.5 ${deadlineImpact.deadlineSlipDays > 0 ? 'text-rose-400' : 'text-emerald-400'}`} />
-            <span>
-              Deadline: {formatP6Date(liveFinishDateStr)}
-            </span>
-            {deadlineImpact.deadlineSlipDays > 0 ? (
-              <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[9px] font-black">
-                +{deadlineImpact.deadlineSlipDays}d Slip
-              </span>
-            ) : (
-              <span className="px-1.5 py-0.2 bg-emerald-500 text-slate-950 rounded-full text-[9px] font-black">
-                On Target
-              </span>
-            )}
+            <ShieldAlert className={`h-3.5 w-3.5 ${deadlineImpact.deadlineSlipDays > 0 ? 'text-rose-500' : 'text-emerald-600'}`} />
+            {deadlineImpact.deadlineSlipDays > 0 ? `+${deadlineImpact.deadlineSlipDays}d Slip` : 'On Target'}
           </button>
 
           {/* Auto-Schedule (F9) Button */}
           <button
             type="button"
             onClick={() => setIsCascadeModalOpen(true)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
               cascadePreview.length > 0
-                ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-white shadow-sm'
-                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-600 text-white shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
             }`}
             title="Run CPM Scheduler (F9) to cascade dates across FS/SS/FF/SF links"
           >
             <Play className="h-3 w-3 fill-current" />
             Schedule (F9)
             {cascadePreview.length > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 bg-amber-400 text-slate-950 rounded-full text-[9px] font-black">
+              <span className="ml-0.5 px-1.5 py-0.2 bg-amber-300 text-slate-900 rounded-full text-[9px] font-black">
                 {cascadePreview.length}
               </span>
             )}
           </button>
 
-          {/* Resource Histogram Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowHistogram(!showHistogram)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
-              showHistogram
-                ? 'bg-teal-500/20 border-teal-500/50 text-teal-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Toggle Stacked Resource Usage Histogram"
-          >
-            <BarChart3 className="h-3 w-3" />
-            Histogram
-          </button>
-
           {/* Time Scale & Fit-to-Screen Switcher (7d / 10d / Fit) */}
-          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5" title="Date Increment & Fit-to-Screen Scale">
+          <div className="flex items-center bg-slate-100 border border-slate-200 rounded-lg p-0.5" title="Date Increment & Fit-to-Screen Scale">
             {(
               [
                 { id: 'fit_7d', label: 'Fit (7d)', tip: 'Fit entire project Start-to-End on single screen with 7-day date steps' },
@@ -974,8 +1017,10 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                 type="button"
                 onClick={() => setScaleMode(s.id)}
                 title={s.tip}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold transition-colors cursor-pointer ${
-                  scaleMode === s.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${
+                  scaleMode === s.id
+                    ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 {s.label}
@@ -987,7 +1032,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
           <button
             type="button"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white cursor-pointer"
+            className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-800 cursor-pointer transition-colors"
             title={isFullscreen ? 'Exit Fullscreen' : 'Maximize Schedule to Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
