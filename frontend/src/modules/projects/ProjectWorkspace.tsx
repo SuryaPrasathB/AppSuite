@@ -63,6 +63,9 @@ export const ProjectWorkspace: React.FC = () => {
     title: '', description: '', status: 'TODO', priority: 'MEDIUM',
     assignee_id: '', assignee_ids: [] as number[], start_date: '', due_date: '', completed_at: '' as string | null, dependencies: [] as any[], blocking: [] as any[],
     estimated_hours: 0, actual_hours: 0,
+    activity_code: '', task_type: 'TASK', duration_type: 'FIXED_DURATION_UNITS',
+    pct_complete_type: 'DURATION', progress_pct: 0, steps_json: '' as string | null,
+    calendar_type: '5_DAY', wbs_code: '', constraint_type: '', constraint_date: '',
   });
 
   const [isSubProjectModalOpen, setIsSubProjectModalOpen] = useState(false);
@@ -345,12 +348,12 @@ export const ProjectWorkspace: React.FC = () => {
           const parsed = JSON.parse(task.dependencies);
           if (Array.isArray(parsed)) {
             depsArray = parsed.map((item: any) => {
-              if (typeof item === 'number') return { id: item, type: 'FS' };
-              return { id: item.id, type: item.type || 'FS' };
+              if (typeof item === 'number') return { id: item, type: 'FS', lag: 0 };
+              return { id: item.id, type: item.type || 'FS', lag: Number(item.lag ?? item.lag_days ?? 0) || 0 };
             });
           }
         } catch {
-          depsArray = task.dependencies.split(',').map((id: string) => ({ id: parseInt(id, 10), type: 'FS' })).filter((d: any) => d && !isNaN(d.id));
+          depsArray = task.dependencies.split(',').map((id: string) => ({ id: parseInt(id, 10), type: 'FS', lag: 0 })).filter((d: any) => d && !isNaN(d.id));
         }
       }
       let blockingArray: any[] = [];
@@ -383,6 +386,16 @@ export const ProjectWorkspace: React.FC = () => {
         assignee_ids: parsedAssigneeIds,
         start_date: task.start_date || '', due_date: task.due_date || '', completed_at: task.completed_at || '', dependencies: depsArray, blocking: blockingArray,
         estimated_hours: task.estimated_hours || 0, actual_hours: task.actual_hours || 0,
+        activity_code: task.activity_code || '',
+        task_type: task.task_type || 'TASK',
+        duration_type: task.duration_type || 'FIXED_DURATION_UNITS',
+        pct_complete_type: task.pct_complete_type || 'DURATION',
+        progress_pct: task.progress_pct ?? (task.status === 'COMPLETED' ? 100 : task.status === 'IN_PROGRESS' ? 50 : 0),
+        steps_json: task.steps_json || null,
+        calendar_type: task.calendar_type || '5_DAY',
+        wbs_code: task.wbs_code || '',
+        constraint_type: task.constraint_type || '',
+        constraint_date: task.constraint_date || '',
       });
     } else {
       setEditingTask(null);
@@ -402,6 +415,16 @@ export const ProjectWorkspace: React.FC = () => {
         blocking: [],
         estimated_hours: 0,
         actual_hours: 0,
+        activity_code: '',
+        task_type: 'TASK',
+        duration_type: 'FIXED_DURATION_UNITS',
+        pct_complete_type: 'DURATION',
+        progress_pct: 0,
+        steps_json: null,
+        calendar_type: '5_DAY',
+        wbs_code: parentTask?.wbs_code || '',
+        constraint_type: '',
+        constraint_date: '',
       });
     }
     setIsTaskFormOpen(true);
@@ -519,9 +542,16 @@ export const ProjectWorkspace: React.FC = () => {
       const extraUpdates: any = {};
       if (field === 'status') {
         extraUpdates.completed_at = value === 'COMPLETED' ? (taskBefore?.completed_at || new Date().toISOString()) : null;
+      } else if (field === 'progress_pct') {
+        if (Number(value) >= 100 && taskBefore?.status !== 'COMPLETED') {
+          extraUpdates.status = 'COMPLETED';
+          extraUpdates.completed_at = taskBefore?.completed_at || new Date().toISOString();
+        } else if (Number(value) > 0 && Number(value) < 100 && taskBefore?.status === 'TODO') {
+          extraUpdates.status = 'IN_PROGRESS';
+        }
       }
 
-      await updateDynamicTask(project.id, taskId, { [field]: value });
+      await updateDynamicTask(project.id, taskId, { [field]: value, ...(extraUpdates.status ? { status: extraUpdates.status } : {}) });
       setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value, ...extraUpdates } : t));
       await loadData(project.id, true);
       
@@ -832,7 +862,7 @@ export const ProjectWorkspace: React.FC = () => {
         )}
         
         {activeTab === 'analytics' && (
-          <AnalyticsTab dynamicTasks={dynamicTasks} />
+          <AnalyticsTab dynamicTasks={dynamicTasks} project={project} handleOpenEditTask={handleOpenEditTask} />
         )}
 
         {activeTab === 'tasks' && (
@@ -869,6 +899,10 @@ export const ProjectWorkspace: React.FC = () => {
              <TimelineTab 
                dynamicTasks={dynamicTasks}
                handleOpenEditTask={handleOpenEditTask}
+               project={project}
+               employees={employees}
+               onUpdateTaskField={handleUpdateTaskField}
+               onRefreshProject={() => loadData(project.id, true)}
              />
           </div>
         )}
@@ -936,6 +970,7 @@ export const ProjectWorkspace: React.FC = () => {
         employees={employees}
         dynamicTasks={dynamicTasks}
         projectId={project.id}
+        onBulkCreated={() => loadData(project.id, true)}
       />
 
       <TaskCommentsModal

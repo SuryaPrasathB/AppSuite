@@ -427,3 +427,59 @@ export async function reorderDynamicTasks(projectId: number, tasks: { id: number
   if (!response.ok) throw new Error('Failed to reorder tasks');
   return response.json();
 }
+
+export async function fetchProjectBaselines(projectId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/baselines`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch project baselines');
+  return res.json();
+}
+
+export async function createProjectBaseline(projectId: number, data: { name: string; description?: string; set_active?: boolean }) {
+  const res = await fetch(`${API_BASE}/${projectId}/baselines`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create baseline');
+  return res.json();
+}
+
+export async function activateProjectBaseline(projectId: number, baselineId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/baselines/${baselineId}/activate`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to activate baseline');
+  return res.json();
+}
+
+export async function deleteProjectBaseline(projectId: number, baselineId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/baselines/${baselineId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to delete baseline');
+  return res.json();
+}
+
+export async function applyScheduleCascade(
+  projectId: number,
+  updates: {
+    id: number;
+    start_date: string;
+    due_date: string;
+    old_start?: string;
+    old_finish?: string;
+    activity_code?: string;
+    title?: string;
+    reason?: string;
+  }[]
+) {
+  const res = await fetch(`${API_BASE}/${projectId}/schedule-cascade`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to apply schedule cascade');
+  return res.json();
+}

@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2 } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2, Diamond, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
 import { createDynamicTask, fetchProjects } from '../api';
 import { isTaskOverdue } from '../taskUtils';
+import { computeP6Schedule, P6EnrichedTask } from '../p6ScheduleEngine';
 
 interface TasksTabProps {
   dynamicTasks: any[];
@@ -212,11 +213,108 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
 
-  const [groupBy, setGroupBy] = useState<'status' | 'assignee' | 'priority'>('status');
+  const [groupBy, setGroupBy] = useState<'status' | 'wbs' | 'assignee' | 'priority'>('status');
   const [filterAssignee, setFilterAssignee] = useState<string>('');
   const [filterPriority, setFilterPriority] = useState<string>('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isColumnsOpen, setIsColumnsOpen] = useState(false);
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+
+  const defaultColumns: Record<string, boolean> = {
+    activity_code: true,
+    task_type: true,
+    wbs_code: true,
+    calendar_type: false,
+    estimated_hours: true,
+    actual_hours: true,
+    progress_pct: true,
+    assignee: true,
+    due_date: true,
+    completed: false,
+    priority: true,
+    status: true,
+    comments: true,
+  };
+
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('appsuite_tasks_table_columns_v1');
+      if (saved) return { ...defaultColumns, ...JSON.parse(saved) };
+    } catch {}
+    return defaultColumns;
+  });
+
+  const toggleColumn = (colKey: string) => {
+    setVisibleColumns((prev) => {
+      const next = { ...prev, [colKey]: !prev[colKey] };
+      try {
+        localStorage.setItem('appsuite_tasks_table_columns_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const applyColumnPreset = (preset: 'standard' | 'schedule' | 'all') => {
+    let next: Record<string, boolean>;
+    if (preset === 'standard') {
+      next = {
+        activity_code: false,
+        task_type: false,
+        wbs_code: false,
+        calendar_type: false,
+        estimated_hours: false,
+        actual_hours: false,
+        progress_pct: false,
+        assignee: true,
+        due_date: true,
+        completed: true,
+        priority: true,
+        status: true,
+        comments: true,
+      };
+    } else if (preset === 'schedule') {
+      next = {
+        activity_code: true,
+        task_type: true,
+        wbs_code: true,
+        calendar_type: true,
+        estimated_hours: true,
+        actual_hours: true,
+        progress_pct: true,
+        assignee: true,
+        due_date: true,
+        completed: false,
+        priority: false,
+        status: true,
+        comments: true,
+      };
+    } else {
+      next = {
+        activity_code: true,
+        task_type: true,
+        wbs_code: true,
+        calendar_type: true,
+        estimated_hours: true,
+        actual_hours: true,
+        progress_pct: true,
+        assignee: true,
+        due_date: true,
+        completed: true,
+        priority: true,
+        status: true,
+        comments: true,
+      };
+    }
+    setVisibleColumns(next);
+    try {
+      localStorage.setItem('appsuite_tasks_table_columns_v1', JSON.stringify(next));
+    } catch {}
+  };
+
+  const activeColCount = useMemo(
+    () => 1 + Object.values(visibleColumns).filter(Boolean).length,
+    [visibleColumns]
+  );
 
   const [openAssigneeTaskId, setOpenAssigneeTaskId] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -477,6 +575,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const rootTasks = dynamicTasks.filter(t => !t.parent_id);
   const getSubTasks = (parentId: number) => dynamicTasks.filter(t => t.parent_id === parentId);
 
+  const p6TaskMap = useMemo(() => {
+    const map = new Map<number, P6EnrichedTask>();
+    computeP6Schedule(dynamicTasks).forEach((et) => map.set(et.id, et));
+    return map;
+  }, [dynamicTasks]);
+
   const renderTaskRow = (task: any, level: number = 0) => {
     const subTasks = getSubTasks(task.id);
     const isSubtask = level > 0;
@@ -485,6 +589,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     const isAboveTarget = isTarget && dragOverTarget?.position === 'above';
     const isBelowTarget = isTarget && dragOverTarget?.position === 'below';
     const isInsideTarget = isTarget && dragOverTarget?.position === 'inside';
+    const p6Info = p6TaskMap.get(Number(task.id));
+    const isMilestone = p6Info?.taskType === 'START_MILESTONE' || p6Info?.taskType === 'FINISH_MILESTONE';
 
     let depsArray: any[] = [];
     try { if (task.dependencies) depsArray = JSON.parse(task.dependencies); } catch {}
@@ -498,7 +604,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       <React.Fragment key={task.id}>
         {isAboveTarget && (
           <tr className="pointer-events-none">
-            <td colSpan={7} className="p-0 border-0 pointer-events-none">
+            <td colSpan={activeColCount} className="p-0 border-0 pointer-events-none">
               <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125 pointer-events-none" />
             </td>
           </tr>
@@ -517,7 +623,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             isInsideTarget ? 'bg-indigo-100/90 ring-2 ring-indigo-500 border-indigo-500 shadow-sm' : ''
           }`}
         >
-          <td className="py-1 pl-4 pr-4">
+          <td className="py-1 pl-4 pr-3">
             <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 1.5}rem` }}>
               <div 
                 className="cursor-grab active:cursor-grabbing p-0.5 text-slate-300 hover:text-indigo-600 transition-colors rounded hover:bg-slate-100 shrink-0"
@@ -539,15 +645,47 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               {isSubtask ? (
                 <div className="flex items-center gap-1 shrink-0 text-slate-400">
                   <span className="text-slate-300 font-bold select-none text-[11px]">↳</span>
-                  <Circle className="h-3.5 w-3.5 text-slate-300" />
+                  {isMilestone ? (
+                    <Diamond className="h-3.5 w-3.5 text-amber-500 fill-amber-400" />
+                  ) : (
+                    <Circle className="h-3.5 w-3.5 text-slate-300" />
+                  )}
                 </div>
+              ) : isMilestone ? (
+                <Diamond className="h-4 w-4 text-amber-500 fill-amber-400 shrink-0" />
               ) : (
                 <Circle className="h-4 w-4 text-indigo-500 fill-indigo-500/10 shrink-0" />
               )}
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                {!visibleColumns.activity_code && p6Info && (
+                  <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                    {p6Info.activityCode}
+                  </span>
+                )}
                 <div className="font-medium text-slate-800 truncate" title={task.title}>
                   {task.title}
                 </div>
+                {p6Info && p6Info.isCritical && (
+                  <span
+                    className="text-[9px] font-extrabold uppercase tracking-wider bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.2 rounded shrink-0"
+                    title="Critical Path Activity (0 days Total Float)"
+                  >
+                    Critical
+                  </span>
+                )}
+                {p6Info && !p6Info.isCritical && p6Info.totalFloat > 0 && task.status !== 'COMPLETED' && (
+                  <span
+                    className="text-[9px] font-mono font-bold text-slate-400 bg-slate-50 border border-slate-200 px-1 py-0.2 rounded shrink-0"
+                    title={`Total Float: ${p6Info.totalFloat} working days`}
+                  >
+                    +{p6Info.totalFloat}d float
+                  </span>
+                )}
+                {!visibleColumns.progress_pct && p6Info && p6Info.progressPct > 0 && p6Info.progressPct < 100 && (
+                  <span className="text-[9px] font-mono font-bold text-blue-600 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded shrink-0">
+                    {p6Info.progressPct}%
+                  </span>
+                )}
                 {isInsideTarget && (
                   <span className="text-[10px] bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-1 animate-pulse shrink-0">
                     ↳ Drop as Subtask
@@ -602,247 +740,392 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             </div>
           </td>
 
-          <td className="py-1 px-4">
-            <div className="relative inline-block" ref={openAssigneeTaskId === task.id ? dropdownRef : undefined}>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenAssigneeTaskId(openAssigneeTaskId === task.id ? null : task.id);
-                }}
-                className="flex items-center gap-1.5 w-fit hover:bg-slate-100 rounded px-1.5 py-0.5 -ml-1.5 transition-colors cursor-pointer"
-              >
-                <div className="flex -space-x-1.5 overflow-hidden shrink-0">
-                  {task.assignees && task.assignees.length > 0 ? (
-                    task.assignees.slice(0, 3).map((a: any) => (
-                      <div key={a.id} className="h-4 w-4 rounded-full bg-indigo-100 flex items-center justify-center border border-white overflow-hidden shrink-0" title={a.name}>
-                        <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(a.name)}&background=random`} alt={a.name} className="h-full w-full object-cover" />
-                      </div>
-                    ))
-                  ) : task.assignee_id ? (
-                    <div className="h-4 w-4 rounded-full bg-indigo-100 flex items-center justify-center overflow-hidden shrink-0">
-                      <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee_name || 'Assignee')}&background=random`} alt="Avatar" className="h-full w-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="h-4 w-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                      <User className="h-3 w-3 text-slate-400" />
-                    </div>
-                  )}
-                  {task.assignees && task.assignees.length > 3 && (
-                    <div className="h-4 w-4 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
-                      +{task.assignees.length - 3}
-                    </div>
-                  )}
-                </div>
-                <span className="text-slate-600 text-xs font-medium truncate max-w-[120px]">
-                  {task.assignees && task.assignees.length > 0
-                    ? task.assignees.map((a: any) => a.name).join(', ')
-                    : (task.assignee_name || 'Unassigned')}
-                </span>
-              </button>
-
-              {openAssigneeTaskId === task.id && (
-                <AssigneeSelectPopover
-                  task={task}
-                  employees={employees}
-                  onUpdateTaskField={onUpdateTaskField}
-                  onClose={() => setOpenAssigneeTaskId(null)}
-                  align="left"
-                />
-              )}
-            </div>
-          </td>
-
-          <td className="py-1 px-4 relative group/date">
-            {task.due_date && (project?.date_of_delivery || project?.end_date) && (() => {
-               const pDate = new Date(project.date_of_delivery || project.end_date).getTime();
-               const tDate = new Date(task.due_date).getTime();
-               // Flag if task due date is after or within 2 days of project end date
-               if (tDate >= pDate - (2 * 24 * 60 * 60 * 1000)) {
-                 return (
-                   <span 
-                     className="text-rose-500 font-bold absolute -left-2 top-3 cursor-help text-lg leading-none" 
-                     title="Date modified past or near planned project due date"
-                   >
-                     *
-                   </span>
-                 );
-               }
-               return null;
-            })()}
-            <DateRangePicker
-              startDate={task.start_date}
-              dueDate={task.due_date}
-              isOverdue={isTaskOverdue(task)}
-              onSave={async (start, due) => {
-                await onUpdateTaskField?.(task.id, 'start_date', start);
-                await onUpdateTaskField?.(task.id, 'due_date', due);
-              }}
-            />
-          </td>
-
-          <td className="py-1 px-4">
-            <div className="relative inline-flex items-center group/completed">
+          {/* Inline Schedule & Effort Parameter Columns */}
+          {visibleColumns.activity_code && (
+            <td className="py-1 px-2 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
               <input
-                type="date"
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                value={task.completed_at ? task.completed_at.split('T')[0] : ''}
-                onChange={async (e) => {
-                  const val = e.target.value ? `${e.target.value}T12:00:00` : null;
-                  await onUpdateTaskField?.(task.id, 'completed_at', val);
-                  if (val && task.status !== 'COMPLETED') {
-                    await onUpdateTaskField?.(task.id, 'status', 'COMPLETED');
+                type="text"
+                defaultValue={task.activity_code || p6Info?.activityCode || ''}
+                key={`code-${task.id}-${task.activity_code}`}
+                onBlur={(e) => {
+                  const val = e.target.value.trim();
+                  if (val !== (task.activity_code || '')) {
+                    onUpdateTaskField?.(task.id, 'activity_code', val || null);
                   }
                 }}
-                title="Click to set or change actual completed date"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                placeholder="ID"
+                className="w-full text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1.5 py-0.5 text-[11px] font-mono font-bold text-indigo-700 focus:outline-none transition-colors"
               />
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1.5 transition-colors ${
-                task.completed_at
-                  ? isTaskOverdue(task) && task.status === 'COMPLETED'
-                    ? 'bg-rose-50 border-rose-200 text-rose-700'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  : 'border-transparent text-slate-400 group-hover/completed:bg-slate-100 group-hover/completed:border-slate-200 group-hover/completed:text-slate-600'
-              }`}>
-                {task.completed_at ? (
-                  <>
-                    <CheckCircle2 className={`h-3 w-3 ${isTaskOverdue(task) && task.status === 'COMPLETED' ? 'text-rose-500' : 'text-emerald-500'}`} />
-                    <span>{new Date(task.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                    {isTaskOverdue(task) && task.status === 'COMPLETED' && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-600 px-1 py-0.2 rounded border border-rose-200 ml-0.5">
-                        Late
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-slate-400 font-normal hover:underline">—</span>
-                )}
-              </span>
-            </div>
-          </td>
+            </td>
+          )}
 
-          <td className="py-1 px-4">
-            <div className="flex items-center gap-1.5 hover:bg-slate-100 rounded px-1.5 py-0.5 w-fit cursor-pointer -ml-1.5 transition-colors">
+          {visibleColumns.task_type && (
+            <td className="py-1 px-2.5 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+              <select
+                value={task.task_type || 'TASK'}
+                onChange={(e) => onUpdateTaskField?.(task.id, 'task_type', e.target.value)}
+                className="w-full text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 focus:outline-none cursor-pointer transition-colors"
+              >
+                <option value="TASK">Task Dependent</option>
+                <option value="RESOURCE">Resource Dep.</option>
+                <option value="START_MILESTONE">Start Milestone</option>
+                <option value="FINISH_MILESTONE">Finish Milestone</option>
+                <option value="LOE">Level of Effort</option>
+              </select>
+            </td>
+          )}
+
+          {visibleColumns.wbs_code && (
+            <td className="py-1 px-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="text"
+                defaultValue={task.wbs_code || ''}
+                key={`wbs-${task.id}-${task.wbs_code}`}
+                onBlur={(e) => {
+                  const val = e.target.value.trim();
+                  if (val !== (task.wbs_code || '')) {
+                    onUpdateTaskField?.(task.id, 'wbs_code', val || null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                placeholder="Set WBS phase..."
+                className="w-full text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1.5 py-0.5 text-[11px] font-medium text-slate-700 focus:outline-none truncate transition-colors"
+              />
+            </td>
+          )}
+
+          {visibleColumns.estimated_hours && (
+            <td className="py-1 px-2 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-center gap-0.5">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  defaultValue={task.estimated_hours ?? 0}
+                  key={`est-${task.id}-${task.estimated_hours}`}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    if (val !== (Number(task.estimated_hours) || 0)) {
+                      onUpdateTaskField?.(task.id, 'estimated_hours', val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-10 text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1 py-0.5 text-[11px] font-mono font-bold text-slate-700 focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-[10px] text-slate-400">h</span>
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.actual_hours && (
+            <td className="py-1 px-2 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-center gap-0.5">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  defaultValue={task.actual_hours ?? 0}
+                  key={`act-${task.id}-${task.actual_hours}`}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    if (val !== (Number(task.actual_hours) || 0)) {
+                      onUpdateTaskField?.(task.id, 'actual_hours', val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-10 text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1 py-0.5 text-[11px] font-mono font-bold text-emerald-700 focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-[10px] text-slate-400">h</span>
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.progress_pct && (
+            <td className="py-1 px-2 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-center gap-0.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  defaultValue={p6Info?.progressPct ?? task.progress_pct ?? 0}
+                  key={`pct-${task.id}-${p6Info?.progressPct ?? task.progress_pct}`}
+                  onBlur={(e) => {
+                    const val = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+                    if (val !== (task.progress_pct ?? 0)) {
+                      onUpdateTaskField?.(task.id, 'progress_pct', val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-10 text-center bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-indigo-500 rounded px-1 py-0.5 text-[11px] font-mono font-bold text-indigo-700 focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-[10px] text-slate-400">%</span>
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.assignee && (
+            <td className="py-1 px-2.5 overflow-hidden text-center">
+              <div className="relative w-full flex justify-center" ref={openAssigneeTaskId === task.id ? dropdownRef : undefined}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenAssigneeTaskId(openAssigneeTaskId === task.id ? null : task.id);
+                  }}
+                  className="flex items-center justify-center gap-1.5 max-w-full overflow-hidden hover:bg-slate-100 rounded px-1.5 py-0.5 transition-colors cursor-pointer"
+                >
+                  <div className="flex -space-x-1.5 overflow-hidden shrink-0">
+                    {task.assignees && task.assignees.length > 0 ? (
+                      task.assignees.slice(0, 3).map((a: any) => (
+                        <div key={a.id} className="h-4 w-4 rounded-full bg-indigo-100 flex items-center justify-center border border-white overflow-hidden shrink-0" title={a.name}>
+                          <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(a.name)}&background=random`} alt={a.name} className="h-full w-full object-cover" />
+                        </div>
+                      ))
+                    ) : task.assignee_id ? (
+                      <div className="h-4 w-4 rounded-full bg-indigo-100 flex items-center justify-center overflow-hidden shrink-0">
+                        <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(task.assignee_name || 'Assignee')}&background=random`} alt="Avatar" className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-4 w-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                        <User className="h-3 w-3 text-slate-400" />
+                      </div>
+                    )}
+                    {task.assignees && task.assignees.length > 3 && (
+                      <div className="h-4 w-4 rounded-full bg-slate-200 border border-white text-[9px] font-bold text-slate-600 flex items-center justify-center shrink-0">
+                        +{task.assignees.length - 3}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-slate-600 text-xs font-medium truncate max-w-[110px]">
+                    {task.assignees && task.assignees.length > 0
+                      ? task.assignees.map((a: any) => a.name).join(', ')
+                      : (task.assignee_name || 'Unassigned')}
+                  </span>
+                </button>
+
+                {openAssigneeTaskId === task.id && (
+                  <AssigneeSelectPopover
+                    task={task}
+                    employees={employees}
+                    onUpdateTaskField={onUpdateTaskField}
+                    onClose={() => setOpenAssigneeTaskId(null)}
+                    align="left"
+                  />
+                )}
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.due_date && (
+            <td className="py-1 px-2 relative group/date whitespace-nowrap text-center">
+              <div className="flex justify-center">
+              {task.due_date && (project?.date_of_delivery || project?.end_date) && (() => {
+                 const pDate = new Date(project.date_of_delivery || project.end_date).getTime();
+                 const tDate = new Date(task.due_date).getTime();
+                 if (tDate >= pDate - (2 * 24 * 60 * 60 * 1000)) {
+                   return (
+                     <span 
+                       className="text-rose-500 font-bold absolute -left-2 top-3 cursor-help text-lg leading-none" 
+                       title="Date modified past or near planned project due date"
+                     >
+                       *
+                     </span>
+                   );
+                 }
+                 return null;
+              })()}
+              <DateRangePicker
+                startDate={task.start_date}
+                dueDate={task.due_date}
+                isOverdue={isTaskOverdue(task)}
+                onSave={async (start, due) => {
+                  await onUpdateTaskField?.(task.id, 'start_date', start);
+                  await onUpdateTaskField?.(task.id, 'due_date', due);
+                }}
+              />
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.completed && (
+            <td className="py-1 px-3 text-center">
+              <div className="relative inline-flex items-center group/completed">
+                <input
+                  type="date"
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                  value={task.completed_at ? task.completed_at.split('T')[0] : ''}
+                  onChange={async (e) => {
+                    const val = e.target.value ? `${e.target.value}T12:00:00` : null;
+                    await onUpdateTaskField?.(task.id, 'completed_at', val);
+                    if (val && task.status !== 'COMPLETED') {
+                      await onUpdateTaskField?.(task.id, 'status', 'COMPLETED');
+                    }
+                  }}
+                  title="Click to set or change actual completed date"
+                />
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1.5 transition-colors ${
+                  task.completed_at
+                    ? isTaskOverdue(task) && task.status === 'COMPLETED'
+                      ? 'bg-rose-50 border-rose-200 text-rose-700'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'border-transparent text-slate-400 group-hover/completed:bg-slate-100 group-hover/completed:border-slate-200 group-hover/completed:text-slate-600'
+                }`}>
+                  {task.completed_at ? (
+                    <>
+                      <CheckCircle2 className={`h-3 w-3 ${isTaskOverdue(task) && task.status === 'COMPLETED' ? 'text-rose-500' : 'text-emerald-500'}`} />
+                      <span>{new Date(task.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400 font-normal hover:underline">—</span>
+                  )}
+                </span>
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.priority && (
+            <td className="py-1 px-2.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 hover:bg-slate-100 rounded px-1.5 py-0.5 w-fit mx-auto cursor-pointer transition-colors">
+                <CustomDropdown
+                  value={task.priority}
+                  onChange={(val) => onUpdateTaskField?.(task.id, 'priority', val)}
+                  options={[
+                    { value: 'LOW', label: 'Low' },
+                    { value: 'MEDIUM', label: 'Medium' },
+                    { value: 'HIGH', label: 'High' },
+                    { value: 'CRITICAL', label: 'Critical' },
+                  ]}
+                  triggerElement={
+                    <div className="flex items-center gap-1.5">
+                      <Flag className={`h-3 w-3 ${
+                        task.priority === 'CRITICAL' ? 'text-rose-500 fill-rose-500' :
+                        task.priority === 'HIGH' ? 'text-amber-500 fill-amber-500' :
+                        task.priority === 'MEDIUM' ? 'text-blue-500 fill-blue-500' :
+                        'text-slate-400 fill-slate-400'
+                      }`} />
+                      <span className="text-slate-600 text-[11px] font-medium pr-1">
+                        {task.priority === 'LOW' ? 'Low' : 
+                         task.priority === 'MEDIUM' ? 'Medium' : 
+                         task.priority === 'HIGH' ? 'High' : 'Critical'}
+                      </span>
+                    </div>
+                  }
+                />
+              </div>
+            </td>
+          )}
+
+          {visibleColumns.status && (
+            <td className="py-1 px-2 whitespace-nowrap text-center">
+              <div className="flex justify-center">
               <CustomDropdown
-                value={task.priority}
-                onChange={(val) => onUpdateTaskField?.(task.id, 'priority', val)}
+                value={task.status}
+                onChange={(val) => onUpdateTaskField?.(task.id, 'status', val)}
                 options={[
-                  { value: 'LOW', label: 'Low' },
-                  { value: 'MEDIUM', label: 'Medium' },
-                  { value: 'HIGH', label: 'High' },
-                  { value: 'CRITICAL', label: 'Critical' },
+                  { value: 'TODO', label: 'TO DO' },
+                  { value: 'IN_PROGRESS', label: 'IN PROGRESS' },
+                  { value: 'REVIEW', label: 'REVIEW' },
+                  { value: 'BLOCKED', label: 'BLOCKED' },
+                  { value: 'COMPLETED', label: 'COMPLETED' },
                 ]}
                 triggerElement={
-                  <div className="flex items-center gap-1.5">
-                    <Flag className={`h-3 w-3 ${
-                      task.priority === 'CRITICAL' ? 'text-rose-500 fill-rose-500' :
-                      task.priority === 'HIGH' ? 'text-amber-500 fill-amber-500' :
-                      task.priority === 'MEDIUM' ? 'text-blue-500 fill-blue-500' :
-                      'text-slate-400 fill-slate-400'
+                  <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold w-fit cursor-pointer border shadow-sm ${
+                    task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-200' :
+                    task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                    task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                    'bg-slate-50 text-slate-500 border-slate-200'
+                  }`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                      task.status === 'COMPLETED' ? 'bg-emerald-500' :
+                      task.status === 'BLOCKED' ? 'bg-red-500' :
+                      task.status === 'REVIEW' ? 'bg-amber-500' :
+                      task.status === 'IN_PROGRESS' ? 'bg-blue-500' :
+                      'bg-slate-400'
                     }`} />
-                    <span className="text-slate-600 text-[11px] font-medium pr-1">
-                      {task.priority === 'LOW' ? 'Low' : 
-                       task.priority === 'MEDIUM' ? 'Medium' : 
-                       task.priority === 'HIGH' ? 'High' : 'Critical'}
+                    <span className="font-bold pr-1">
+                      {task.status === 'TODO' ? 'TO DO' :
+                       task.status === 'IN_PROGRESS' ? 'IN PROGRESS' :
+                       task.status === 'REVIEW' ? 'REVIEW' :
+                       task.status === 'BLOCKED' ? 'BLOCKED' : 'COMPLETED'}
                     </span>
                   </div>
                 }
               />
-            </div>
-          </td>
+              </div>
+            </td>
+          )}
 
-          <td className="py-1 px-4">
-            <CustomDropdown
-              value={task.status}
-              onChange={(val) => onUpdateTaskField?.(task.id, 'status', val)}
-              options={[
-                { value: 'TODO', label: 'TO DO' },
-                { value: 'IN_PROGRESS', label: 'IN PROGRESS' },
-                { value: 'REVIEW', label: 'REVIEW' },
-                { value: 'BLOCKED', label: 'BLOCKED' },
-                { value: 'COMPLETED', label: 'COMPLETED' },
-              ]}
-              triggerElement={
-                <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold w-fit cursor-pointer border shadow-sm ${
-                  task.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                  task.status === 'BLOCKED' ? 'bg-red-50 text-red-600 border-red-200' :
-                  task.status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                  task.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                  'bg-slate-50 text-slate-500 border-slate-200'
-                }`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    task.status === 'COMPLETED' ? 'bg-emerald-500' :
-                    task.status === 'BLOCKED' ? 'bg-red-500' :
-                    task.status === 'REVIEW' ? 'bg-amber-500' :
-                    task.status === 'IN_PROGRESS' ? 'bg-blue-500' :
-                    'bg-slate-400'
-                  }`} />
-                  <span className="font-bold pr-1">
-                    {task.status === 'TODO' ? 'TO DO' :
-                     task.status === 'IN_PROGRESS' ? 'IN PROGRESS' :
-                     task.status === 'REVIEW' ? 'REVIEW' :
-                     task.status === 'BLOCKED' ? 'BLOCKED' : 'COMPLETED'}
+          {visibleColumns.comments && (
+            <td className="py-1 px-1.5 text-center whitespace-nowrap overflow-hidden">
+              <div className="flex items-center justify-center gap-1">
+                <button 
+                  onClick={() => onOpenComments?.(task)}
+                  className="flex items-center gap-0.5 text-slate-400 hover:text-indigo-600 transition-colors group/comment shrink-0"
+                  title="View & add comments"
+                >
+                  <MessageSquare className="h-3.5 w-3.5 group-hover/comment:scale-110 transition-transform" />
+                  <span className={`text-[11px] font-bold px-1 py-0.2 rounded-full ${
+                    (task.comment_count || 0) > 0 
+                      ? 'bg-indigo-100 text-indigo-700 font-extrabold' 
+                      : 'text-slate-400 group-hover/comment:text-indigo-600'
+                  }`}>
+                    {task.comment_count || 0}
                   </span>
-                </div>
-              }
-            />
-          </td>
-
-          <td className="py-1 px-4">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => onOpenComments?.(task)}
-                className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-600 transition-colors group/comment"
-                title="View & add comments"
-              >
-                <MessageSquare className="h-3.5 w-3.5 group-hover/comment:scale-110 transition-transform" />
-                <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full ${
-                  (task.comment_count || 0) > 0 
-                    ? 'bg-indigo-100 text-indigo-700 font-extrabold' 
-                    : 'text-slate-400 group-hover/comment:text-indigo-600'
-                }`}>
-                  {task.comment_count || 0}
-                </span>
-              </button>
-              <div className="flex items-center gap-1">
-                {isSubtask && canEditAny && (
-                  <button 
-                    onClick={() => handlePromoteToStandalone(task)} 
-                    title="Promote to Standalone Task" 
-                    className="p-1 text-slate-300 hover:text-indigo-600 transition-colors"
-                  >
-                    <CornerUpLeft className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {canEditAny && (
-                  <button onClick={() => handleQuickAddSubtask(task.id)} title="Add Subtask" className="p-1 text-slate-300 hover:text-emerald-600">
-                    <ListPlus className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <div className="flex items-center opacity-0 group-hover:opacity-100 touch-visible transition-opacity gap-1">
-                  {(canEditAny || user?.name === task.assignee_name) && (
-                    <button onClick={() => handleOpenEditTask(task)} title="Edit Task" className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
-                      <Edit2 className="h-3.5 w-3.5" />
+                </button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {isSubtask && canEditAny && (
+                    <button 
+                      onClick={() => handlePromoteToStandalone(task)} 
+                      title="Promote to Standalone Task" 
+                      className="p-0.5 text-slate-300 hover:text-indigo-600 transition-colors"
+                    >
+                      <CornerUpLeft className="h-3.5 w-3.5" />
                     </button>
                   )}
                   {canEditAny && (
-                    <button onClick={(e) => { e.stopPropagation(); setSelectedTasks([task.id]); setDuplicateModalOpen(true); }} title="Duplicate Task" className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
-                      <Copy className="h-3.5 w-3.5" />
+                    <button onClick={() => handleQuickAddSubtask(task.id)} title="Add Subtask" className="p-0.5 text-slate-300 hover:text-emerald-600">
+                      <ListPlus className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  {canEditAny && (
-                    <button onClick={() => handleDeleteTask(task.id)} title="Delete Task" className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  <div className="flex items-center opacity-0 group-hover:opacity-100 touch-visible transition-opacity gap-0.5">
+                    {(canEditAny || user?.name === task.assignee_name) && (
+                      <button onClick={() => handleOpenEditTask(task)} title="Edit Task" className="p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {canEditAny && (
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedTasks([task.id]); setDuplicateModalOpen(true); }} title="Duplicate Task" className="p-0.5 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {canEditAny && (
+                      <button onClick={() => handleDeleteTask(task.id)} title="Delete Task" className="p-0.5 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100 transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </td>
+            </td>
+          )}
         </tr>
         {subTasks.map(st => renderTaskRow(st, level + 1))}
         {isBelowTarget && (
           <tr className="pointer-events-none">
-            <td colSpan={7} className="p-0 border-0 pointer-events-none">
+            <td colSpan={activeColCount} className="p-0 border-0 pointer-events-none">
               <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] my-0.5 animate-pulse transition-all transform scale-y-125 pointer-events-none" />
             </td>
           </tr>
@@ -880,6 +1163,15 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       return statusGroupsDef.map(g => ({
         ...g,
         tasks: filtered.filter(t => t.status === g.key)
+      }));
+    } else if (groupBy === 'wbs') {
+      const wbsSet = new Set<string>();
+      filtered.forEach(t => wbsSet.add(t.wbs_code || 'Unassigned Phase'));
+      return Array.from(wbsSet).map((wbsKey, idx) => ({
+        key: wbsKey,
+        label: wbsKey,
+        color: idx % 2 === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-white',
+        tasks: filtered.filter(t => (t.wbs_code || 'Unassigned Phase') === wbsKey)
       }));
     } else if (groupBy === 'priority') {
       const priorities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
@@ -923,25 +1215,44 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     return [];
   }, [dynamicTasks, groupBy, filterAssignee, filterPriority, employees]);
 
+  const renderColGroup = () => (
+    <colgroup>
+      <col />
+      {visibleColumns.activity_code && <col className="w-[68px]" />}
+      {visibleColumns.task_type && <col className="w-[134px]" />}
+      {visibleColumns.wbs_code && <col className="w-[128px]" />}
+      {visibleColumns.estimated_hours && <col className="w-[66px]" />}
+      {visibleColumns.actual_hours && <col className="w-[66px]" />}
+      {visibleColumns.progress_pct && <col className="w-[64px]" />}
+      {visibleColumns.assignee && <col className="w-[116px]" />}
+      {visibleColumns.due_date && <col className="w-[144px]" />}
+      {visibleColumns.completed && <col className="w-[96px]" />}
+      {visibleColumns.priority && <col className="w-[80px]" />}
+      {visibleColumns.status && <col className="w-[112px]" />}
+      {visibleColumns.comments && <col className="w-[124px]" />}
+    </colgroup>
+  );
+
   return (
     <div className="bg-white rounded-2xl flex flex-col relative pb-12">
       {/* Sticky Header Group */}
       <div className="sticky top-[57px] z-10 bg-white pt-4">
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 pb-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <CustomDropdown
             value={groupBy}
             onChange={(val) => setGroupBy(val as any)}
             options={[
               { value: 'status', label: 'Status' },
+              { value: 'wbs', label: 'WBS Phase' },
               { value: 'assignee', label: 'Assignee' },
               { value: 'priority', label: 'Priority' }
             ]}
             triggerElement={
               <button className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-950 text-indigo-100 text-xs font-bold hover:bg-indigo-900 transition-colors shadow-sm border border-indigo-800">
                 <Layers className="h-4 w-4" />
-                Group: {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}
+                Group: {groupBy === 'wbs' ? 'WBS Phase' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}
               </button>
             }
           />
@@ -998,30 +1309,135 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               </>
             )}
           </div>
+
+          {/* Customizable Table Fields / Columns Popover */}
+          <div className="relative">
+            <button
+              onClick={() => setIsColumnsOpen(!isColumnsOpen)}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors shadow-sm border border-slate-200"
+              title="Add or remove Schedule & Effort columns in the main table"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 text-indigo-600" />
+              Fields ({activeColCount})
+            </button>
+            {isColumnsOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setIsColumnsOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 z-40 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                      Table Fields & Columns
+                    </h3>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => applyColumnPreset('standard')}
+                        className="text-[10px] font-bold text-slate-600 hover:text-indigo-700 bg-slate-100 hover:bg-indigo-50 px-2 py-0.5 rounded transition-colors"
+                      >
+                        Minimal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyColumnPreset('schedule')}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded transition-colors"
+                      >
+                        Schedule
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyColumnPreset('all')}
+                        className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded transition-colors"
+                      >
+                        All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-indigo-600 mb-1.5">
+                        Schedule & Effort Parameters (Inline Editable)
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { key: 'activity_code', label: 'Activity ID' },
+                          { key: 'task_type', label: 'Activity Type' },
+                          { key: 'wbs_code', label: 'WBS Phase' },
+                          { key: 'estimated_hours', label: 'Planned Hrs' },
+                          { key: 'actual_hours', label: 'Actual Hrs' },
+                          { key: 'progress_pct', label: 'Progress %' },
+                        ].map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!visibleColumns[col.key]}
+                              onChange={() => toggleColumn(col.key)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                            />
+                            <span className="font-semibold text-slate-700">{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="text-[10px] font-bold uppercase text-slate-400 mb-1.5">
+                        Standard Task Columns
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { key: 'assignee', label: 'Assignee' },
+                          { key: 'due_date', label: 'Start / Due Date' },
+                          { key: 'completed', label: 'Completed Date' },
+                          { key: 'priority', label: 'Priority' },
+                          { key: 'status', label: 'Status' },
+                          { key: 'comments', label: 'Comments' },
+                        ].map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!visibleColumns[col.key]}
+                              onChange={() => toggleColumn(col.key)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                            />
+                            <span className="font-semibold text-slate-700">{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Global Table Header */}
-      <div className="px-6 pt-1 pb-1 bg-white">
+      <div className="px-6 pt-1 pb-1 bg-white overflow-x-hidden">
         <table className="w-full text-left table-fixed">
-          <colgroup>
-            <col className="w-[30%]" />
-            <col className="w-[15%]" />
-            <col className="w-[15%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
-          </colgroup>
+          {renderColGroup()}
           <thead>
-            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200">
-              <th className="py-2 pl-8 pr-4">Task Name</th>
-              <th className="py-2 px-4">Assignee</th>
-              <th className="py-2 px-4">Due Date</th>
-              <th className="py-2 px-4">Completed</th>
-              <th className="py-2 px-4">Priority</th>
-              <th className="py-2 px-4">Status</th>
-              <th className="py-2 px-4">Comments</th>
+            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200 whitespace-nowrap">
+              <th className="py-2 pl-8 pr-3 text-left">Task Name</th>
+              {visibleColumns.activity_code && <th className="py-2 px-2 text-center">ID</th>}
+              {visibleColumns.task_type && <th className="py-2 px-2.5 text-center">Type</th>}
+              {visibleColumns.wbs_code && <th className="py-2 px-2.5 text-center">WBS Phase</th>}
+              {visibleColumns.estimated_hours && <th className="py-2 px-2 text-center">Plan h</th>}
+              {visibleColumns.actual_hours && <th className="py-2 px-2 text-center">Act h</th>}
+              {visibleColumns.progress_pct && <th className="py-2 px-2 text-center">Prog %</th>}
+              {visibleColumns.assignee && <th className="py-2 px-2.5 text-center">Assignee</th>}
+              {visibleColumns.due_date && <th className="py-2 px-2.5 text-center">Dates</th>}
+              {visibleColumns.completed && <th className="py-2 px-2.5 text-center">Completed</th>}
+              {visibleColumns.priority && <th className="py-2 px-2.5 text-center">Priority</th>}
+              {visibleColumns.status && <th className="py-2 px-2.5 text-center">Status</th>}
+              {visibleColumns.comments && <th className="py-2 px-2 text-center">Actions</th>}
             </tr>
           </thead>
         </table>
@@ -1029,7 +1445,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       </div>
 
       <div className="space-y-6 px-6">
-        {groupedTasks.map((group, groupIdx) => {
+        {groupedTasks.map((group) => {
           const groupTasks = group.tasks;
           const isCollapsed = collapsedGroups[group.key];
           
@@ -1061,17 +1477,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               </div>
 
               {!isCollapsed && (
-                <div className="mt-1">
+                <div className="mt-1 overflow-x-hidden">
                   <table className="w-full text-left table-fixed">
-                    <colgroup>
-                      <col className="w-[30%]" />
-                      <col className="w-[15%]" />
-                      <col className="w-[15%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                    </colgroup>
+                    {renderColGroup()}
                     <tbody>
                       {groupTasks.length === 0 ? (
                         <tr
@@ -1101,7 +1509,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                             handleRowDragEnd();
                           }}
                         >
-                          <td colSpan={7} className="py-6 px-8 text-slate-400 text-xs italic border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                          <td colSpan={activeColCount} className="py-6 px-8 text-slate-400 text-xs italic border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                             No tasks here. Drop tasks here to move to this group.
                           </td>
                         </tr>
@@ -1112,11 +1520,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                       {canEditAny && onCreateQuickTask && (
                         activeInlineAddStatus === group.key ? (
                           <tr className="text-xs border-b border-slate-100">
-                            <td colSpan={6} className="py-1 pl-8">
+                            <td colSpan={activeColCount} className="py-1 pl-8">
                               <form onSubmit={(e) => {
                                 e.preventDefault();
                                 if (inlineTitle.trim()) {
-                                  onCreateQuickTask({ title: inlineTitle.trim(), status: group.key });
+                                  onCreateQuickTask({ title: inlineTitle.trim(), status: groupBy === 'status' ? group.key : 'TODO' });
                                   setInlineTitle('');
                                 }
                               }} className="flex items-center gap-2 max-w-md">
@@ -1145,7 +1553,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                           </tr>
                         ) : (
                           <tr className="group/add">
-                            <td colSpan={6} className="py-1 pl-8 border-b border-slate-100 last:border-0">
+                            <td colSpan={activeColCount} className="py-1 pl-8 border-b border-slate-100 last:border-0">
                               <button
                                 onClick={() => {
                                   setActiveInlineAddStatus(group.key);

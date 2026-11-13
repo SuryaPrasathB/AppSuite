@@ -74,6 +74,44 @@ class DBStore:
                     name VARCHAR(255) NOT NULL UNIQUE
                 )
             """)
+
+            # Ensure P6 scheduling & baseline columns exist on dynamic_tasks
+            task_cols = [
+                ("activity_code", "VARCHAR(50) DEFAULT NULL"),
+                ("task_type", "VARCHAR(50) DEFAULT 'TASK'"),
+                ("duration_type", "VARCHAR(50) DEFAULT 'FIXED_DURATION_UNITS'"),
+                ("pct_complete_type", "VARCHAR(30) DEFAULT 'DURATION'"),
+                ("progress_pct", "INT DEFAULT 0"),
+                ("steps_json", "TEXT DEFAULT NULL"),
+                ("calendar_type", "VARCHAR(50) DEFAULT '5_DAY'"),
+                ("wbs_code", "VARCHAR(100) DEFAULT NULL"),
+                ("constraint_type", "VARCHAR(50) DEFAULT NULL"),
+                ("constraint_date", "DATE DEFAULT NULL"),
+                ("estimated_hours", "DECIMAL(10, 2) DEFAULT 0.00"),
+                ("actual_hours", "DECIMAL(10, 2) DEFAULT 0.00"),
+                ("baseline_start_date", "DATE DEFAULT NULL"),
+                ("baseline_due_date", "DATE DEFAULT NULL"),
+            ]
+            for col_name, col_type in task_cols:
+                cursor.execute(f"SHOW COLUMNS FROM dynamic_tasks LIKE '{col_name}'")
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE dynamic_tasks ADD COLUMN {col_name} {col_type}")
+                    print(f"Added {col_name} column to dynamic_tasks table.")
+
+            # Ensure project_baselines table exists for P6 Baseline & Claim Digger tracking
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS project_baselines (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    project_id INT NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT DEFAULT NULL,
+                    is_active BOOLEAN DEFAULT FALSE,
+                    snapshot_json LONGTEXT NOT NULL,
+                    created_by INT DEFAULT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_proj_bl (project_id)
+                )
+            """)
             conn.commit()
             cursor.close()
             conn.close()
@@ -1762,16 +1800,13 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tasks:
-            if t.get('created_at'):
-                t['created_at'] = t['created_at'].isoformat()
-            if t.get('updated_at'):
-                t['updated_at'] = t['updated_at'].isoformat()
-            if t.get('completed_at'):
-                t['completed_at'] = t['completed_at'].isoformat()
-            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
-                t['start_date'] = t['start_date'].isoformat()
-            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
-                t['due_date'] = t['due_date'].isoformat()
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+                if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
+                    t[d_key] = t[d_key].isoformat()
+            if t.get('estimated_hours') is not None:
+                t['estimated_hours'] = float(t['estimated_hours'])
+            if t.get('actual_hours') is not None:
+                t['actual_hours'] = float(t['actual_hours'])
         return tasks
 
     @staticmethod
@@ -1795,16 +1830,13 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tasks:
-            if t.get('created_at'):
-                t['created_at'] = t['created_at'].isoformat()
-            if t.get('updated_at'):
-                t['updated_at'] = t['updated_at'].isoformat()
-            if t.get('completed_at'):
-                t['completed_at'] = t['completed_at'].isoformat()
-            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
-                t['start_date'] = t['start_date'].isoformat()
-            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
-                t['due_date'] = t['due_date'].isoformat()
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+                if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
+                    t[d_key] = t[d_key].isoformat()
+            if t.get('estimated_hours') is not None:
+                t['estimated_hours'] = float(t['estimated_hours'])
+            if t.get('actual_hours') is not None:
+                t['actual_hours'] = float(t['actual_hours'])
         return tasks
 
     @staticmethod
@@ -1891,9 +1923,19 @@ class DBStore:
             from datetime import datetime
             completed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
+        progress_pct = task.get("progress_pct")
+        if progress_pct is None:
+            progress_pct = 100 if task.get("status") == "COMPLETED" else (50 if task.get("status") == "IN_PROGRESS" else 0)
+
         query = """
-            INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, assignee_id, start_date, due_date, completed_at, dependencies, sort_order)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO dynamic_tasks (
+                project_id, parent_id, title, description, status, priority, assignee_id,
+                start_date, due_date, completed_at, dependencies, sort_order,
+                activity_code, task_type, duration_type, pct_complete_type, progress_pct,
+                steps_json, calendar_type, wbs_code, constraint_type, constraint_date,
+                estimated_hours, actual_hours, baseline_start_date, baseline_due_date
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             project_id,
@@ -1907,7 +1949,21 @@ class DBStore:
             task.get("due_date") or None,
             completed_at or None,
             task.get("dependencies") or None,
-            sort_order
+            sort_order,
+            task.get("activity_code") or None,
+            task.get("task_type") or "TASK",
+            task.get("duration_type") or "FIXED_DURATION_UNITS",
+            task.get("pct_complete_type") or "DURATION",
+            int(progress_pct),
+            task.get("steps_json") or None,
+            task.get("calendar_type") or "5_DAY",
+            task.get("wbs_code") or None,
+            task.get("constraint_type") or None,
+            task.get("constraint_date") or None,
+            float(task.get("estimated_hours") or 0.0),
+            float(task.get("actual_hours") or 0.0),
+            task.get("baseline_start_date") or None,
+            task.get("baseline_due_date") or None
         )
         cursor.execute(query, values)
         task_id = cursor.lastrowid
@@ -1934,16 +1990,13 @@ class DBStore:
         conn.close()
         t = created_task_list[0] if created_task_list else task
         if t:
-            if t.get('created_at') and hasattr(t['created_at'], 'isoformat'):
-                t['created_at'] = t['created_at'].isoformat()
-            if t.get('updated_at') and hasattr(t['updated_at'], 'isoformat'):
-                t['updated_at'] = t['updated_at'].isoformat()
-            if t.get('completed_at') and hasattr(t['completed_at'], 'isoformat'):
-                t['completed_at'] = t['completed_at'].isoformat()
-            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
-                t['start_date'] = t['start_date'].isoformat()
-            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
-                t['due_date'] = t['due_date'].isoformat()
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+                if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
+                    t[d_key] = t[d_key].isoformat()
+            if t.get('estimated_hours') is not None:
+                t['estimated_hours'] = float(t['estimated_hours'])
+            if t.get('actual_hours') is not None:
+                t['actual_hours'] = float(t['actual_hours'])
         return t
 
     @staticmethod
@@ -1962,14 +2015,28 @@ class DBStore:
 
         updates = []
         values = []
-        fields = ["parent_id", "title", "description", "status", "priority", "assignee_id", "start_date", "due_date", "dependencies", "sort_order"]
+        fields = [
+            "parent_id", "title", "description", "status", "priority", "assignee_id",
+            "start_date", "due_date", "dependencies", "sort_order",
+            "activity_code", "task_type", "duration_type", "pct_complete_type", "progress_pct",
+            "steps_json", "calendar_type", "wbs_code", "constraint_type", "constraint_date",
+            "estimated_hours", "actual_hours", "baseline_start_date", "baseline_due_date"
+        ]
+        nullable_fields = {
+            "parent_id", "assignee_id", "start_date", "due_date", "dependencies",
+            "activity_code", "steps_json", "wbs_code", "constraint_type", "constraint_date",
+            "baseline_start_date", "baseline_due_date"
+        }
         for key in fields:
             if key in data:
                 updates.append(f"{key} = %s")
-                if key in ["parent_id", "assignee_id", "start_date", "due_date", "dependencies"] and not data[key]:
+                val = data[key]
+                if key in ("dependencies", "steps_json") and isinstance(val, (list, dict)):
+                    val = json.dumps(val)
+                if key in nullable_fields and (val == "" or val is None):
                     values.append(None)
                 else:
-                    values.append(data[key])
+                    values.append(val)
                     
         if "completed_at" in data:
             updates.append("completed_at = %s")
@@ -1977,6 +2044,8 @@ class DBStore:
         elif "status" in data:
             if data["status"] == "COMPLETED":
                 updates.append("completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)")
+                if "progress_pct" not in data:
+                    updates.append("progress_pct = 100")
             else:
                 updates.append("completed_at = NULL")
                     
@@ -2004,16 +2073,13 @@ class DBStore:
         
         t = updated_task_list[0] if updated_task_list else None
         if t:
-            if t.get('created_at'):
-                t['created_at'] = t['created_at'].isoformat()
-            if t.get('updated_at'):
-                t['updated_at'] = t['updated_at'].isoformat()
-            if t.get('completed_at'):
-                t['completed_at'] = t['completed_at'].isoformat()
-            if t.get('start_date') and hasattr(t['start_date'], 'isoformat'):
-                t['start_date'] = t['start_date'].isoformat()
-            if t.get('due_date') and hasattr(t['due_date'], 'isoformat'):
-                t['due_date'] = t['due_date'].isoformat()
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+                if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
+                    t[d_key] = t[d_key].isoformat()
+            if t.get('estimated_hours') is not None:
+                t['estimated_hours'] = float(t['estimated_hours'])
+            if t.get('actual_hours') is not None:
+                t['actual_hours'] = float(t['actual_hours'])
         return t
 
     @staticmethod
@@ -2025,6 +2091,93 @@ class DBStore:
         cursor.close()
         conn.close()
         return True
+
+    # PROJECT BASELINES METHODS (Primavera P6 Baseline & Schedule Comparison)
+    @staticmethod
+    def get_project_baselines(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT b.*, e.name as created_by_name
+            FROM project_baselines b
+            LEFT JOIN employees e ON b.created_by = e.id
+            WHERE b.project_id = %s
+            ORDER BY b.created_at DESC
+        """, (project_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for r in rows:
+            if r.get("created_at") and hasattr(r["created_at"], "isoformat"):
+                r["created_at"] = r["created_at"].isoformat()
+            r["is_active"] = bool(r.get("is_active"))
+            try:
+                r["snapshot"] = json.loads(r.get("snapshot_json") or "[]")
+            except Exception:
+                r["snapshot"] = []
+        return rows
+
+    @staticmethod
+    def create_project_baseline(project_id: int, name: str, description: Optional[str], set_active: bool, user_id: Optional[int]) -> Dict[str, Any]:
+        tasks = DBStore.get_dynamic_tasks(project_id)
+        snapshot_json = json.dumps(tasks)
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        if set_active:
+            cursor.execute("UPDATE project_baselines SET is_active = FALSE WHERE project_id = %s", (project_id,))
+            for t in tasks:
+                cursor.execute(
+                    "UPDATE dynamic_tasks SET baseline_start_date = %s, baseline_due_date = %s WHERE id = %s AND project_id = %s",
+                    (t.get("start_date") or None, t.get("due_date") or None, t["id"], project_id)
+                )
+        cursor.execute("""
+            INSERT INTO project_baselines (project_id, name, description, is_active, snapshot_json, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (project_id, name, description, set_active, snapshot_json, user_id))
+        bl_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        baselines = DBStore.get_project_baselines(project_id)
+        return next((b for b in baselines if b["id"] == bl_id), {"id": bl_id, "name": name})
+
+    @staticmethod
+    def activate_project_baseline(project_id: int, baseline_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM project_baselines WHERE id = %s AND project_id = %s", (baseline_id, project_id))
+        bl = cursor.fetchone()
+        if not bl:
+            cursor.close()
+            conn.close()
+            return False
+        cursor.execute("UPDATE project_baselines SET is_active = FALSE WHERE project_id = %s", (project_id,))
+        cursor.execute("UPDATE project_baselines SET is_active = TRUE WHERE id = %s AND project_id = %s", (baseline_id, project_id))
+        try:
+            snap_tasks = json.loads(bl.get("snapshot_json") or "[]")
+            for st in snap_tasks:
+                if st.get("id"):
+                    cursor.execute(
+                        "UPDATE dynamic_tasks SET baseline_start_date = %s, baseline_due_date = %s WHERE id = %s AND project_id = %s",
+                        (st.get("start_date") or None, st.get("due_date") or None, st["id"], project_id)
+                    )
+        except Exception as e:
+            print("Warning syncing baseline dates to dynamic_tasks:", e)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    @staticmethod
+    def delete_project_baseline(project_id: int, baseline_id: int) -> bool:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("DELETE FROM project_baselines WHERE id = %s AND project_id = %s", (baseline_id, project_id))
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return affected > 0
 
     # BOM METHODS
     @staticmethod

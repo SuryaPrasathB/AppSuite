@@ -1184,6 +1184,18 @@ class TaskCreate(BaseModel):
     estimated_hours: Optional[float] = 0.00
     actual_hours: Optional[float] = 0.00
     sort_order: Optional[int] = None
+    activity_code: Optional[str] = None
+    task_type: Optional[str] = "TASK"
+    duration_type: Optional[str] = "FIXED_DURATION_UNITS"
+    pct_complete_type: Optional[str] = "DURATION"
+    progress_pct: Optional[int] = None
+    steps_json: Optional[str] = None
+    calendar_type: Optional[str] = "5_DAY"
+    wbs_code: Optional[str] = None
+    constraint_type: Optional[str] = None
+    constraint_date: Optional[str] = None
+    baseline_start_date: Optional[str] = None
+    baseline_due_date: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
@@ -1201,6 +1213,100 @@ class TaskUpdate(BaseModel):
     estimated_hours: Optional[float] = None
     actual_hours: Optional[float] = None
     sort_order: Optional[int] = None
+    activity_code: Optional[str] = None
+    task_type: Optional[str] = None
+    duration_type: Optional[str] = None
+    pct_complete_type: Optional[str] = None
+    progress_pct: Optional[int] = None
+    steps_json: Optional[str] = None
+    calendar_type: Optional[str] = None
+    wbs_code: Optional[str] = None
+    constraint_type: Optional[str] = None
+    constraint_date: Optional[str] = None
+    baseline_start_date: Optional[str] = None
+    baseline_due_date: Optional[str] = None
+
+class BaselineCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    set_active: bool = True
+
+class CascadeTaskUpdate(BaseModel):
+    id: int
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    old_start: Optional[str] = None
+    old_finish: Optional[str] = None
+    activity_code: Optional[str] = None
+    title: Optional[str] = None
+    reason: Optional[str] = None
+
+@router.get("/{project_id}/baselines")
+def list_project_baselines(project_id: int):
+    return DBStore.get_project_baselines(project_id)
+
+@router.post("/{project_id}/baselines")
+def create_project_baseline(project_id: int, payload: BaselineCreateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    res = DBStore.create_project_baseline(
+        project_id=project_id,
+        name=payload.name.strip() or "Baseline",
+        description=payload.description,
+        set_active=payload.set_active,
+        user_id=current_user.get("id")
+    )
+    DBStore.add_project_activity(project_id, "BASELINE_CREATED", f"Captured project baseline '{payload.name}'", current_user.get("id"))
+    project_event_manager.broadcast(project_id, "BASELINE_UPDATED", {"user_id": current_user.get("id")})
+    return res
+
+@router.put("/{project_id}/baselines/{baseline_id}/activate")
+def activate_project_baseline(project_id: int, baseline_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    ok = DBStore.activate_project_baseline(project_id, baseline_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    DBStore.add_project_activity(project_id, "BASELINE_ACTIVATED", f"Activated baseline #{baseline_id}", current_user.get("id"))
+    project_event_manager.broadcast(project_id, "BASELINE_UPDATED", {"user_id": current_user.get("id")})
+    return {"status": "success"}
+
+@router.delete("/{project_id}/baselines/{baseline_id}")
+def delete_project_baseline(project_id: int, baseline_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    ok = DBStore.delete_project_baseline(project_id, baseline_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    project_event_manager.broadcast(project_id, "BASELINE_UPDATED", {"user_id": current_user.get("id")})
+    return {"status": "success"}
+
+@router.post("/{project_id}/schedule-cascade")
+def apply_schedule_cascade(project_id: int, updates: List[CascadeTaskUpdate], current_user: Dict[str, Any] = Depends(get_current_user)):
+    before_tasks = DBStore.get_dynamic_tasks(project_id)
+    before_due_dates = [str(t.get("due_date"))[:10] for t in before_tasks if t.get("due_date")]
+    old_project_finish = max(before_due_dates) if before_due_dates else None
+
+    details = []
+    for u in updates:
+        DBStore.update_dynamic_task(u.id, {
+            "start_date": u.start_date,
+            "due_date": u.due_date
+        })
+        code_lbl = f"[{u.activity_code}] " if u.activity_code else ""
+        title_lbl = u.title or f"Task #{u.id}"
+        reason_lbl = f" ({u.reason})" if u.reason else ""
+        if u.old_finish and u.due_date and u.old_finish != u.due_date:
+            details.append(f"{code_lbl}{title_lbl}: {u.old_finish} → {u.due_date}{reason_lbl}")
+        elif u.start_date and u.due_date:
+            details.append(f"{code_lbl}{title_lbl}: {u.start_date}..{u.due_date}{reason_lbl}")
+
+    after_tasks = DBStore.get_dynamic_tasks(project_id)
+    after_due_dates = [str(t.get("due_date"))[:10] for t in after_tasks if t.get("due_date")]
+    new_project_finish = max(after_due_dates) if after_due_dates else None
+
+    deadline_note = ""
+    if old_project_finish and new_project_finish and old_project_finish != new_project_finish:
+        deadline_note = f" | Project Deadline shifted: {old_project_finish} → {new_project_finish}"
+
+    summary_msg = f"Cascaded {len(updates)} dependent task(s){deadline_note}: " + "; ".join(details[:6])
+    DBStore.add_project_activity(project_id, "SCHEDULE_CASCADED", summary_msg, current_user.get("id"))
+    project_event_manager.broadcast(project_id, "TASKS_REORDERED", {"user_id": current_user.get("id")})
+    return {"status": "success", "updated_count": len(updates), "old_project_finish": old_project_finish, "new_project_finish": new_project_finish}
 
 @router.get("/{project_id}/dynamic-tasks")
 def list_dynamic_tasks(project_id: int):
@@ -1421,7 +1527,7 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
             raise HTTPException(status_code=403, detail="Not authorized to edit this task")
 
         task_dump = task.model_dump(exclude_unset=True)
-        allowed_keys = ["status", "actual_hours", "completed_at"]
+        allowed_keys = ["status", "actual_hours", "completed_at", "progress_pct", "steps_json"]
         for key in list(task_dump.keys()):
             if key not in allowed_keys:
                 del task_dump[key]
@@ -1446,12 +1552,32 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
         DBStore.add_project_activity(project_id, "TASK_COMPLETED_DATE_UPDATED", f"Updated completion date for task '{existing_task.get('title')}'", current_user["id"])
 
     date_changes = []
-    if task.start_date is not None and task.start_date != (existing_task.get("start_date") or None):
-        date_changes.append(f"Start date to {task.start_date or 'None'}")
-    if task.due_date is not None and task.due_date != (existing_task.get("due_date") or None):
-        date_changes.append(f"Due date to {task.due_date or 'None'}")
+    old_s = str(existing_task.get("start_date") or "")[:10] or None
+    old_f = str(existing_task.get("due_date") or "")[:10] or None
+    new_s = str(task.start_date)[:10] if task.start_date else old_s
+    new_f = str(task.due_date)[:10] if task.due_date else old_f
+
+    if task.start_date is not None and new_s != old_s:
+        date_changes.append(f"Start {old_s or 'None'} → {new_s or 'None'}")
+    if task.due_date is not None and new_f != old_f:
+        date_changes.append(f"Finish {old_f or 'None'} → {new_f or 'None'}")
     if date_changes:
-        DBStore.add_project_activity(project_id, "TASK_DATES_UPDATED", f"Updated dates for '{existing_task.get('title')}': {', '.join(date_changes)}", current_user["id"])
+        before_finishes = [str(t.get("due_date"))[:10] for t in all_tasks if t.get("due_date")]
+        old_proj_deadline = max(before_finishes) if before_finishes else None
+        after_tasks_now = DBStore.get_dynamic_tasks(project_id)
+        after_finishes = [str(t.get("due_date"))[:10] for t in after_tasks_now if t.get("due_date")]
+        new_proj_deadline = max(after_finishes) if after_finishes else None
+
+        code_prefix = f"[{existing_task.get('activity_code')}] " if existing_task.get("activity_code") else ""
+        deadline_suffix = ""
+        if old_proj_deadline and new_proj_deadline and old_proj_deadline != new_proj_deadline:
+            deadline_suffix = f" | Project Deadline shifted: {old_proj_deadline} → {new_proj_deadline}"
+        DBStore.add_project_activity(
+            project_id,
+            "TASK_DATES_UPDATED",
+            f"Updated dates for '{code_prefix}{existing_task.get('title')}': {', '.join(date_changes)}{deadline_suffix}",
+            current_user["id"]
+        )
 
     if task.title and task.title != existing_task.get("title"):
         DBStore.add_project_activity(project_id, "TASK_RENAMED", f"Renamed task from '{existing_task.get('title')}' to '{task.title}'", current_user["id"])
