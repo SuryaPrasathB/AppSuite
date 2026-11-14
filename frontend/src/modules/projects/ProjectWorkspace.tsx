@@ -171,14 +171,21 @@ export const ProjectWorkspace: React.FC = () => {
       ? toIsoDateStr(project.expected_completion_date)
       : null;
 
+    const targetDeliveryDate: string | null = project?.date_of_delivery
+      ? toIsoDateStr(project.date_of_delivery)
+      : null;
+    const effectiveDeadline = targetDeliveryDate || baselineDeadline;
+
     const expectedCompletionDate = mode === 'MANUAL' ? manualExpectedDate : autoExpectedDate;
     const varianceDays =
-      baselineDeadline && expectedCompletionDate
-        ? diffCalendarDays(baselineDeadline, expectedCompletionDate)
+      effectiveDeadline && expectedCompletionDate
+        ? diffCalendarDays(effectiveDeadline, expectedCompletionDate)
         : null;
 
     return {
+      targetDeliveryDate,
       baselineDeadline,
+      effectiveDeadline,
       autoExpectedDate,
       mode,
       manualExpectedDate,
@@ -186,14 +193,14 @@ export const ProjectWorkspace: React.FC = () => {
       varianceDays,
       baselineName: activeBaseline?.name || null,
     };
-  }, [dynamicTasks, activeBaseline, project?.expected_completion_mode, project?.expected_completion_date]);
+  }, [dynamicTasks, activeBaseline, project?.date_of_delivery, project?.expected_completion_mode, project?.expected_completion_date]);
 
   const handleOpenExpectedEditor = () => {
     setExpectedDraftMode(scheduleSummary.mode);
     setExpectedDraftDate(
       scheduleSummary.manualExpectedDate ||
       scheduleSummary.autoExpectedDate ||
-      scheduleSummary.baselineDeadline ||
+      scheduleSummary.effectiveDeadline ||
       new Date().toISOString().split('T')[0]
     );
     setIsExpectedEditorOpen((prev) => !prev);
@@ -603,6 +610,45 @@ export const ProjectWorkspace: React.FC = () => {
     }
   };
 
+  const handleBulkDeleteTasks = async (taskIds: number[]): Promise<boolean> => {
+    if (taskIds.length === 0) return false;
+    const confirmed = await showConfirm(
+      `Are you sure you want to delete ${taskIds.length} task${taskIds.length > 1 ? 's' : ''}?`,
+      'Delete Tasks',
+      true
+    );
+    if (!confirmed) return false;
+
+    try {
+      const tasksToDelete = dynamicTasks.filter(t => taskIds.includes(t.id));
+      await Promise.all(taskIds.map(id => deleteDynamicTask(project.id, id)));
+      await loadData(project.id, true);
+
+      success(`${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted`, undefined, 5000, async () => {
+        if (tasksToDelete.length > 0) {
+          for (const taskToDelete of tasksToDelete) {
+            const payload = {
+              ...taskToDelete,
+              dependencies: Array.isArray(taskToDelete.dependencies) && taskToDelete.dependencies.length > 0 ? JSON.stringify(taskToDelete.dependencies) : null,
+              blocking: Array.isArray(taskToDelete.blocking) && taskToDelete.blocking.length > 0 ? JSON.stringify(taskToDelete.blocking) : null
+            };
+            delete payload.id;
+            delete payload.created_at;
+            delete payload.updated_at;
+
+            await createDynamicTask(project.id, payload);
+          }
+          loadData(project.id, true);
+        }
+      });
+      return true;
+    } catch (err: any) {
+      showAlert("Failed to delete selected tasks");
+      showError(err.message || "Failed to delete selected tasks", 'Error');
+      return false;
+    }
+  };
+
   const handleCreateQuickTask = async (taskData: any) => {
     try {
       const maxSortOrder = dynamicTasks.reduce((max, t) => Math.max(max, t.sort_order ?? 0), -1);
@@ -703,7 +749,7 @@ export const ProjectWorkspace: React.FC = () => {
   return (
     <div className="flex flex-col bg-slate-50 -m-6 flex-1 min-h-0">
       {/* Workspace Header */}
-      <div className="bg-white border-b border-slate-200 px-4 lg:px-6 py-2 sticky -top-6 z-20 shadow-sm">
+      <div className="bg-white border-b border-slate-200 px-4 lg:px-6 py-2 shrink-0 z-20 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-3">
             <Link to="/projects" className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800">
@@ -765,24 +811,26 @@ export const ProjectWorkspace: React.FC = () => {
             {/* Project Deadline (Baseline) & Expected Completion */}
             {!project.is_parent && (
               <div className="flex items-center gap-2 mr-1">
-                {/* Baseline Deadline Pill */}
+                {/* Deadline Pill (Target Delivery primary, Baseline fallback) */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('timeline')}
                   title={
-                    scheduleSummary.baselineName
+                    scheduleSummary.targetDeliveryDate
+                      ? `Target Delivery Date${scheduleSummary.baselineDeadline ? ` • Baseline Finish: ${formatP6Date(scheduleSummary.baselineDeadline)}` : ''} (Click to view Timeline & Baselines)`
+                      : scheduleSummary.baselineName
                       ? `Baseline Deadline from "${scheduleSummary.baselineName}" (Click to view Timeline & Baselines)`
-                      : 'No active baseline set. Click to open Timeline & Baselines'
+                      : 'No Target Delivery or active baseline set. Click to open Timeline & Baselines'
                   }
                   className="flex items-center gap-2 px-2.5 py-1 rounded-lg border border-amber-200/80 bg-amber-50/70 hover:bg-amber-100/70 transition-colors text-left"
                 >
                   <Flag className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                   <div className="leading-tight">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-amber-700/80">
-                      Deadline <span className="font-medium normal-case">(Baseline)</span>
+                      Deadline <span className="font-medium normal-case">({scheduleSummary.targetDeliveryDate ? 'Target' : 'Baseline'})</span>
                     </div>
                     <div className="text-xs font-extrabold text-slate-800">
-                      {scheduleSummary.baselineDeadline ? formatP6Date(scheduleSummary.baselineDeadline) : 'No Baseline'}
+                      {scheduleSummary.effectiveDeadline ? formatP6Date(scheduleSummary.effectiveDeadline) : 'TBD'}
                     </div>
                   </div>
                 </button>
@@ -996,7 +1044,7 @@ export const ProjectWorkspace: React.FC = () => {
       </div>
 
       {/* Workspace Content Area */}
-      <div className="p-3 sm:p-4 lg:p-6 pt-2 lg:pt-2 relative flex-1 min-h-0 flex flex-col">
+      <div className="p-3 sm:p-4 lg:p-6 pt-2 lg:pt-2 relative flex-1 min-h-0 flex flex-col overflow-y-auto">
         {activeTab === 'sub_projects' && (
           <SubProjectsTab
             subProjects={subProjects}
@@ -1106,12 +1154,18 @@ export const ProjectWorkspace: React.FC = () => {
 
                 <div className="bg-white rounded-xl border border-amber-200/80 p-4 shadow-xs flex items-start justify-between">
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Deadline (Baseline)</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                      Deadline ({scheduleSummary.targetDeliveryDate ? 'Target' : 'Baseline'})
+                    </span>
                     <div className="text-lg font-extrabold text-slate-800 mt-1">
-                      {scheduleSummary.baselineDeadline ? formatP6Date(scheduleSummary.baselineDeadline) : 'No Baseline'}
+                      {scheduleSummary.effectiveDeadline ? formatP6Date(scheduleSummary.effectiveDeadline) : 'TBD'}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5 font-medium truncate max-w-[160px]">
-                      {scheduleSummary.baselineName || 'No active baseline'}
+                      {scheduleSummary.targetDeliveryDate
+                        ? scheduleSummary.baselineDeadline && scheduleSummary.baselineDeadline !== scheduleSummary.targetDeliveryDate
+                          ? `Baseline: ${formatP6Date(scheduleSummary.baselineDeadline)}`
+                          : 'Target Delivery'
+                        : scheduleSummary.baselineName || 'No active baseline'}
                     </div>
                   </div>
                   <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/70 flex items-center justify-center shrink-0">
@@ -1308,6 +1362,7 @@ export const ProjectWorkspace: React.FC = () => {
             dynamicTasks={dynamicTasks}
             handleOpenEditTask={handleOpenEditTask}
             handleDeleteTask={handleDeleteTask}
+            handleBulkDeleteTasks={handleBulkDeleteTasks}
             project={project}
             employees={employees}
             onCreateQuickTask={handleCreateQuickTask}

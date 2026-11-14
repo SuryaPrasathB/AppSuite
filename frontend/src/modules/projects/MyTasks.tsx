@@ -103,7 +103,9 @@ export const MyTasks: React.FC = () => {
         assignees.add(t.assignee_name);
       }
     });
-    return Array.from(assignees);
+    return Array.from(assignees)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   };
 
   // Filtered tasks

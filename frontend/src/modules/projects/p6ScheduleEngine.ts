@@ -69,6 +69,9 @@ export interface P6EnrichedTask {
   blDuration: number | null;
   startVarianceDays: number | null;  // Positive = Early, Negative = Delayed (or slip days)
   finishVarianceDays: number | null; // Positive = Slippage (late vs baseline), Negative = Ahead of baseline
+  completedVarianceDays: number | null; // Actual completedAt vs blDueDate (positive = completed late)
+  isOverdue: boolean;                // Open task whose dueDate < dataDate
+  overdueDays: number;               // Calendar days past dueDate as of dataDate
   isNewSinceBaseline: boolean;
   // Resources & Effort
   assignee_id?: number | null;
@@ -356,10 +359,17 @@ export function computeP6Schedule(
           : countWorkingDays(blStartDate, blDueDate, calendarType)
         : null;
 
+    const completedAt = toIsoDateStr(t.completed_at) || null;
+    const isCompleted = t.status === 'COMPLETED';
+    const isOverdue = !isCompleted && dueDate < todayStr;
+    const overdueDays = isOverdue ? Math.max(0, diffCalendarDays(dueDate, todayStr)) : 0;
+
     const startVarianceDays =
       blStartDate && startDate ? diffCalendarDays(blStartDate, startDate) : null;
     const finishVarianceDays =
       blDueDate && dueDate ? diffCalendarDays(blDueDate, dueDate) : null;
+    const completedVarianceDays =
+      isCompleted && completedAt && blDueDate ? diffCalendarDays(blDueDate, completedAt) : null;
 
     const isNewSinceBaseline =
       baselineMap.size > 0
@@ -392,7 +402,7 @@ export function computeP6Schedule(
       constraintDate: toIsoDateStr(t.constraint_date) || null,
       startDate,
       dueDate,
-      completedAt: toIsoDateStr(t.completed_at) || null,
+      completedAt,
       hasActualStart: t.status === 'IN_PROGRESS' || t.status === 'REVIEW' || t.status === 'COMPLETED' || progressPct > 0,
       hasActualFinish: t.status === 'COMPLETED' || progressPct >= 100,
       originalDuration,
@@ -416,6 +426,9 @@ export function computeP6Schedule(
       blDuration,
       startVarianceDays,
       finishVarianceDays,
+      completedVarianceDays,
+      isOverdue,
+      overdueDays,
       isNewSinceBaseline,
       assignee_id: t.assignee_id,
       assignee_name: t.assignee_name,
@@ -1410,8 +1423,8 @@ export function computeDeadlineImpactAnalysis(
     const seen = new Set<number>();
     while (pointer && !seen.has(pointer.id)) {
       seen.add(pointer.id);
-      const driverId = pointer.drivingPredecessorId;
-      const driver = driverId ? taskMap.get(driverId) : undefined;
+      const driverId: number | null = pointer.drivingPredecessorId;
+      const driver: P6EnrichedTask | undefined = driverId ? taskMap.get(driverId) : undefined;
       if (driver && (driver.finishVarianceDays ?? 0) > 0) {
         earliestSlipped = driver;
         pointer = driver;

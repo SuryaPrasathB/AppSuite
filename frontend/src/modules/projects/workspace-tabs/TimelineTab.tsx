@@ -39,6 +39,56 @@ import {
   fetchProjectActivities,
 } from '../api';
 
+const STATUS_GANTT_STYLES: Record<
+  string,
+  {
+    label: string;
+    bar: string;
+    progressFill: string;
+    dot: string;
+    diamond: string;
+  }
+> = {
+  TODO: {
+    label: 'TODO',
+    bar: 'border-slate-500 bg-slate-300',
+    progressFill: 'bg-slate-500 border-r border-slate-700',
+    dot: 'bg-slate-400',
+    diamond: 'bg-slate-500 border-slate-800',
+  },
+  IN_PROGRESS: {
+    label: 'In Progress',
+    bar: 'border-blue-700 bg-sky-200',
+    progressFill: 'bg-blue-600 border-r border-blue-900',
+    dot: 'bg-blue-500',
+    diamond: 'bg-blue-600 border-blue-900',
+  },
+  REVIEW: {
+    label: 'Review',
+    bar: 'border-violet-700 bg-violet-200',
+    progressFill: 'bg-violet-600 border-r border-violet-900',
+    dot: 'bg-violet-500',
+    diamond: 'bg-violet-600 border-violet-900',
+  },
+  BLOCKED: {
+    label: 'Blocked',
+    bar: 'border-rose-800 bg-rose-500',
+    progressFill: 'bg-rose-700 border-r border-rose-950',
+    dot: 'bg-rose-600',
+    diamond: 'bg-rose-600 border-rose-950',
+  },
+  COMPLETED: {
+    label: 'Completed',
+    bar: 'border-emerald-800 bg-emerald-600',
+    progressFill: 'bg-emerald-600',
+    dot: 'bg-emerald-500',
+    diamond: 'bg-emerald-600 border-emerald-900',
+  },
+};
+
+const getGanttStatusStyle = (status?: string) =>
+  STATUS_GANTT_STYLES[(status || 'TODO').toUpperCase()] || STATUS_GANTT_STYLES.TODO;
+
 interface TimelineTabProps {
   dynamicTasks: any[];
   handleOpenEditTask: (task?: any, parentId?: number | null) => void;
@@ -353,9 +403,13 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
     end.setDate(end.getDate() + 20);
 
     const allDates: number[] = [];
+    if (dataDate) allDates.push(parseLocalDate(dataDate).getTime());
     enrichedTasks.forEach((t) => {
       if (t.startDate) allDates.push(parseLocalDate(t.startDate).getTime());
       if (t.dueDate) allDates.push(parseLocalDate(t.dueDate).getTime());
+      if (t.status === 'COMPLETED' && t.completedAt) {
+        allDates.push(parseLocalDate(t.completedAt).getTime());
+      }
       if (t.earlyFinish) allDates.push(parseLocalDate(t.earlyFinish).getTime());
       if (showBaselineBars && t.blStartDate) allDates.push(parseLocalDate(t.blStartDate).getTime());
       if (showBaselineBars && t.blDueDate) allDates.push(parseLocalDate(t.blDueDate).getTime());
@@ -694,7 +748,9 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
   const dataDateX = Math.max(0, Math.min(ganttCanvasWidth, (dataDateOffsetDays + 0.5) * colWidthPx));
 
   // Project Deadline Visual Coordinates (Baseline Target Deadline vs. Live/Forecast Finish)
-  const blDeadlineOffsetDays = diffCalendarDays(toIsoDateStr(timelineStart), deadlineImpact.baselineDeadline);
+  const blDeadlineOffsetDays = deadlineImpact.baselineDeadline
+    ? diffCalendarDays(toIsoDateStr(timelineStart), deadlineImpact.baselineDeadline)
+    : 0;
   const blDeadlineX = Math.max(0, Math.min(ganttCanvasWidth, (blDeadlineOffsetDays + 1) * colWidthPx));
   const liveFinishDateStr =
     deadlineImpact.cpmForecastFinish > deadlineImpact.scheduledFinish
@@ -1042,19 +1098,38 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
 
       {/* Legend Sub-bar */}
       <div className="px-3.5 py-1 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 shrink-0">
-        <div className="flex flex-wrap items-center gap-3.5">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1.5 font-semibold">
-            <span className="w-3 h-2 rounded-xs bg-blue-600 inline-block" /> Actual / Completed
+            <span className="w-3 h-2 rounded-xs bg-slate-300 border border-slate-500 inline-block" /> TODO
           </span>
           <span className="flex items-center gap-1.5 font-semibold">
-            <span className="w-3 h-2 rounded-xs bg-emerald-500 border border-emerald-700 inline-block" /> Remaining (Non-Critical)
+            <span className="w-3 h-2 rounded-xs bg-blue-600 border border-blue-800 inline-block" /> In Progress
           </span>
           <span className="flex items-center gap-1.5 font-semibold">
-            <span className="w-3 h-2 rounded-xs bg-rose-600 border border-rose-800 inline-block" /> Critical Path (0d Float)
+            <span className="w-3 h-2 rounded-xs bg-violet-500 border border-violet-700 inline-block" /> Review
+          </span>
+          <span className="flex items-center gap-1.5 font-semibold">
+            <span className="w-3 h-2 rounded-xs bg-rose-500 border border-rose-800 inline-block" /> Blocked
+          </span>
+          <span className="flex items-center gap-1.5 font-semibold">
+            <span className="w-3 h-2 rounded-xs bg-emerald-600 border border-emerald-800 inline-block" /> Completed
+          </span>
+          <span className="flex items-center gap-1.5 font-semibold">
+            <span
+              className="w-3 h-2 rounded-xs border border-rose-600 inline-block"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(-45deg, rgba(225,29,72,0.35), rgba(225,29,72,0.35) 2px, rgba(251,191,36,0.4) 2px, rgba(251,191,36,0.4) 4px)',
+              }}
+            />{' '}
+            Overdue (to Today)
+          </span>
+          <span className="flex items-center gap-1.5 font-semibold">
+            <span className="w-3 h-2 rounded-xs bg-white border border-slate-300 ring-1 ring-rose-600 shadow-[0_2px_0_0_#e11d48] inline-block" /> Critical Path
           </span>
           {showBaselineBars && (
             <span className="flex items-center gap-1.5 font-semibold">
-              <span className="w-3 h-1.5 rounded-xs bg-amber-400 border border-amber-600 inline-block" /> Project Baseline (BL)
+              <span className="w-3 h-1.5 rounded-xs bg-amber-400 border border-amber-600 inline-block" /> Baseline (BL)
             </span>
           )}
           <span className="flex items-center gap-1.5 font-semibold">
@@ -1256,13 +1331,10 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                           </button>
                         ) : (
                           <span
-                            className={`w-1.5 h-1.5 rounded-xs shrink-0 ${
-                              t?.status === 'COMPLETED'
-                                ? 'bg-blue-500'
-                                : t?.isCritical
-                                ? 'bg-rose-500'
-                                : 'bg-emerald-500'
+                            className={`w-2 h-2 rounded-full shrink-0 ${getGanttStatusStyle(t?.status).dot} ${
+                              t?.isCritical ? 'ring-1 ring-rose-500 ring-offset-1' : ''
                             }`}
+                            title={`${getGanttStatusStyle(t?.status).label}${t?.isCritical ? ' • Critical Path' : ''}`}
                           />
                         )}
                         {!isSummary && t && onUpdateTaskField ? (
@@ -1573,7 +1645,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                                       : 'text-white font-bold'
                                   }
                                 >
-                                  ← {attr.movedByTask.activityCode} ({attr.movedByRelation})
+                                  ← {attr.movedByTask.activityCode} ({attr.relType || 'FS'})
                                 </span>
                               ) : !isSummary && attr && attr.finishSlipDays > 0 ? (
                                 <span className={!isSelected ? 'text-amber-700 font-bold' : 'text-amber-200 font-bold'}>
@@ -1719,10 +1791,15 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                   t && dragDelta !== 0 && draggingBar?.mode === 'move'
                     ? addCalendarDays(row.startDate, dragDelta)
                     : row.startDate;
-                const effectiveEnd =
+                const plannedEnd =
                   t && dragDelta !== 0
                     ? addCalendarDays(row.dueDate, dragDelta)
                     : row.dueDate;
+                const hasCompletedDate = Boolean(!isSummary && t && t.status === 'COMPLETED' && t.completedAt && dragDelta === 0);
+                const effectiveEnd =
+                  hasCompletedDate && t!.completedAt! >= effectiveStart
+                    ? t!.completedAt!
+                    : plannedEnd;
 
                 const startOffset = diffCalendarDays(toIsoDateStr(timelineStart), effectiveStart);
                 const endOffset = diffCalendarDays(toIsoDateStr(timelineStart), effectiveEnd);
@@ -1731,6 +1808,18 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                 const barLeftPx = Math.max(0, startOffset * colWidthPx);
                 const barWidthPx = Math.max(colWidthPx * 0.6, durationSpanDays * colWidthPx);
 
+                const isMilestone =
+                  !isSummary && t && (t.taskType === 'START_MILESTONE' || t.taskType === 'FINISH_MILESTONE');
+                const isLoe = !isSummary && t && t.taskType === 'LOE';
+
+                // Overdue extension tail: extends uncompleted tasks from planned finish up to Today's Data Date line
+                const showOverdueTail = Boolean(!isSummary && !isMilestone && t && t.isOverdue && dragDelta === 0);
+                const overdueWidthPx = showOverdueTail
+                  ? Math.max(0, dataDateX - (barLeftPx + barWidthPx))
+                  : 0;
+
+                const statusStyle = getGanttStatusStyle(t?.status);
+
                 // Baseline bar coordinates
                 const hasBl = showBaselineBars && row.blStartDate && row.blDueDate;
                 const blStartOffset = hasBl ? diffCalendarDays(toIsoDateStr(timelineStart), row.blStartDate!) : 0;
@@ -1738,10 +1827,6 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                 const blSpanDays = Math.max(1, blEndOffset - blStartOffset + 1);
                 const blLeftPx = Math.max(0, blStartOffset * colWidthPx);
                 const blWidthPx = Math.max(colWidthPx * 0.6, blSpanDays * colWidthPx);
-
-                const isMilestone =
-                  !isSummary && t && (t.taskType === 'START_MILESTONE' || t.taskType === 'FINISH_MILESTONE');
-                const isLoe = !isSummary && t && t.taskType === 'LOE';
 
                 return (
                   <div
@@ -1798,7 +1883,11 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                     )}
 
                     {/* CASE B: MILESTONE DIAMOND (♦) */}
-                    {isMilestone && t && (
+                    {isMilestone && t && (() => {
+                      const milestoneDate = t.status === 'COMPLETED' && t.completedAt ? t.completedAt : effectiveStart;
+                      const msOffset = diffCalendarDays(toIsoDateStr(timelineStart), milestoneDate);
+                      const msLeftPx = Math.max(0, msOffset * colWidthPx);
+                      return (
                       <div className="relative w-full h-full">
                         {/* Baseline Milestone Diamond */}
                         {hasBl && (
@@ -1819,23 +1908,20 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                             handleOpenEditTask(t.raw);
                           }}
                           className={`absolute w-3.5 h-3.5 rotate-45 border shadow-xs cursor-pointer transition-transform hover:scale-125 z-[3] ${
-                            t.status === 'COMPLETED'
-                              ? 'bg-blue-600 border-blue-900'
-                              : showCriticalPath && t.isCritical
-                              ? 'bg-rose-600 border-rose-950'
-                              : 'bg-slate-900 border-amber-400'
-                          }`}
-                          style={{ left: barLeftPx + colWidthPx / 2 - 7, top: 8 }}
-                          title={`${t.activityCode}: ${t.title} (${formatP6Date(effectiveStart)})`}
+                            statusStyle.diamond
+                          } ${showCriticalPath && t.isCritical ? 'ring-2 ring-rose-500 ring-offset-1' : ''}`}
+                          style={{ left: msLeftPx + colWidthPx / 2 - 7, top: 8 }}
+                          title={`${t.activityCode}: ${t.title} (${formatP6Date(milestoneDate)}) • ${statusStyle.label}`}
                         />
                         <span
                           className="absolute text-[10px] font-bold text-slate-800 whitespace-nowrap pointer-events-none z-[6] bg-white/90 px-1 rounded-xs"
-                          style={{ left: barLeftPx + colWidthPx / 2 + 11, top: 7 }}
+                          style={{ left: msLeftPx + colWidthPx / 2 + 11, top: 7 }}
                         >
-                          {t.title}, {formatP6Date(effectiveStart, t.hasActualFinish ? 'A' : '')}
+                          {t.title}, {formatP6Date(milestoneDate, t.hasActualFinish ? 'A' : '')}
                         </span>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* CASE C: STANDARD TASK / RESOURCE / LOE GANTT BAR */}
                     {!isSummary && !isMilestone && t && (
@@ -1855,7 +1941,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                           />
                         )}
 
-                        {/* 2. Live Activity Bar (Blue Actual % + Red Critical or Emerald Remaining) */}
+                        {/* 2. Live Activity Bar (Status-colored + Progress Fill + Critical Accent) */}
                         <div
                           onMouseDown={(e) => {
                             if (e.button !== 0) return;
@@ -1877,21 +1963,34 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                           className={`absolute z-[3] flex overflow-hidden cursor-grab active:cursor-grabbing shadow-xs transition-shadow ${
                             isLoe
                               ? 'h-[8px] top-[11px] rounded-none border-y-2 border-teal-800 bg-teal-600'
-                              : 'h-[13px] top-[8px] rounded-[2px] border'
-                          } ${
-                            t.status === 'COMPLETED'
-                              ? 'border-blue-800 bg-blue-600'
-                              : showCriticalPath && t.isCritical
-                              ? 'border-rose-900 bg-rose-600'
-                              : 'border-emerald-800 bg-emerald-500'
+                              : `h-[13px] top-[8px] ${showOverdueTail && overdueWidthPx > 0 ? 'rounded-l-[2px]' : 'rounded-[2px]'} border`
+                          } ${!isLoe ? statusStyle.bar : ''} ${
+                            showCriticalPath && t.isCritical ? 'ring-1 ring-rose-600 shadow-[0_2px_0_0_#e11d48]' : ''
                           } ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}
-                          style={{ left: barLeftPx, width: barWidthPx }}
-                          title={`${t.activityCode} — ${t.title}\nStart: ${formatP6Date(effectiveStart)} | Finish: ${formatP6Date(effectiveEnd)}\nDuration: ${t.originalDuration}d (Rem: ${t.remainingDuration}d) | Complete: ${t.progressPct}%\nTotal Float: ${t.totalFloat}d (${t.isCritical ? 'CRITICAL PATH' : 'Non-Critical'})`}
+                          style={{
+                            left: barLeftPx,
+                            width: barWidthPx,
+                            ...(t.status === 'BLOCKED' && !isLoe
+                              ? {
+                                  backgroundImage:
+                                    'repeating-linear-gradient(-45deg, rgba(255,255,255,0.18), rgba(255,255,255,0.18) 4px, transparent 4px, transparent 8px)',
+                                }
+                              : {}),
+                          }}
+                          title={`${t.activityCode} — ${t.title} [${statusStyle.label}]\nStart: ${formatP6Date(effectiveStart)} | ${
+                            hasCompletedDate ? `Completed: ${formatP6Date(effectiveEnd)} (Planned: ${formatP6Date(plannedEnd)})` : `Finish: ${formatP6Date(effectiveEnd)}`
+                          }\nDuration: ${t.originalDuration}d (Rem: ${t.remainingDuration}d) | Complete: ${t.progressPct}%${
+                            t.isOverdue ? `\nOverdue: +${t.overdueDays}d past due date as of ${formatP6Date(dataDate)}` : ''
+                          }${
+                            t.completedVarianceDays !== null && t.completedVarianceDays !== 0
+                              ? `\nBaseline Variance: ${t.completedVarianceDays > 0 ? `+${t.completedVarianceDays}d past BL` : `${t.completedVarianceDays}d early`}`
+                              : ''
+                          }\nTotal Float: ${t.totalFloat}d (${t.isCritical ? 'CRITICAL PATH' : 'Non-Critical'})`}
                         >
-                          {/* Actual Completed Portion in Royal Blue */}
+                          {/* Actual Completed Portion */}
                           {t.progressPct > 0 && t.progressPct < 100 && (
                             <div
-                              className="h-full bg-blue-600 border-r border-blue-900 shrink-0"
+                              className={`h-full shrink-0 ${statusStyle.progressFill}`}
                               style={{ width: `${t.progressPct}%` }}
                             />
                           )}
@@ -1915,16 +2014,48 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                           />
                         </div>
 
-                        {/* 3. Right-side Activity Bar Label (Offset past outgoing arrow jog & backed by white pill so lines never cross through text) */}
+                        {/* 2b. Overdue Slippage Tail (extends uncompleted tasks past planned finish to Today's line) */}
+                        {!isLoe && showOverdueTail && overdueWidthPx > 0 && (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTaskId(t.id);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditTask(t.raw);
+                            }}
+                            className="absolute z-[2] h-[13px] top-[8px] rounded-r-[2px] border border-l-0 border-dashed border-rose-600 cursor-pointer"
+                            style={{
+                              left: barLeftPx + barWidthPx,
+                              width: overdueWidthPx,
+                              backgroundImage:
+                                'repeating-linear-gradient(-45deg, rgba(225,29,72,0.22), rgba(225,29,72,0.22) 4px, rgba(251,191,36,0.28) 4px, rgba(251,191,36,0.28) 8px)',
+                            }}
+                            title={`Overdue by ${t.overdueDays}d (Planned Finish: ${formatP6Date(plannedEnd)} → Today: ${formatP6Date(dataDate)})`}
+                          />
+                        )}
+
+                        {/* 3. Right-side Activity Bar Label (Offset past bar/overdue tail & backed by white pill) */}
                         <span
-                          className={`absolute text-[10px] whitespace-nowrap pointer-events-none z-[6] bg-white/90 px-1 rounded-xs ${
+                          className={`absolute text-[10px] whitespace-nowrap pointer-events-none z-[6] bg-white/90 px-1 rounded-xs flex items-center gap-1 ${
                             showCriticalPath && t.isCritical
                               ? 'font-bold text-rose-800'
                               : 'font-semibold text-slate-700'
                           }`}
-                          style={{ left: barLeftPx + barWidthPx + 9, top: 6 }}
+                          style={{ left: barLeftPx + barWidthPx + overdueWidthPx + 9, top: 6 }}
                         >
-                          {t.title}
+                          <span>{t.title}</span>
+                          {t.isOverdue && t.overdueDays > 0 && (
+                            <span className="text-[9px] font-extrabold text-rose-700 bg-rose-100 border border-rose-300 px-1 rounded-xs">
+                              +{t.overdueDays}d overdue
+                            </span>
+                          )}
+                          {t.status === 'COMPLETED' && t.completedVarianceDays !== null && t.completedVarianceDays > 0 && (
+                            <span className="text-[9px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-1 rounded-xs">
+                              +{t.completedVarianceDays}d past BL
+                            </span>
+                          )}
                         </span>
                       </div>
                     )}
@@ -3277,21 +3408,21 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                             className={`px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all ${
                               isCulprit
                                 ? 'bg-rose-600 text-white border-rose-800 shadow-xs ring-2 ring-rose-300'
-                                : node.finishSlipDays > 0
+                                : node.slipDays > 0
                                 ? 'bg-rose-50 border-rose-300 text-rose-900 hover:bg-rose-100'
                                 : 'bg-white border-slate-200 text-slate-800 hover:border-indigo-300'
                             }`}
-                            title={`${node.task.activityCode}: ${node.task.title}\nFinish: ${formatP6Date(node.task.dueDate)} (CPM EF: ${formatP6Date(node.task.earlyFinish)})\nOwn Added Delay: ${node.ownDelayContributionDays >= 0 ? `+${node.ownDelayContributionDays}d` : `${node.ownDelayContributionDays}d`}`}
+                            title={`${node.task.activityCode}: ${node.task.title}\nFinish: ${formatP6Date(node.task.dueDate)} (CPM EF: ${formatP6Date(node.task.earlyFinish)})\nOwn Added Delay: ${node.ownAddedSlipDays >= 0 ? `+${node.ownAddedSlipDays}d` : `${node.ownAddedSlipDays}d`}`}
                           >
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-extrabold text-[11px]">{node.task.activityCode}</span>
-                              {node.finishSlipDays > 0 && (
+                              {node.slipDays > 0 && (
                                 <span
                                   className={`px-1 py-0.2 rounded text-[9px] font-black ${
                                     isCulprit ? 'bg-amber-300 text-slate-950' : 'bg-rose-200 text-rose-900'
                                   }`}
                                 >
-                                  +{node.finishSlipDays}d
+                                  +{node.slipDays}d
                                 </span>
                               )}
                             </div>
@@ -3307,7 +3438,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                           {idx < deadlineImpact.drivingChain.length - 1 && (
                             <div className="flex flex-col items-center px-0.5 text-slate-400">
                               <span className="text-[8px] font-mono font-bold text-slate-500">
-                                {deadlineImpact.drivingChain[idx + 1].linkFromPrev || 'FS'}
+                                {deadlineImpact.drivingChain[idx + 1].relType || 'FS'}
                               </span>
                               <ArrowRight className="h-3.5 w-3.5 text-rose-500" />
                             </div>
@@ -3377,8 +3508,8 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
                             <td className="px-3 py-2 font-mono text-[11px]">
                               {attr.movedByTask ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold">
-                                  ← {attr.movedByTask.activityCode} ({attr.movedByRelation}
-                                  {attr.movedByLag ? ` ${attr.movedByLag > 0 ? `+${attr.movedByLag}d` : `${attr.movedByLag}d`}` : ''})
+                                  ← {attr.movedByTask.activityCode} ({attr.relType || 'FS'}
+                                  {attr.lag ? ` ${attr.lag > 0 ? `+${attr.lag}d` : `${attr.lag}d`}` : ''})
                                 </span>
                               ) : (
                                 <span className="text-slate-400 italic">None (Start / Independent)</span>

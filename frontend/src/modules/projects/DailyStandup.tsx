@@ -92,7 +92,9 @@ export const DailyStandup: React.FC = () => {
             onChange={(e) => setSelectedEmployeeId(e.target.value)}
           >
             <option value="all">All Employees</option>
-            {data.map(emp => {
+            {[...data]
+              .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))
+              .map(emp => {
               const activeCount = emp.tasks.filter(passesDateFilter).length;
               if (activeCount === 0) return null;
               return (

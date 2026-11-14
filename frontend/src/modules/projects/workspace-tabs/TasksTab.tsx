@@ -1,10 +1,11 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2, Diamond, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
+import { useDialog } from '../../../context/DialogContext';
 import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
-import { createDynamicTask, fetchProjects } from '../api';
+import { createDynamicTask, deleteDynamicTask, fetchProjects } from '../api';
 import { isTaskOverdue } from '../taskUtils';
 import { computeP6Schedule, P6EnrichedTask } from '../p6ScheduleEngine';
 
@@ -12,6 +13,7 @@ interface TasksTabProps {
   dynamicTasks: any[];
   handleOpenEditTask: (task?: any, parentId?: number | null) => void;
   handleDeleteTask: (taskId: number) => void;
+  handleBulkDeleteTasks?: (taskIds: number[]) => Promise<boolean>;
   project?: any;
   employees?: any[];
   onCreateQuickTask?: (taskData: any) => Promise<void>;
@@ -191,9 +193,10 @@ const DuplicateTaskModal: React.FC<{
 };
 
 export const TasksTab: React.FC<TasksTabProps> = ({ 
-  dynamicTasks, handleOpenEditTask, handleDeleteTask, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks, onOpenComments 
+  dynamicTasks, handleOpenEditTask, handleDeleteTask, handleBulkDeleteTasks, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks, onOpenComments 
 }) => {
   const { user } = useAuth();
+  const { showConfirm } = useDialog();
   const isAdminOrManager = user?.role === 'Administrator' || user?.role === 'Store Manager';
   const isProjectIncharge = user?.name === project?.project_incharge;
   const canEditAny = true; // Temporarily allow all users to create/edit tasks
@@ -212,6 +215,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
+
+  React.useEffect(() => {
+    const existingIds = new Set(dynamicTasks.map(t => t.id));
+    setSelectedTasks(prev => {
+      const next = prev.filter(id => existingIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [dynamicTasks]);
 
   const [groupBy, setGroupBy] = useState<'status' | 'wbs' | 'assignee' | 'priority'>('status');
   const [filterAssignee, setFilterAssignee] = useState<string>('');
@@ -312,7 +323,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   };
 
   const activeColCount = useMemo(
-    () => 1 + Object.values(visibleColumns).filter(Boolean).length,
+    () => 1 + [
+      'activity_code', 'task_type', 'wbs_code', 'estimated_hours', 'actual_hours', 'progress_pct',
+      'assignee', 'due_date', 'completed', 'priority', 'status', 'comments'
+    ].filter((k) => visibleColumns[k]).length,
     [visibleColumns]
   );
 
@@ -908,7 +922,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                       </div>
                     )}
                   </div>
-                  <span className="text-slate-600 text-xs font-medium truncate max-w-[110px]">
+                  <span className="text-slate-600 text-xs font-medium truncate">
                     {task.assignees && task.assignees.length > 0
                       ? task.assignees.map((a: any) => a.name).join(', ')
                       : (task.assignee_name || 'Unassigned')}
@@ -1215,28 +1229,37 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     return [];
   }, [dynamicTasks, groupBy, filterAssignee, filterPriority, employees]);
 
-  const renderColGroup = () => (
-    <colgroup>
-      <col />
-      {visibleColumns.activity_code && <col className="w-[68px]" />}
-      {visibleColumns.task_type && <col className="w-[134px]" />}
-      {visibleColumns.wbs_code && <col className="w-[128px]" />}
-      {visibleColumns.estimated_hours && <col className="w-[66px]" />}
-      {visibleColumns.actual_hours && <col className="w-[66px]" />}
-      {visibleColumns.progress_pct && <col className="w-[64px]" />}
-      {visibleColumns.assignee && <col className="w-[116px]" />}
-      {visibleColumns.due_date && <col className="w-[144px]" />}
-      {visibleColumns.completed && <col className="w-[96px]" />}
-      {visibleColumns.priority && <col className="w-[80px]" />}
-      {visibleColumns.status && <col className="w-[112px]" />}
-      {visibleColumns.comments && <col className="w-[124px]" />}
-    </colgroup>
-  );
+  const renderColGroup = () => {
+    const columnWeights: { key: string; weight: number }[] = [
+      { key: 'title', weight: 360 },
+      ...(visibleColumns.activity_code ? [{ key: 'activity_code', weight: 60 }] : []),
+      ...(visibleColumns.task_type ? [{ key: 'task_type', weight: 115 }] : []),
+      ...(visibleColumns.wbs_code ? [{ key: 'wbs_code', weight: 115 }] : []),
+      ...(visibleColumns.estimated_hours ? [{ key: 'estimated_hours', weight: 56 }] : []),
+      ...(visibleColumns.actual_hours ? [{ key: 'actual_hours', weight: 56 }] : []),
+      ...(visibleColumns.progress_pct ? [{ key: 'progress_pct', weight: 56 }] : []),
+      ...(visibleColumns.assignee ? [{ key: 'assignee', weight: 115 }] : []),
+      ...(visibleColumns.due_date ? [{ key: 'due_date', weight: 130 }] : []),
+      ...(visibleColumns.completed ? [{ key: 'completed', weight: 92 }] : []),
+      ...(visibleColumns.priority ? [{ key: 'priority', weight: 78 }] : []),
+      ...(visibleColumns.status ? [{ key: 'status', weight: 104 }] : []),
+      ...(visibleColumns.comments ? [{ key: 'comments', weight: 96 }] : []),
+    ];
+    const totalWeight = columnWeights.reduce((sum, col) => sum + col.weight, 0);
+
+    return (
+      <colgroup>
+        {columnWeights.map((col) => (
+          <col key={col.key} style={{ width: `${(col.weight / totalWeight) * 100}%` }} />
+        ))}
+      </colgroup>
+    );
+  };
 
   return (
     <div className="bg-white rounded-2xl flex flex-col relative pb-12">
       {/* Sticky Header Group */}
-      <div className="sticky top-[57px] z-10 bg-white pt-4">
+      <div className="sticky top-0 z-10 bg-white pt-4 rounded-t-2xl">
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 pb-2">
         <div className="flex items-center gap-3 flex-wrap">
@@ -1672,18 +1695,31 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             <div className="h-4 w-px bg-slate-700 mx-2" />
             
             <button 
+              disabled={isSubmitting}
               onClick={async () => {
-                if (window.confirm(`Are you sure you want to delete ${selectedTasks.length} tasks?`)) {
-                  setIsSubmitting(true);
-                  try {
-                    await Promise.all(selectedTasks.map(id => handleDeleteTask(id)));
-                    setSelectedTasks([]);
-                  } finally {
-                    setIsSubmitting(false);
+                setIsSubmitting(true);
+                try {
+                  if (handleBulkDeleteTasks) {
+                    const deleted = await handleBulkDeleteTasks(selectedTasks);
+                    if (deleted) {
+                      setSelectedTasks([]);
+                    }
+                  } else if (project?.id) {
+                    const confirmed = await showConfirm(
+                      `Are you sure you want to delete ${selectedTasks.length} task${selectedTasks.length > 1 ? 's' : ''}?`,
+                      'Delete Tasks',
+                      true
+                    );
+                    if (confirmed) {
+                      await Promise.all(selectedTasks.map(id => deleteDynamicTask(project.id, id)));
+                      setSelectedTasks([]);
+                    }
                   }
+                } finally {
+                  setIsSubmitting(false);
                 }
               }}
-              className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 cursor-pointer px-2 py-1.5 rounded hover:bg-slate-800 transition-colors"
+              className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 disabled:opacity-50 cursor-pointer px-2 py-1.5 rounded hover:bg-slate-800 transition-colors"
               title="Delete selected tasks"
             >
               <Trash2 className="h-4 w-4" />
