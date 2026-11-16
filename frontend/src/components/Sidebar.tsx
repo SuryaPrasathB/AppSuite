@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Features } from '../config/features';
 import { 
   LayoutDashboard, 
   Package, 
@@ -45,9 +46,9 @@ export const Sidebar: React.FC = () => {
   // Determine active module
   const path = location.pathname;
   
-  // Default module based on roles
-  let defaultModule: 'projects' | 'bom' | 'store' = 'store';
-  if (hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
+  // Default module based on roles and enabled modules
+  let defaultModule: 'projects' | 'bom' | 'store' = Features.ENABLE_STORE_MODULE ? 'store' : 'projects';
+  if (Features.ENABLE_STORE_MODULE && hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
     defaultModule = 'store';
   } else if (hasRole(['Administrator', 'Employee'])) {
     defaultModule = 'projects';
@@ -56,9 +57,9 @@ export const Sidebar: React.FC = () => {
   let activeModule: 'projects' | 'bom' | 'store' = defaultModule;
   if (path.startsWith('/projects')) {
     activeModule = 'projects';
-  } else if (path.startsWith('/bom')) {
+  } else if (Features.ENABLE_BOM_MODULE && path.startsWith('/bom')) {
     activeModule = 'bom';
-  } else if (['/store', '/products', '/layout', '/stock-in', '/issue-material', '/return-material', '/inventory', '/vendors', '/employees', '/assets', '/purchase', '/requests', '/reports'].includes(path)) {
+  } else if (Features.ENABLE_STORE_MODULE && ['/store', '/products', '/layout', '/stock-in', '/issue-material', '/return-material', '/inventory', '/vendors', '/employees', '/assets', '/purchase', '/requests', '/reports'].includes(path)) {
     activeModule = 'store';
   }
 

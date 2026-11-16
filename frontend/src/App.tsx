@@ -8,7 +8,11 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AnnouncementBanner } from './components/AnnouncementBanner';
+import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { Login } from './modules/store/pages/Login';
+import { AcceptInvite } from './modules/store/pages/AcceptInvite';
+import { ForgotPassword } from './modules/store/pages/ForgotPassword';
+import { ResetPassword } from './modules/store/pages/ResetPassword';
 import { Dashboard } from './modules/store/pages/Dashboard';
 import { StoreLayout } from './modules/store/pages/StoreLayout';
 import { Products } from './modules/store/pages/Products';
@@ -31,6 +35,8 @@ import { Employees } from './modules/store/pages/Employees';
 import { Assets } from './modules/store/pages/Assets';
 import { Portal } from './modules/portal/Portal';
 import { UsersManagement } from './modules/portal/UsersManagement';
+import { CompanyAdmin } from './modules/admin/CompanyAdmin';
+import { SuperAdmin } from './modules/admin/SuperAdmin';
 import { BOM } from './modules/bom/BOM';
 import { CreateBOMPage } from './modules/bom/CreateBOMPage';
 import { BOMSearchPage } from './modules/bom/BOMSearchPage';
@@ -98,6 +104,7 @@ import { apiClient } from './api/apiClient';
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const location = useLocation();
+  const [, setFeaturesVersion] = useState(0);
 
   useEffect(() => {
     apiClient.features.list().then((flags) => {
@@ -107,6 +114,7 @@ const AppContent: React.FC = () => {
             (Features as any)[f.key] = f.enabled;
           }
         });
+        setFeaturesVersion((v) => v + 1);
       }
     }).catch(() => {});
   }, [user]);
@@ -119,9 +127,16 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // If not logged in, render the login view
+  // If not logged in, render public auth routes
   if (!user) {
-    return <Login />;
+    return (
+      <Routes>
+        <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<Login />} />
+      </Routes>
+    );
   }
 
   // If visiting root lobby, render Portal without sidebar/header layout
@@ -131,6 +146,17 @@ const AppContent: React.FC = () => {
 
   if (location.pathname === '/users') {
     return <UsersManagement />;
+  }
+
+  if (location.pathname === '/company-admin') {
+    return <ProtectedRoute allowedRoles={['Administrator', 'company_admin']}><CompanyAdmin /></ProtectedRoute>;
+  }
+
+  if (location.pathname === '/superadmin') {
+    if (!user.is_super_admin && user.role !== 'super_admin') {
+      return <Navigate to="/" replace />;
+    }
+    return <SuperAdmin />;
   }
 
   if (location.pathname === '/global-dashboard') {
@@ -194,6 +220,7 @@ function App() {
               <Router>
                 <div className="flex flex-col h-screen overflow-hidden">
                   <AnnouncementBanner />
+                  <SubscriptionBanner />
                   <div className="flex-1 overflow-hidden relative">
                     <AppContent />
                   </div>

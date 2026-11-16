@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from app.database import DBStore, get_db_connection
 from app.config import settings
-from app.dependencies import get_current_user, get_current_user_optional
+from app.dependencies import get_current_user, get_current_user_optional, require_feature
 from app.features import Features
 from app.modules.projects.ai_planning import AIPlanningService
 from app.modules.projects.scheduling import SchedulingEngine
@@ -24,7 +24,8 @@ import os
 
 CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "project_config.json")
 
-def get_project_config():
+def get_project_config(tenant_id: int = 1):
+    from app.services.tenant_config_service import get_tenant_project_config
     default_config = {
         "mandatory_documents": [
             "BOM", "Schematic", "Mechanical Drawing",
@@ -38,15 +39,14 @@ def get_project_config():
         ]
     }
     try:
-        if os.path.exists(CONFIG_FILE_PATH):
-            with open(CONFIG_FILE_PATH, 'r') as f:
-                config = json.load(f)
-                return {
-                    "mandatory_documents": config.get("mandatory_documents", default_config["mandatory_documents"]),
-                    "default_folders": config.get("default_folders", default_config["default_folders"])
-                }
+        config = get_tenant_project_config(tenant_id)
+        if config:
+            return {
+                "mandatory_documents": config.get("mandatory_documents", default_config["mandatory_documents"]),
+                "default_folders": config.get("default_folders", default_config["default_folders"])
+            }
     except Exception as e:
-        print(f"Error reading project_config.json: {e}")
+        print(f"Error reading tenant project config: {e}")
     
     return default_config
 class ProjectCreate(BaseModel):
@@ -591,11 +591,11 @@ def get_project(project_id: int, current_user: Optional[Dict[str, Any]] = Depend
             raise HTTPException(status_code=403, detail="Access denied: You are not assigned to or involved in this project.")
     
     # Auto sync directory files before returning details
-    if proj.get("folder_path") and Features.is_enabled("AUTO_SYNC_PROJECT_FILES"):
+    if proj.get("folder_path") and Features.is_enabled("ENABLE_PROJECT_DOCUMENTS") and Features.is_enabled("AUTO_SYNC_PROJECT_FILES"):
         sync_project_directory_files(project_id, proj.get("folder_path"))
 
     tasks = DBStore.get_project_tasks(project_id)
-    files = DBStore.get_project_files(project_id)
+    files = DBStore.get_project_files(project_id) if Features.is_enabled("ENABLE_PROJECT_DOCUMENTS") else []
     sub_projects = [p for p in projects if p.get("parent_id") == project_id]
     
     return {
@@ -610,7 +610,7 @@ from fastapi.responses import FileResponse
 
 # ... (rest of imports)
 
-@router.post("/{project_id}/relink")
+@router.post("/{project_id}/relink", dependencies=[Depends(require_feature("ENABLE_PROJECT_DOCUMENTS"))])
 def relink_project_folder(project_id: int, req: RelinkRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
@@ -675,6 +675,9 @@ def _create_project_folders(full_path: str, subfolders: List[str]):
 
 @router.post("")
 def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, current_user: Dict[str, Any] = Depends(get_current_user)):
+    from app.services.billing_service import enforce_project_quota
+    tenant_id = int(current_user.get("tenant_id") or 1)
+    enforce_project_quota(tenant_id)
     try:
         is_rnd = (project.category == "RND")
         if is_rnd:
@@ -760,7 +763,7 @@ def create_project(project: ProjectCreate, background_tasks: BackgroundTasks, cu
         proj_dict = project.model_dump()
         proj_dict["folder_path"] = full_path
         proj_dict["category"] = "RND" if is_rnd else "STANDARD"
-        saved_project = DBStore.add_project(proj_dict)
+        saved_project = DBStore.add_project(proj_dict, tenant_id=int(current_user.get("tenant_id") or 1))
         
         # 4. Create initial pending tasks in DB only if NOT a major parent project container and NOT an RND project
         if not project.is_parent and not is_rnd:
@@ -936,7 +939,7 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
             
             project_dump["folder_path"] = new_folder_path
 
-    updated = DBStore.update_project(project_id, project_dump)
+    updated = DBStore.update_project(project_id, project_dump, tenant_id=int(current_user.get("tenant_id") or 1))
 
     # Log activities
     if old_category == "RND" and final_category == "STANDARD":
@@ -1023,7 +1026,7 @@ def update_project(project_id: int, project: ProjectUpdate, background_tasks: Ba
     project_event_manager.broadcast(project_id, "PROJECT_UPDATED", {"user_id": current_user["id"]})
     return updated
 
-@router.post("/{project_id}/upload")
+@router.post("/{project_id}/upload", dependencies=[Depends(require_feature("ENABLE_PROJECT_DOCUMENTS"))])
 async def upload_project_file(project_id: int, task_name: str = Form(...), files: List[UploadFile] = File(...), current_user: Dict[str, Any] = Depends(get_current_user)):
     projects = DBStore.get_all_projects_unpaginated(current_user=current_user)
     proj = next((p for p in projects if p["id"] == project_id), None)
@@ -1079,7 +1082,7 @@ async def upload_project_file(project_id: int, task_name: str = Form(...), files
     
     return {"uploaded_files": saved_files}
 
-@router.get("/{project_id}/files/{file_id}/download")
+@router.get("/{project_id}/files/{file_id}/download", dependencies=[Depends(require_feature("ENABLE_PROJECT_DOCUMENTS"))])
 def download_project_file(project_id: int, file_id: int):
     file_record = DBStore.get_project_file(file_id)
     if not file_record or file_record["project_id"] != project_id:
@@ -1091,7 +1094,7 @@ def download_project_file(project_id: int, file_id: int):
 
     return FileResponse(path=file_path, filename=file_record["file_name"])
 
-@router.post("/{project_id}/files/{file_id}/open-location")
+@router.post("/{project_id}/files/{file_id}/open-location", dependencies=[Depends(require_feature("ENABLE_PROJECT_DOCUMENTS"))])
 def open_project_file_location(project_id: int, file_id: int):
     import subprocess
     import platform
@@ -1116,7 +1119,7 @@ def open_project_file_location(project_id: int, file_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/{project_id}/files/{file_id}")
+@router.delete("/{project_id}/files/{file_id}", dependencies=[Depends(require_feature("ENABLE_PROJECT_DOCUMENTS"))])
 def delete_project_file(project_id: int, file_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
     file_record = DBStore.get_project_file(file_id)
     if not file_record or file_record["project_id"] != project_id:
@@ -1148,7 +1151,7 @@ def delete_project(project_id: int, delete_subprojects: bool = False, current_us
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    DBStore.delete_project(project_id, delete_subprojects)
+    DBStore.delete_project(project_id, delete_subprojects, tenant_id=int(current_user.get("tenant_id") or 1))
     return {"message": "Project moved to recycle bin"}
 
 @router.get("/bin/deleted")
@@ -1170,7 +1173,7 @@ def force_delete_project(project_id: int, delete_subprojects: bool = False, curr
     if current_user.get("role") != "Administrator":
         raise HTTPException(status_code=403, detail="Only Administrators can permanently delete projects")
 
-    DBStore.force_delete_project(project_id, delete_subprojects)
+    DBStore.force_delete_project(project_id, delete_subprojects, tenant_id=int(current_user.get("tenant_id") or 1))
     return {"message": "Project permanently deleted (files preserved)"}
 
 
@@ -1941,7 +1944,7 @@ async def resolve_service_ticket(
 
 @router.put("/{project_id}/close")
 def close_project(project_id: int):
-    updated = DBStore.update_project(project_id, {"status": "CLOSED"})
+    updated = DBStore.update_project(project_id, {"status": "CLOSED"}, tenant_id=int(current_user.get("tenant_id") or 1))
     if not updated:
         raise HTTPException(status_code=404, detail="Project not found")
     return updated

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth, UserRole } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { apiClient } from '../../../api/apiClient';
@@ -35,7 +36,9 @@ export const Login: React.FC = () => {
         res.department,
         res.last_login_at,
         res.presence_status,
-        res.status_message
+        res.status_message,
+        res.tenant_id,
+        res.is_super_admin
       );
       success(`Welcome back, ${res.username}!`, "Login Successful");
     } catch (err: any) {
@@ -116,9 +119,9 @@ export const Login: React.FC = () => {
                 </label>
               </div>
 
-              <a href="#" className="text-sm font-bold text-primary-600 hover:text-primary-700 transition-colors">
+              <Link to="/forgot-password" className="text-sm font-bold text-primary-600 hover:text-primary-700 transition-colors">
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <div className="pt-4">

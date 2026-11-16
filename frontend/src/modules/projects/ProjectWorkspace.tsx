@@ -1,4 +1,5 @@
 import { DescriptionHistorySection } from './components/DescriptionHistorySection';
+import { Features } from '../../config/features';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -336,7 +337,7 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'tasks', name: 'Tasks List', icon: CheckCircle2 },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
-    ...(project?.category !== 'RND' ? [{ id: 'documents', name: 'Documents', icon: FileText }] : []),
+    ...(Features.ENABLE_PROJECT_DOCUMENTS && project?.category !== 'RND' ? [{ id: 'documents', name: 'Documents', icon: FileText }] : []),
     { id: 'notes', name: 'Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity', icon: Activity },
     { id: 'overview', name: 'Overview', icon: LayoutDashboard },
@@ -1400,7 +1401,7 @@ export const ProjectWorkspace: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'documents' && (
+        {Features.ENABLE_PROJECT_DOCUMENTS && activeTab === 'documents' && (
           <DocumentsTab 
             project={project}
             staticTasks={staticTasks}

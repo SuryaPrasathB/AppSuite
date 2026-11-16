@@ -46,6 +46,11 @@ export class Features {
   // Feature 11: Mandatory store information when creating items
   static MANDATORY_STORE_INFORMATION: boolean = false;
 
+  // Feature 12: Module & Document toggles for SaaS / Modular deployments
+  static ENABLE_STORE_MODULE: boolean = true;
+  static ENABLE_BOM_MODULE: boolean = true;
+  static ENABLE_PROJECT_DOCUMENTS: boolean = true;
+
   /**
    * Helper to check if a user is involved in a project client-side
    */

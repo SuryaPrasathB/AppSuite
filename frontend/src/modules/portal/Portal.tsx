@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity, ArrowRight, ArrowUpRight } from 'lucide-react';
+import { Folder, ClipboardList, Warehouse, LogOut, Users, Bell, Activity, ArrowRight, ArrowUpRight, Building2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../api/apiClient';
+import { Features } from '../../config/features';
 import { UserPresenceMenu } from '../../components/UserPresenceMenu';
 
 export const Portal: React.FC = () => {
@@ -108,7 +109,7 @@ export const Portal: React.FC = () => {
   }
 
   // BOM Builder: Administrator, Employee, Store Operator, Store Manager
-  if (hasRole(['Administrator', 'Employee', 'Store Operator', 'Store Manager'])) {
+  if (Features.ENABLE_BOM_MODULE && hasRole(['Administrator', 'Employee', 'Store Operator', 'Store Manager'])) {
     modules.push({
       id: 'bom',
       title: 'BOM Builder',
@@ -123,7 +124,7 @@ export const Portal: React.FC = () => {
   }
 
   // Store: Administrator, Store Operator, Store Manager
-  if (hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
+  if (Features.ENABLE_STORE_MODULE && hasRole(['Administrator', 'Store Operator', 'Store Manager'])) {
     modules.push({
       id: 'store',
       title: 'Smart Store',
@@ -134,6 +135,34 @@ export const Portal: React.FC = () => {
       border: 'border-slate-200/80 hover:border-emerald-500/40',
       textHover: 'group-hover:text-emerald-600',
       path: '/store',
+    });
+  }
+
+  if (user?.is_super_admin || user?.role === 'super_admin') {
+    modules.push({
+      id: 'superadmin',
+      title: 'Super Admin',
+      description: 'Platform control plane: register companies, manage subscriptions, backups, health, and support.',
+      icon: ShieldAlert,
+      color: 'from-rose-600 to-red-500',
+      shadow: 'shadow-sm hover:shadow-xl hover:shadow-rose-500/10',
+      border: 'border-slate-200/80 hover:border-rose-500/40',
+      textHover: 'group-hover:text-rose-600',
+      path: '/superadmin',
+    });
+  }
+
+  if (hasRole(['Administrator', 'company_admin'])) {
+    modules.push({
+      id: 'company-admin',
+      title: 'Company Admin',
+      description: 'Invite employees, manage departments, configure workflows, permissions, and view company reports.',
+      icon: Building2,
+      color: 'from-indigo-600 to-blue-500',
+      shadow: 'shadow-sm hover:shadow-xl hover:shadow-indigo-500/10',
+      border: 'border-slate-200/80 hover:border-indigo-500/40',
+      textHover: 'group-hover:text-indigo-600',
+      path: '/company-admin',
     });
   }
 

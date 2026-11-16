@@ -1,9 +1,57 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const API_BASE_URL = `/api`;
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+let refreshPromise: Promise<string | null> | null = null;
+
+function clearStoredSession() {
+  localStorage.removeItem('smart_store_user');
+  window.dispatchEvent(new Event('auth:session-expired'));
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return null;
+
+      const data = await res.json() as { token?: string };
+      if (!data?.token) return null;
+
+      const stored = localStorage.getItem('smart_store_user');
+      const parsed = stored ? JSON.parse(stored) : {};
+      const updated = { ...parsed, ...data, token: data.token };
+      localStorage.setItem('smart_store_user', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('auth:session-updated', { detail: updated }));
+      return data.token;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+const AUTH_NO_REFRESH_ENDPOINTS = new Set([
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/accept-invite',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+]);
+
+async function request<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const headers = new Headers(options.headers || {});
-  headers.set('Content-Type', 'application/json');
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   
   // Try to load token from localStorage
   const storedUser = localStorage.getItem('smart_store_user');
@@ -23,8 +71,19 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
+    credentials: 'include',
     headers,
   });
+
+  if (response.status === 401 && !AUTH_NO_REFRESH_ENDPOINTS.has(endpoint)) {
+    if (!isRetry) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return request<T>(endpoint, options, true);
+      }
+    }
+    clearStoredSession();
+  }
 
   if (!response.ok) {
     let errorMessage = `HTTP error! status: ${response.status}`;
@@ -49,6 +108,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const apiClient = {
   auth: {
     login: (body: any) => request<any>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    refresh: () => request<any>('/auth/refresh', { method: 'POST' }),
+    invite: (body: { email: string; name: string; role: string; department?: string }) =>
+      request<any>('/auth/invite', { method: 'POST', body: JSON.stringify(body) }),
+    acceptInvite: (body: { token: string; username: string; password: string; name?: string }) =>
+      request<any>('/auth/accept-invite', { method: 'POST', body: JSON.stringify(body) }),
+    forgotPassword: (body: { email: string }) =>
+      request<any>('/auth/forgot-password', { method: 'POST', body: JSON.stringify(body) }),
+    resetPassword: (body: { token: string; new_password: string }) =>
+      request<any>('/auth/reset-password', { method: 'POST', body: JSON.stringify(body) }),
     heartbeat: (body?: any) => request<any>('/auth/heartbeat', { method: 'POST', body: JSON.stringify(body || {}) }),
     updateStatus: (body: { presence_status: string; status_message?: string; user_id?: number }) => 
       request<any>('/auth/status', { method: 'POST', body: JSON.stringify(body) }),
@@ -213,5 +281,57 @@ export const apiClient = {
     list: () => request<any[]>('/config/user-categories'),
     create: (body: any) => request<any>('/config/user-categories', { method: 'POST', body: JSON.stringify(body) }),
     delete: (name: string) => request<any>(`/config/user-categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-  }
+  },
+  companyAdmin: {
+    getInvites: () => request<any>('/company-admin/invites'),
+    revokeInvite: (id: number) => request<any>(`/company-admin/invites/${id}`, { method: 'DELETE' }),
+    getDepartments: () => request<any[]>('/company-admin/departments'),
+    createDepartment: (body: { name: string; description?: string }) =>
+      request<any>('/company-admin/departments', { method: 'POST', body: JSON.stringify(body) }),
+    updateDepartment: (id: number, body: { name: string; description?: string }) =>
+      request<any>(`/company-admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteDepartment: (id: number) => request<any>(`/company-admin/departments/${id}`, { method: 'DELETE' }),
+    getPermissions: () => request<any>('/company-admin/permissions'),
+    updatePermissions: (permissions: Record<string, Record<string, boolean>>) =>
+      request<any>('/company-admin/permissions', { method: 'PUT', body: JSON.stringify({ permissions }) }),
+    getWorkflows: () => request<any>('/company-admin/workflows'),
+    updateWorkflows: (body: any) =>
+      request<any>('/company-admin/workflows', { method: 'PUT', body: JSON.stringify(body) }),
+    getSettings: () => request<any>('/company-admin/settings'),
+    updateSettings: (body: any) =>
+      request<any>('/company-admin/settings', { method: 'PUT', body: JSON.stringify(body) }),
+    getReports: () => request<any>('/company-admin/reports'),
+  },
+  superAdmin: {
+    getPlans: () => request<any[]>('/superadmin/plans'),
+    getTenants: () => request<any[]>('/superadmin/tenants'),
+    createTenant: (body: any) => request<any>('/superadmin/tenants', { method: 'POST', body: JSON.stringify(body) }),
+    updateTenantStatus: (tenantId: number, status: string) =>
+      request<any>(`/superadmin/tenants/${tenantId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    updateTenantSubscription: (tenantId: number, body: { plan_id: number; status: string; max_users?: number; period_days?: number }) =>
+      request<any>(`/superadmin/tenants/${tenantId}/subscription`, { method: 'PUT', body: JSON.stringify(body) }),
+    getTenantFeatures: (tenantId: number) => request<any[]>(`/superadmin/tenants/${tenantId}/features`),
+    updateTenantFeature: (tenantId: number, key: string, enabled: boolean) =>
+      request<any>(`/superadmin/tenants/${tenantId}/features/${key}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+    impersonateTenant: (tenantId: number, reason: string) =>
+      request<any>(`/superadmin/tenants/${tenantId}/impersonate`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    getHealth: () => request<any>('/superadmin/health'),
+    getSupportTickets: () => request<any[]>('/superadmin/support-tickets'),
+    updateSupportTicket: (id: number, body: { status: string; admin_notes?: string }) =>
+      request<any>(`/superadmin/support-tickets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    getBackups: () => request<any[]>('/superadmin/backups'),
+    triggerBackup: (tenant_id?: number | null) =>
+      request<any>('/superadmin/backups/trigger', { method: 'POST', body: JSON.stringify({ tenant_id: tenant_id || null }) }),
+    getReleases: () => request<any[]>('/superadmin/releases'),
+    createRelease: (body: { version: string; git_sha?: string; notes: string }) =>
+      request<any>('/superadmin/releases', { method: 'POST', body: JSON.stringify(body) }),
+    getAuditLogs: (limit = 100) => request<any[]>(`/superadmin/audit-logs?limit=${limit}`),
+  },
+  billing: {
+    getStatus: () => request<any>('/billing/status'),
+    getPlans: () => request<any[]>('/billing/plans'),
+    getInvoices: () => request<any[]>('/billing/invoices'),
+    renew: (plan_id: number, billing_cycle: 'monthly' | 'yearly' = 'monthly') =>
+      request<any>('/billing/renew', { method: 'POST', body: JSON.stringify({ plan_id, billing_cycle }) }),
+  },
 };

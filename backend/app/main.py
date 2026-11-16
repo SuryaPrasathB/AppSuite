@@ -1,10 +1,14 @@
 import uvicorn
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import DBStore
-from app.modules.store.routers import auth, products, vendors, inventory, layout, purchase, reports, employees, assets
+from app.dependencies import require_feature
+from app.migrations.runner import run_migrations
+from app.services.billing_service import run_subscription_lifecycle_check
+from app.modules.core.routers import auth, employees, company_admin, super_admin, billing
+from app.modules.store.routers import products, vendors, inventory, layout, purchase, reports, assets
 from app.modules.projects import router as projects
 from app.modules.bom import router as bom
 from app.modules.notifications import router as notifications
@@ -16,10 +20,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration to allow local frontend requests
+# CORS configuration (set CORS_ORIGINS in .env for production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual domain
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,21 +31,28 @@ app.add_middleware(
 
 from app.modules.features_router import router as features_router
 
-# Register routers under /api
+# Register core & project routers under /api
 app.include_router(auth.router, prefix="/api")
-app.include_router(products.router, prefix="/api")
-app.include_router(vendors.router, prefix="/api")
-app.include_router(inventory.router, prefix="/api")
-app.include_router(layout.router, prefix="/api")
-app.include_router(purchase.router, prefix="/api")
-app.include_router(reports.router, prefix="/api")
 app.include_router(employees.router, prefix="/api")
-app.include_router(assets.router, prefix="/api")
+app.include_router(company_admin.router, prefix="/api")
+app.include_router(super_admin.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
+app.include_router(billing.webhook_router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
-app.include_router(bom.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(announcements, prefix="/api/announcements", tags=["Announcements"])
 app.include_router(features_router, prefix="/api")
+
+# Register Store & BOM routers gated by module feature flags
+_store_gate = [Depends(require_feature("ENABLE_STORE_MODULE"))]
+app.include_router(products.router, prefix="/api", dependencies=_store_gate)
+app.include_router(vendors.router, prefix="/api", dependencies=_store_gate)
+app.include_router(inventory.router, prefix="/api", dependencies=_store_gate)
+app.include_router(layout.router, prefix="/api", dependencies=_store_gate)
+app.include_router(purchase.router, prefix="/api", dependencies=_store_gate)
+app.include_router(reports.router, prefix="/api", dependencies=_store_gate)
+app.include_router(assets.router, prefix="/api", dependencies=_store_gate)
+app.include_router(bom.router, prefix="/api", dependencies=[Depends(require_feature("ENABLE_BOM_MODULE"))])
 
 async def recycle_bin_cleanup_task():
     while True:
@@ -53,13 +64,30 @@ async def recycle_bin_cleanup_task():
         # Run once a day (86400 seconds)
         await asyncio.sleep(86400)
 
+async def subscription_lifecycle_task():
+    while True:
+        try:
+            res = run_subscription_lifecycle_check()
+            print(f"Subscription lifecycle check: {res}")
+        except Exception as e:
+            print(f"Error during subscription lifecycle check: {e}")
+        await asyncio.sleep(86400)
+
+
 @app.on_event("startup")
 async def startup_event():
+    if settings.is_using_default_jwt_secret:
+        print("WARNING: Using default JWT_SECRET_KEY. Set a strong JWT_SECRET_KEY in .env before deploying.")
+    try:
+        run_migrations()
+    except Exception as exc:
+        print(f"Migration runner error: {exc}")
     DBStore.init_description_history_table()
     DBStore.init_stock_drafts_table()
     DBStore.init_project_columns()
     DBStore.init_bom_procurement_columns()
     asyncio.create_task(recycle_bin_cleanup_task())
+    asyncio.create_task(subscription_lifecycle_task())
 
 # Valuation unit prices for dashboard KPI calculation
 UNIT_PRICES = {

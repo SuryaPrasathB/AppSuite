@@ -57,6 +57,11 @@ class Features:
     # When False: Store information is optional when creating items.
     MANDATORY_STORE_INFORMATION: bool = False
 
+    # Feature 12: Module & Document toggles for SaaS / Modular deployments
+    ENABLE_STORE_MODULE: bool = True
+    ENABLE_BOM_MODULE: bool = True
+    ENABLE_PROJECT_DOCUMENTS: bool = True
+
     # Roles considered privileged (bypass involvement checks when ADMIN_BYPASS_RESTRICTIONS is True)
     UNRESTRICTED_ROLES = ["Administrator", "Store Manager"]
 
@@ -127,6 +132,24 @@ class Features:
             "description": "Requires rack, shelf, warehouse, and stock thresholds when creating new items. When disabled, store information is optional.",
             "category": "Store & Inventory",
             "default": False
+        },
+        "ENABLE_STORE_MODULE": {
+            "name": "Smart Store Module",
+            "description": "Enables warehouse, inventory, vendors, purchasing, and store reports.",
+            "category": "Modules",
+            "default": True
+        },
+        "ENABLE_BOM_MODULE": {
+            "name": "BOM Builder Module",
+            "description": "Enables Bill of Materials, sub-assemblies, and engineering change orders.",
+            "category": "Modules",
+            "default": True
+        },
+        "ENABLE_PROJECT_DOCUMENTS": {
+            "name": "Project Documents & File Sync",
+            "description": "Enables physical folder linking, file uploads, and document sync inside projects. Disable for Cloud SaaS tenants without physical storage.",
+            "category": "Modules",
+            "default": True
         }
     }
 

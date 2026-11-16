@@ -1,19 +1,33 @@
 import sys
 import json
 import mysql.connector
+from mysql.connector import pooling
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from app.config import settings
 from app.features import Features
 import bcrypt
 
+_db_pool: Optional[pooling.MySQLConnectionPool] = None
+
+
+def _get_db_pool() -> pooling.MySQLConnectionPool:
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = pooling.MySQLConnectionPool(
+            pool_name="appsuite_pool",
+            pool_size=settings.MYSQL_POOL_SIZE,
+            pool_reset_session=True,
+            host=settings.MYSQL_HOST,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+        )
+    return _db_pool
+
+
 def get_db_connection():
-    return mysql.connector.connect(
-        host=settings.MYSQL_HOST,
-        user=settings.MYSQL_USER,
-        password=settings.MYSQL_PASSWORD,
-        database=settings.MYSQL_DATABASE
-    )
+    return _get_db_pool().get_connection()
 
 class DBStore:
     @staticmethod
@@ -1042,17 +1056,30 @@ class DBStore:
         return updated_req
 
     @staticmethod
-    def get_employees() -> List[Dict[str, Any]]:
+    def get_employees(tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT id, name, role, phone, email, department, username, created_at,
-                   last_login_at, last_seen_at, presence_status, status_message,
-                   TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS seconds_since_seen,
-                   TIMESTAMPDIFF(SECOND, last_login_at, NOW()) AS seconds_since_login
-            FROM employees 
-            ORDER BY name ASC
-        """)
+        if tenant_id is not None:
+            cursor.execute("""
+                SELECT id, name, role, phone, email, department, username, created_at,
+                       last_login_at, last_seen_at, presence_status, status_message,
+                       COALESCE(tenant_id, 1) AS tenant_id,
+                       TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS seconds_since_seen,
+                       TIMESTAMPDIFF(SECOND, last_login_at, NOW()) AS seconds_since_login
+                FROM employees
+                WHERE COALESCE(tenant_id, 1) = %s
+                ORDER BY name ASC
+            """, (tenant_id,))
+        else:
+            cursor.execute("""
+                SELECT id, name, role, phone, email, department, username, created_at,
+                       last_login_at, last_seen_at, presence_status, status_message,
+                       COALESCE(tenant_id, 1) AS tenant_id,
+                       TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS seconds_since_seen,
+                       TIMESTAMPDIFF(SECOND, last_login_at, NOW()) AS seconds_since_login
+                FROM employees
+                ORDER BY name ASC
+            """)
         employees = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -1087,25 +1114,40 @@ class DBStore:
         return employees
 
     @staticmethod
-    def get_employees_with_workload() -> List[Dict[str, Any]]:
-        employees = DBStore.get_employees()
+    def get_employees_with_workload(tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        employees = DBStore.get_employees(tenant_id=tenant_id)
         try:
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
             # Fetch all active (non-completed, non-cancelled) tasks with assignees
-            query = """
-                SELECT DISTINCT dt.id, dt.title, dt.project_id, dt.status, dt.priority, 
-                       dt.start_date, dt.due_date, p.name as project_name, p.code as project_code,
-                       COALESCE(ta.employee_id, dt.assignee_id) as employee_id
-                FROM dynamic_tasks dt
-                LEFT JOIN task_assignees ta ON dt.id = ta.task_id
-                LEFT JOIN projects p ON dt.project_id = p.id
-                WHERE dt.status NOT IN ('COMPLETED', 'CANCELLED')
-                  AND (ta.employee_id IS NOT NULL OR dt.assignee_id IS NOT NULL)
-                ORDER BY dt.due_date ASC, dt.id ASC
-            """
-            cursor.execute(query)
+            if tenant_id is not None:
+                query = """
+                    SELECT DISTINCT dt.id, dt.title, dt.project_id, dt.status, dt.priority, 
+                           dt.start_date, dt.due_date, p.name as project_name, p.code as project_code,
+                           COALESCE(ta.employee_id, dt.assignee_id) as employee_id
+                    FROM dynamic_tasks dt
+                    LEFT JOIN task_assignees ta ON dt.id = ta.task_id
+                    LEFT JOIN projects p ON dt.project_id = p.id
+                    WHERE dt.status NOT IN ('COMPLETED', 'CANCELLED')
+                      AND (ta.employee_id IS NOT NULL OR dt.assignee_id IS NOT NULL)
+                      AND COALESCE(p.tenant_id, 1) = %s
+                    ORDER BY dt.due_date ASC, dt.id ASC
+                """
+                cursor.execute(query, (tenant_id,))
+            else:
+                query = """
+                    SELECT DISTINCT dt.id, dt.title, dt.project_id, dt.status, dt.priority, 
+                           dt.start_date, dt.due_date, p.name as project_name, p.code as project_code,
+                           COALESCE(ta.employee_id, dt.assignee_id) as employee_id
+                    FROM dynamic_tasks dt
+                    LEFT JOIN task_assignees ta ON dt.id = ta.task_id
+                    LEFT JOIN projects p ON dt.project_id = p.id
+                    WHERE dt.status NOT IN ('COMPLETED', 'CANCELLED')
+                      AND (ta.employee_id IS NOT NULL OR dt.assignee_id IS NOT NULL)
+                    ORDER BY dt.due_date ASC, dt.id ASC
+                """
+                cursor.execute(query)
             rows = cursor.fetchall()
             cursor.close()
             conn.close()
@@ -1186,7 +1228,7 @@ class DBStore:
         return employees
 
     @staticmethod
-    def add_employee(employee: Dict[str, Any]) -> Dict[str, Any]:
+    def add_employee(employee: Dict[str, Any], tenant_id: int = 1) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
@@ -1199,11 +1241,11 @@ class DBStore:
             hashed_pw = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
             
         query = """
-            INSERT INTO employees (name, role, phone, email, department, username, password_hash)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO employees (tenant_id, name, role, phone, email, department, username, password_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
-            employee.get("name"), employee.get("role"), employee.get("phone"),
+            tenant_id, employee.get("name"), employee.get("role"), employee.get("phone"),
             employee.get("email"), employee.get("department"), username, hashed_pw
         )
         cursor.execute(query, values)
@@ -1217,7 +1259,7 @@ class DBStore:
         return employee
 
     @staticmethod
-    def update_employee(emp_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_employee(emp_id: int, data: Dict[str, Any], tenant_id: Optional[int] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
@@ -1239,11 +1281,18 @@ class DBStore:
             return data
             
         values.append(emp_id)
-        query = f"UPDATE employees SET {', '.join(updates)} WHERE id = %s"
+        if tenant_id is not None:
+            values.append(tenant_id)
+            query = f"UPDATE employees SET {', '.join(updates)} WHERE id = %s AND COALESCE(tenant_id, 1) = %s"
+        else:
+            query = f"UPDATE employees SET {', '.join(updates)} WHERE id = %s"
         cursor.execute(query, values)
         conn.commit()
         
-        cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees WHERE id = %s", (emp_id,))
+        if tenant_id is not None:
+            cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (emp_id, tenant_id))
+        else:
+            cursor.execute("SELECT id, name, role, phone, email, department, username, created_at FROM employees WHERE id = %s", (emp_id,))
         emp = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1253,14 +1302,18 @@ class DBStore:
         return emp
 
     @staticmethod
-    def delete_employee(emp_id: int) -> bool:
+    def delete_employee(emp_id: int, tenant_id: Optional[int] = None) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("DELETE FROM employees WHERE id = %s", (emp_id,))
+        if tenant_id is not None:
+            cursor.execute("DELETE FROM employees WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (emp_id, tenant_id))
+        else:
+            cursor.execute("DELETE FROM employees WHERE id = %s", (emp_id,))
+        deleted = cursor.rowcount > 0
         conn.commit()
         cursor.close()
         conn.close()
-        return True
+        return deleted
 
     @staticmethod
     def update_user_heartbeat(user_id: int, presence_status: Optional[str] = None, status_message: Optional[str] = None) -> bool:
@@ -1308,13 +1361,22 @@ class DBStore:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT id, name, role, username, password_hash, email, department,
-                   last_login_at, last_seen_at, presence_status, status_message
-            FROM employees WHERE username = %s
+            SELECT e.id, e.name, e.role, e.username, e.password_hash, e.email, e.department,
+                   e.last_login_at, e.last_seen_at, e.presence_status, e.status_message,
+                   COALESCE(e.tenant_id, 1) AS tenant_id,
+                   COALESCE(e.is_super_admin, FALSE) AS is_super_admin,
+                   t.status AS tenant_status
+            FROM employees e
+            LEFT JOIN tenants t ON t.id = COALESCE(e.tenant_id, 1)
+            WHERE e.username = %s
         """, (username,))
         user = cursor.fetchone()
         
         if user and user.get("password_hash"):
+            if not user.get("is_super_admin") and user.get("tenant_status") == "suspended":
+                cursor.close()
+                conn.close()
+                return None
             # Check password
             if bcrypt.checkpw(password.encode('utf-8'), user["password_hash"].encode('utf-8')):
                 del user["password_hash"]
@@ -1348,6 +1410,10 @@ class DBStore:
 
         where_clauses = ["p.deleted_at IS NULL"]
         params = []
+
+        if current_user and current_user.get("tenant_id") is not None:
+            where_clauses.append("p.tenant_id = %s")
+            params.append(int(current_user["tenant_id"]))
 
         # Apply project access restriction feature
         inv_sql, inv_params = Features.get_project_involvement_condition(current_user)
@@ -1456,6 +1522,10 @@ class DBStore:
         where_clauses = ["p.deleted_at IS NULL"]
         params = []
 
+        if current_user and current_user.get("tenant_id") is not None:
+            where_clauses.append("p.tenant_id = %s")
+            params.append(int(current_user["tenant_id"]))
+
         inv_sql, inv_params = Features.get_project_involvement_condition(current_user)
         if inv_sql != "1=1":
             where_clauses.append(inv_sql)
@@ -1486,24 +1556,29 @@ class DBStore:
         return projects
 
     @staticmethod
-    def get_all_project_codes() -> List[str]:
+    def get_all_project_codes(tenant_id: Optional[int] = None) -> List[str]:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT code FROM projects WHERE code IS NOT NULL")
+        if tenant_id is not None:
+            cursor.execute("SELECT code FROM projects WHERE code IS NOT NULL AND COALESCE(tenant_id, 1) = %s", (tenant_id,))
+        else:
+            cursor.execute("SELECT code FROM projects WHERE code IS NOT NULL")
         codes = [row[0] for row in cursor.fetchall()]
         cursor.close()
         conn.close()
         return codes
 
     @staticmethod
-    def add_project(project: Dict[str, Any]) -> Dict[str, Any]:
+    def add_project(project: Dict[str, Any], tenant_id: Optional[int] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
             cursor.execute("SHOW COLUMNS FROM projects")
             existing_cols = {row['Field'] for row in cursor.fetchall()}
 
+            resolved_tenant_id = tenant_id if tenant_id is not None else int(project.get("tenant_id") or 1)
             field_mapping = {
+                "tenant_id": resolved_tenant_id,
                 "code": project.get("code"),
                 "name": project.get("name"),
                 "po_number": project.get("po_number"),
@@ -1545,7 +1620,7 @@ class DBStore:
             conn.close()
 
     @staticmethod
-    def update_project(proj_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_project(proj_id: int, data: Dict[str, Any], tenant_id: Optional[int] = None) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
@@ -1568,11 +1643,18 @@ class DBStore:
             return data
             
         values.append(proj_id)
-        query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s"
+        if tenant_id is not None:
+            values.append(tenant_id)
+            query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s AND COALESCE(tenant_id, 1) = %s"
+        else:
+            query = f"UPDATE projects SET {', '.join(updates)} WHERE id = %s"
         cursor.execute(query, values)
         conn.commit()
         
-        cursor.execute("SELECT * FROM projects WHERE id = %s", (proj_id,))
+        if tenant_id is not None:
+            cursor.execute("SELECT * FROM projects WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
+        else:
+            cursor.execute("SELECT * FROM projects WHERE id = %s", (proj_id,))
         p = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1596,28 +1678,38 @@ class DBStore:
         return p
 
     @staticmethod
-    def delete_project(proj_id: int, delete_subprojects: bool = False) -> bool:
+    def delete_project(proj_id: int, delete_subprojects: bool = False, tenant_id: Optional[int] = None) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        if delete_subprojects:
-            cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE parent_id = %s", (proj_id,))
-            
-        cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s", (proj_id,))
+        if tenant_id is not None:
+            if delete_subprojects:
+                cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE parent_id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
+            cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
+        else:
+            if delete_subprojects:
+                cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE parent_id = %s", (proj_id,))
+            cursor.execute("UPDATE projects SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s", (proj_id,))
         conn.commit()
         cursor.close()
         conn.close()
         return True
 
     @staticmethod
-    def force_delete_project(proj_id: int, delete_subprojects: bool = False) -> bool:
+    def force_delete_project(proj_id: int, delete_subprojects: bool = False, tenant_id: Optional[int] = None) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        if delete_subprojects:
-            cursor.execute("DELETE FROM projects WHERE parent_id = %s", (proj_id,))
+        if tenant_id is not None:
+            if delete_subprojects:
+                cursor.execute("DELETE FROM projects WHERE parent_id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
+            else:
+                cursor.execute("UPDATE projects SET parent_id = NULL WHERE parent_id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
+            cursor.execute("DELETE FROM projects WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (proj_id, tenant_id))
         else:
-            cursor.execute("UPDATE projects SET parent_id = NULL WHERE parent_id = %s", (proj_id,))
-            
-        cursor.execute("DELETE FROM projects WHERE id = %s", (proj_id,))
+            if delete_subprojects:
+                cursor.execute("DELETE FROM projects WHERE parent_id = %s", (proj_id,))
+            else:
+                cursor.execute("UPDATE projects SET parent_id = NULL WHERE parent_id = %s", (proj_id,))
+            cursor.execute("DELETE FROM projects WHERE id = %s", (proj_id,))
         conn.commit()
         cursor.close()
         conn.close()
@@ -4187,10 +4279,13 @@ class DBStore:
 
     # Announcements
     @staticmethod
-    def get_active_announcements(limit=5) -> List[Dict[str, Any]]:
+    def get_active_announcements(limit=5, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND created_at >= NOW() - INTERVAL '23:59:59' HOUR_SECOND ORDER BY created_at DESC LIMIT %s", (limit,))
+        if tenant_id is not None:
+            cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND COALESCE(tenant_id, 1) = %s AND created_at >= NOW() - INTERVAL '23:59:59' HOUR_SECOND ORDER BY created_at DESC LIMIT %s", (tenant_id, limit))
+        else:
+            cursor.execute("SELECT * FROM announcements WHERE is_active = TRUE AND created_at >= NOW() - INTERVAL '23:59:59' HOUR_SECOND ORDER BY created_at DESC LIMIT %s", (limit,))
         announcements = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -4200,11 +4295,11 @@ class DBStore:
         return announcements
 
     @staticmethod
-    def create_announcement(data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+    def create_announcement(data: Dict[str, Any], user_id: int, tenant_id: int = 1) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        query = "INSERT INTO announcements (message, created_by) VALUES (%s, %s)"
-        cursor.execute(query, (data.get("message"), user_id))
+        query = "INSERT INTO announcements (tenant_id, message, created_by) VALUES (%s, %s, %s)"
+        cursor.execute(query, (tenant_id, data.get("message"), user_id))
         conn.commit()
         announcement_id = cursor.lastrowid
         cursor.execute("SELECT * FROM announcements WHERE id = %s", (announcement_id,))
@@ -4216,20 +4311,26 @@ class DBStore:
         return announcement
 
     @staticmethod
-    def deactivate_announcement(announcement_id: int) -> bool:
+    def deactivate_announcement(announcement_id: int, tenant_id: Optional[int] = None) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE announcements SET is_active = FALSE WHERE id = %s", (announcement_id,))
+        if tenant_id is not None:
+            cursor.execute("UPDATE announcements SET is_active = FALSE WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (announcement_id, tenant_id))
+        else:
+            cursor.execute("UPDATE announcements SET is_active = FALSE WHERE id = %s", (announcement_id,))
         conn.commit()
         cursor.close()
         conn.close()
         return True
 
     @staticmethod
-    def update_announcement(announcement_id: int, message: str) -> Optional[Dict[str, Any]]:
+    def update_announcement(announcement_id: int, message: str, tenant_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("UPDATE announcements SET message = %s WHERE id = %s", (message, announcement_id))
+        if tenant_id is not None:
+            cursor.execute("UPDATE announcements SET message = %s WHERE id = %s AND COALESCE(tenant_id, 1) = %s", (message, announcement_id, tenant_id))
+        else:
+            cursor.execute("UPDATE announcements SET message = %s WHERE id = %s", (message, announcement_id))
         conn.commit()
         cursor.execute("SELECT * FROM announcements WHERE id = %s", (announcement_id,))
         announcement = cursor.fetchone()

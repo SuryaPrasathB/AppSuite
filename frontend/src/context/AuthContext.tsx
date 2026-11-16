@@ -11,6 +11,8 @@ export interface User {
   name?: string;
   role: UserRole;
   token: string;
+  tenant_id?: number;
+  is_super_admin?: boolean;
   email?: string;
   department?: string;
   last_login_at?: string;
@@ -31,7 +33,9 @@ interface AuthContextType {
     department?: string,
     last_login_at?: string,
     presence_status?: PresenceStatus,
-    status_message?: string
+    status_message?: string,
+    tenant_id?: number,
+    is_super_admin?: boolean
   ) => void;
   logout: () => void;
   isLoading: boolean;
@@ -64,6 +68,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setIsLoading(false);
+
+    const handleSessionUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.token) {
+        setUser((prev) => (prev ? { ...prev, ...detail } : detail));
+      }
+    };
+    const handleSessionExpired = () => {
+      setUser(null);
+    };
+
+    window.addEventListener('auth:session-updated', handleSessionUpdated);
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-updated', handleSessionUpdated);
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
   }, []);
 
   const login = (
@@ -76,7 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     department?: string,
     last_login_at?: string,
     presence_status?: PresenceStatus,
-    status_message?: string
+    status_message?: string,
+    tenant_id?: number,
+    is_super_admin?: boolean
   ) => {
     const newUser: User = { 
       username, 
@@ -84,6 +107,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       token, 
       name, 
       id, 
+      tenant_id,
+      is_super_admin,
       email, 
       department,
       last_login_at: last_login_at || new Date().toISOString(),
