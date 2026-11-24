@@ -26,7 +26,8 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 }) => {
   const p6Tasks = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
-    return computeP6Schedule(dynamicTasks || [], null, todayStr);
+    const projectDeadlineDate = project?.date_of_delivery || project?.end_date || null;
+    return computeP6Schedule(dynamicTasks || [], null, todayStr, projectDeadlineDate);
   }, [dynamicTasks, project]);
 
   const evmAndHealth = useMemo(() => {

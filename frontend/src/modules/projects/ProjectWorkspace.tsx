@@ -158,7 +158,8 @@ export const ProjectWorkspace: React.FC = () => {
   );
 
   const scheduleSummary = useMemo(() => {
-    const enriched = computeP6Schedule(dynamicTasks, activeBaseline?.snapshot || null);
+    const projectDeadlineDate = project?.date_of_delivery || project?.end_date || null;
+    const enriched = computeP6Schedule(dynamicTasks, activeBaseline?.snapshot || null, undefined, projectDeadlineDate);
     const impact = computeDeadlineImpactAnalysis(enriched, null);
 
     let baselineDeadline: string | null = null;
@@ -207,7 +208,7 @@ export const ProjectWorkspace: React.FC = () => {
       varianceDays,
       baselineName: activeBaseline?.name || null,
     };
-  }, [dynamicTasks, activeBaseline, project?.date_of_delivery, project?.expected_completion_mode, project?.expected_completion_date]);
+  }, [dynamicTasks, activeBaseline, project?.date_of_delivery, project?.end_date, project?.expected_completion_mode, project?.expected_completion_date]);
 
   const handleOpenExpectedEditor = () => {
     setExpectedDraftMode(scheduleSummary.mode);

@@ -351,9 +351,10 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({
   );
 
   // Compute P6 Enriched Tasks (CPM, Float, Baseline Variances, Activity Codes)
+  const projectDeadlineDate = project?.date_of_delivery || project?.end_date || null;
   const enrichedTasks = useMemo(
-    () => computeP6Schedule(dynamicTasks, activeBaseline?.snapshot || null, dataDate),
-    [dynamicTasks, activeBaseline, dataDate]
+    () => computeP6Schedule(dynamicTasks, activeBaseline?.snapshot || null, dataDate, projectDeadlineDate),
+    [dynamicTasks, activeBaseline, dataDate, projectDeadlineDate]
   );
 
   // Keep selectedTaskId valid

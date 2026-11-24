@@ -592,9 +592,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const p6TaskMap = useMemo(() => {
     const map = new Map<number, P6EnrichedTask>();
-    computeP6Schedule(dynamicTasks).forEach((et) => map.set(et.id, et));
+    const projectDeadlineDate = project?.date_of_delivery || project?.end_date || null;
+    computeP6Schedule(dynamicTasks, null, undefined, projectDeadlineDate).forEach((et) => map.set(et.id, et));
     return map;
-  }, [dynamicTasks]);
+  }, [dynamicTasks, project?.date_of_delivery, project?.end_date]);
 
   const renderTaskRow = (task: any, level: number = 0) => {
     const subTasks = getSubTasks(task.id);

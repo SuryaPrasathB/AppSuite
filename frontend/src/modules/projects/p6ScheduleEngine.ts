@@ -291,7 +291,8 @@ export function calculateStepProgress(steps: P6ActivityStep[]): number {
 export function computeP6Schedule(
   rawTasks: any[],
   activeBaselineSnapshot?: any[] | null,
-  dataDateStr?: string
+  dataDateStr?: string,
+  projectDeadlineStr?: string | null
 ): P6EnrichedTask[] {
   const todayStr = dataDateStr || toIsoDateStr(new Date());
   const baselineMap = new Map<number, any>();
@@ -585,7 +586,15 @@ export function computeP6Schedule(
   });
 
   // 5. CPM Backward Pass (calendar-aware so weekend gaps do not create artificial float)
+  // Primavera P6 "Must Finish By": when the project has a target delivery/deadline date,
+  // anchor the backward pass to that deadline so tasks ahead of delivery have positive float
+  // (non-critical) and tasks on/past delivery have <= 0 float (critical). Fall back to
+  // maxProjectEf when no project deadline is set.
   const maxProjectEf = Math.max(...Array.from(efMap.values()), 0);
+  const parsedProjectDeadline = projectDeadlineStr ? toIsoDateStr(projectDeadlineStr) : '';
+  const backwardPassFinish = parsedProjectDeadline
+    ? diffCalendarDays(minProjectStart, parsedProjectDeadline)
+    : maxProjectEf;
   const lsMap = new Map<number, number>();
   const lfMap = new Map<number, number>();
 
@@ -594,15 +603,15 @@ export function computeP6Schedule(
     const span = durSpanMap.get(tid) || 0;
 
     if (t.successors.length === 0) {
-      lfMap.set(tid, maxProjectEf);
-      lsMap.set(tid, maxProjectEf - span);
+      lfMap.set(tid, backwardPassFinish);
+      lsMap.set(tid, backwardPassFinish - span);
     } else {
-      let minLf = maxProjectEf;
+      let minLf = backwardPassFinish;
       t.successors.forEach((succLink) => {
-        const sLs = lsMap.get(succLink.id) ?? maxProjectEf;
-        const sLf = lfMap.get(succLink.id) ?? maxProjectEf;
+        const sLs = lsMap.get(succLink.id) ?? backwardPassFinish;
+        const sLf = lfMap.get(succLink.id) ?? backwardPassFinish;
         const lag = succLink.lag || 0;
-        let allowedLf = maxProjectEf;
+        let allowedLf = backwardPassFinish;
 
         if (succLink.type === 'FS') {
           allowedLf = stepBackWorkingOffset(sLs, 1 + Math.max(0, lag), t.calendarType);
