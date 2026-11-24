@@ -27,19 +27,32 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  const parseDateValue = (value: string | null): Date | null => {
+    if (!value) return null;
+    const datePart = value.split('T')[0];
+    const parts = datePart.split('-').map(Number);
+    if (parts.length === 3 && !parts.some(isNaN)) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const parsed = new Date(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   // Initialize temp states from props
   useEffect(() => {
-    setTempStart(startDate ? new Date(startDate) : null);
-    setTempDue(dueDate ? new Date(dueDate) : null);
-    
-    if (startDate) {
-      setCurrentMonth(new Date(startDate));
-    } else if (dueDate) {
-      setCurrentMonth(new Date(dueDate));
+    const parsedStart = parseDateValue(startDate);
+    const parsedDue = parseDateValue(dueDate);
+    setTempStart(parsedStart);
+    setTempDue(parsedDue);
+
+    if (parsedStart) {
+      setCurrentMonth(parsedStart);
+    } else if (parsedDue) {
+      setCurrentMonth(parsedDue);
     }
-    
+
     // Default to editing 'start' if neither is set, otherwise default to 'due'
-    if (!startDate && !dueDate) {
+    if (!parsedStart && !parsedDue) {
       setActiveSelection('start');
     } else {
       setActiveSelection('due');
@@ -105,8 +118,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     };
   }, [isOpen]);
 
-  const formatDateString = (date: Date | null): string => {
-    if (!date) return '';
+  const formatDateString = (date: Date | null): string | null => {
+    if (!date) return null;
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
@@ -173,11 +186,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
   const clearDates = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (activeSelection === 'start') {
-      setTempStart(null);
-    } else {
-      setTempDue(null);
-    }
+    setTempStart(null);
+    setTempDue(null);
   };
 
   const handleApply = (e: React.MouseEvent) => {
@@ -216,8 +226,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   };
 
   const isSelected = (day: Date) => {
-    if (!tempStart) return false;
-    return day.toDateString() === tempStart.toDateString() || (tempDue && day.toDateString() === tempDue.toDateString());
+    const dayStr = day.toDateString();
+    return Boolean(
+      (tempStart && dayStr === tempStart.toDateString()) ||
+      (tempDue && dayStr === tempDue.toDateString())
+    );
   };
 
   const isInRange = (day: Date) => {
@@ -236,10 +249,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   };
 
   const getHeaderDisplay = () => {
-    if (!tempStart) return 'Select dates';
-    const startStr = tempStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    if (!tempDue) return `${startStr} ➔ ...`;
-    const dueStr = tempDue.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    if (!tempStart && !tempDue) return 'Select dates';
+    const startStr = tempStart
+      ? tempStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : '...';
+    const dueStr = tempDue
+      ? tempDue.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : '...';
     return `${startStr} ➔ ${dueStr}`;
   };
 
@@ -251,6 +267,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => setIsOpen(!isOpen)}
           title={isOverdue ? 'Due date overdue or completed late' : undefined}
           className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm ${
@@ -282,28 +299,80 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               {getHeaderDisplay()}
             </span>
             <div className="flex gap-2">
-              <button onClick={clearDates} className="px-2.5 py-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-xs font-semibold" title={`Clear ${activeSelection} date`}>
+              <button type="button" onClick={clearDates} className="px-2.5 py-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-xs font-semibold" title="Clear start and due dates">
                 Clear
               </button>
-              <button onClick={handleApply} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold text-xs transition-colors">
+              <button type="button" onClick={handleApply} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold text-xs transition-colors">
                 Apply
               </button>
             </div>
           </div>
 
           {/* Mode selection */}
-          <div className="flex bg-slate-100 rounded-lg p-1 mb-3">
-            <button 
-              onClick={() => setActiveSelection('start')} 
-              className={`flex-1 text-xs py-1.5 rounded-md font-semibold transition-colors ${activeSelection === 'start' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
+          <div className="flex bg-slate-100 rounded-lg p-1 mb-3 gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveSelection('start')}
+              className={`flex-1 text-xs py-1.5 px-2 rounded-md font-semibold transition-colors flex items-center justify-center gap-1.5 ${activeSelection === 'start' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              Select Start Date
+              <span>
+                {tempStart
+                  ? `Start: ${tempStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                  : 'Select Start Date'}
+              </span>
+              {tempStart && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTempStart(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTempStart(null);
+                    }
+                  }}
+                  title="Clear start date"
+                  className={`p-0.5 rounded-full transition-colors ${activeSelection === 'start' ? 'hover:bg-indigo-500' : 'hover:bg-slate-200'}`}
+                >
+                  <X className="h-3 w-3" />
+                </span>
+              )}
             </button>
-            <button 
-              onClick={() => setActiveSelection('due')} 
-              className={`flex-1 text-xs py-1.5 rounded-md font-semibold transition-colors ${activeSelection === 'due' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
+            <button
+              type="button"
+              onClick={() => setActiveSelection('due')}
+              className={`flex-1 text-xs py-1.5 px-2 rounded-md font-semibold transition-colors flex items-center justify-center gap-1.5 ${activeSelection === 'due' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              Select Due Date
+              <span>
+                {tempDue
+                  ? `Due: ${tempDue.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                  : 'Select Due Date'}
+              </span>
+              {tempDue && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTempDue(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTempDue(null);
+                    }
+                  }}
+                  title="Clear due date"
+                  className={`p-0.5 rounded-full transition-colors ${activeSelection === 'due' ? 'hover:bg-indigo-500' : 'hover:bg-slate-200'}`}
+                >
+                  <X className="h-3 w-3" />
+                </span>
+              )}
             </button>
           </div>
 

@@ -3,7 +3,7 @@ import { Edit2, Trash2, Calendar, User, Columns, ChevronDown, GripVertical, Sear
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
 import { DateRangePicker } from './DateRangePicker';
-import { isTaskOverdue } from '../taskUtils';
+import { isTaskOverdue, isDueDateModifiedPastInitial, getDueDateModifiedTooltip } from '../taskUtils';
 
 interface KanbanTabProps {
   dynamicTasks: any[];
@@ -285,8 +285,14 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                 isOverdue={isTaskOverdue(task)}
                 onSave={async (start, due) => {
                   if (onUpdateTaskField) {
-                    await onUpdateTaskField(task.id, 'start_date', start);
-                    await onUpdateTaskField(task.id, 'due_date', due);
+                    const currentStart = task.start_date ? String(task.start_date).split('T')[0] : null;
+                    const currentDue = task.due_date ? String(task.due_date).split('T')[0] : null;
+                    if (start !== currentStart) {
+                      await onUpdateTaskField(task.id, 'start_date', start);
+                    }
+                    if (due !== currentDue) {
+                      await onUpdateTaskField(task.id, 'due_date', due);
+                    }
                   }
                 }}
                 triggerElement={
@@ -297,10 +303,18 @@ export const KanbanTab: React.FC<KanbanTabProps> = ({
                         ? 'text-rose-600 bg-rose-50 border-rose-200 font-bold' 
                         : 'text-slate-500 bg-transparent border-transparent hover:bg-slate-100 hover:text-indigo-600'
                     }`}
-                    title={isTaskOverdue(task) ? (task.status === 'COMPLETED' ? 'Completed past due date' : 'Overdue') : undefined}
+                    title={
+                      [
+                        isTaskOverdue(task) ? (task.status === 'COMPLETED' ? 'Completed past due date' : 'Overdue') : null,
+                        getDueDateModifiedTooltip(task) || null
+                      ].filter(Boolean).join(' • ') || undefined
+                    }
                   >
                     <Calendar className={`h-3 w-3 shrink-0 ${isTaskOverdue(task) ? 'text-rose-500' : 'text-indigo-500'}`} />
                     <span>{task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}</span>
+                    {isDueDateModifiedPastInitial(task) && (
+                      <span className="text-rose-500 font-bold text-xs leading-none" title={getDueDateModifiedTooltip(task)}>*</span>
+                    )}
                   </button>
                 }
               />

@@ -2,7 +2,7 @@ import sys
 import json
 import mysql.connector
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from app.config import settings
 from app.features import Features
 import bcrypt
@@ -32,6 +32,21 @@ class DBStore:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES employees(id) ON DELETE SET NULL,
                     INDEX idx_entity (entity_type, entity_id, created_at)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_change_histories (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    task_id INT NOT NULL,
+                    project_id INT DEFAULT NULL,
+                    field_name VARCHAR(64) NOT NULL,
+                    field_label VARCHAR(100) NOT NULL,
+                    old_value TEXT DEFAULT NULL,
+                    new_value TEXT DEFAULT NULL,
+                    user_id INT DEFAULT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES employees(id) ON DELETE SET NULL,
+                    INDEX idx_task_change_history (task_id, created_at)
                 )
             """)
             conn.commit()
@@ -94,12 +109,19 @@ class DBStore:
                 ("actual_hours", "DECIMAL(10, 2) DEFAULT 0.00"),
                 ("baseline_start_date", "DATE DEFAULT NULL"),
                 ("baseline_due_date", "DATE DEFAULT NULL"),
+                ("initial_due_date", "DATE DEFAULT NULL"),
+                ("initial_due_date_set_at", "DATE DEFAULT NULL"),
+                ("due_date_flagged", "BOOLEAN DEFAULT FALSE"),
             ]
             for col_name, col_type in task_cols:
                 cursor.execute(f"SHOW COLUMNS FROM dynamic_tasks LIKE '{col_name}'")
                 if not cursor.fetchone():
                     cursor.execute(f"ALTER TABLE dynamic_tasks ADD COLUMN {col_name} {col_type}")
                     print(f"Added {col_name} column to dynamic_tasks table.")
+                    if col_name == "initial_due_date":
+                        cursor.execute("UPDATE dynamic_tasks SET initial_due_date = due_date WHERE initial_due_date IS NULL AND due_date IS NOT NULL")
+                    elif col_name == "initial_due_date_set_at":
+                        cursor.execute("UPDATE dynamic_tasks SET initial_due_date_set_at = COALESCE(DATE(created_at), CURDATE()) WHERE initial_due_date_set_at IS NULL AND (initial_due_date IS NOT NULL OR due_date IS NOT NULL)")
 
             # Ensure project_baselines table exists for P6 Baseline & Claim Digger tracking
             cursor.execute("""
@@ -1817,9 +1839,10 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tasks:
-            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'initial_due_date', 'initial_due_date_set_at', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
                 if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
                     t[d_key] = t[d_key].isoformat()
+            t['due_date_flagged'] = bool(t.get('due_date_flagged'))
             if t.get('estimated_hours') is not None:
                 t['estimated_hours'] = float(t['estimated_hours'])
             if t.get('actual_hours') is not None:
@@ -1847,9 +1870,10 @@ class DBStore:
         cursor.close()
         conn.close()
         for t in tasks:
-            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'initial_due_date', 'initial_due_date_set_at', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
                 if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
                     t[d_key] = t[d_key].isoformat()
+            t['due_date_flagged'] = bool(t.get('due_date_flagged'))
             if t.get('estimated_hours') is not None:
                 t['estimated_hours'] = float(t['estimated_hours'])
             if t.get('actual_hours') is not None:
@@ -1937,7 +1961,7 @@ class DBStore:
 
         completed_at = task.get("completed_at")
         if not completed_at and task.get("status") == "COMPLETED":
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             completed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
         progress_pct = task.get("progress_pct")
@@ -1947,13 +1971,16 @@ class DBStore:
         query = """
             INSERT INTO dynamic_tasks (
                 project_id, parent_id, title, description, status, priority, assignee_id,
-                start_date, due_date, completed_at, dependencies, sort_order,
+                start_date, due_date, initial_due_date, initial_due_date_set_at, due_date_flagged, completed_at, dependencies, sort_order,
                 activity_code, task_type, duration_type, pct_complete_type, progress_pct,
                 steps_json, calendar_type, wbs_code, constraint_type, constraint_date,
                 estimated_hours, actual_hours, baseline_start_date, baseline_due_date
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
+        due_date_val = task.get("due_date") or None
+        initial_due_date_val = task.get("initial_due_date") or due_date_val
+        initial_due_date_set_at_val = datetime.now().strftime('%Y-%m-%d') if initial_due_date_val else None
         values = (
             project_id,
             task.get("parent_id") or None,
@@ -1963,7 +1990,10 @@ class DBStore:
             task.get("priority", "MEDIUM"),
             primary_assignee_id or None,
             task.get("start_date") or None,
-            task.get("due_date") or None,
+            due_date_val,
+            initial_due_date_val,
+            initial_due_date_set_at_val,
+            False,
             completed_at or None,
             task.get("dependencies") or None,
             sort_order,
@@ -2007,9 +2037,10 @@ class DBStore:
         conn.close()
         t = created_task_list[0] if created_task_list else task
         if t:
-            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'initial_due_date', 'initial_due_date_set_at', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
                 if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
                     t[d_key] = t[d_key].isoformat()
+            t['due_date_flagged'] = bool(t.get('due_date_flagged'))
             if t.get('estimated_hours') is not None:
                 t['estimated_hours'] = float(t['estimated_hours'])
             if t.get('actual_hours') is not None:
@@ -2054,6 +2085,67 @@ class DBStore:
                     values.append(None)
                 else:
                     values.append(val)
+
+        if "due_date" in data:
+            cursor.execute(
+                "SELECT due_date, initial_due_date, initial_due_date_set_at, due_date_flagged, created_at FROM dynamic_tasks WHERE id = %s",
+                (task_id,)
+            )
+            curr = cursor.fetchone() or {}
+
+            def _to_date(v):
+                if not v:
+                    return None
+                if isinstance(v, datetime):
+                    return v.date()
+                if isinstance(v, date):
+                    return v
+                try:
+                    return datetime.strptime(str(v)[:10], "%Y-%m-%d").date()
+                except Exception:
+                    return None
+
+            today = datetime.now().date()
+            new_due = _to_date(data.get("due_date"))
+            curr_due = _to_date(curr.get("due_date"))
+            curr_initial = _to_date(curr.get("initial_due_date")) or curr_due
+            curr_set_at = _to_date(curr.get("initial_due_date_set_at")) or _to_date(curr.get("created_at"))
+            curr_flagged = bool(curr.get("due_date_flagged"))
+
+            if new_due is None:
+                if not curr_flagged and curr_set_at == today:
+                    updates.extend(["initial_due_date = NULL", "initial_due_date_set_at = NULL", "due_date_flagged = FALSE"])
+                else:
+                    updates.append("due_date_flagged = FALSE")
+            elif curr_initial is None:
+                updates.extend(["initial_due_date = %s", "initial_due_date_set_at = %s", "due_date_flagged = FALSE"])
+                values.extend([new_due.isoformat(), today.isoformat()])
+            elif new_due == curr_due:
+                if curr.get("initial_due_date") is None:
+                    updates.append("initial_due_date = %s")
+                    values.append(curr_initial.isoformat())
+                if curr.get("initial_due_date_set_at") is None:
+                    updates.append("initial_due_date_set_at = %s")
+                    values.append((curr_set_at or today).isoformat())
+            else:
+                in_same_day_grace = (curr_set_at == today) and not curr_flagged
+                if in_same_day_grace:
+                    updates.extend(["initial_due_date = %s", "initial_due_date_set_at = %s", "due_date_flagged = FALSE"])
+                    values.extend([new_due.isoformat(), today.isoformat()])
+                elif new_due <= curr_initial:
+                    if not curr_flagged and today < (curr_initial - timedelta(days=2)):
+                        updates.extend(["initial_due_date = %s", "initial_due_date_set_at = %s", "due_date_flagged = FALSE"])
+                        values.extend([new_due.isoformat(), today.isoformat()])
+                    else:
+                        updates.append("due_date_flagged = FALSE")
+                else:
+                    # Extended past initial due date: flag only if changed within 2 days before deadline or anytime past deadline
+                    if curr_flagged or today >= (curr_initial - timedelta(days=2)):
+                        updates.extend(["initial_due_date = %s", "due_date_flagged = TRUE"])
+                        values.append(curr_initial.isoformat())
+                    else:
+                        updates.extend(["initial_due_date = %s", "initial_due_date_set_at = %s", "due_date_flagged = FALSE"])
+                        values.extend([new_due.isoformat(), today.isoformat()])
                     
         if "completed_at" in data:
             updates.append("completed_at = %s")
@@ -2090,9 +2182,10 @@ class DBStore:
         
         t = updated_task_list[0] if updated_task_list else None
         if t:
-            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
+            for d_key in ('created_at', 'updated_at', 'completed_at', 'start_date', 'due_date', 'initial_due_date', 'initial_due_date_set_at', 'baseline_start_date', 'baseline_due_date', 'constraint_date'):
                 if t.get(d_key) and hasattr(t[d_key], 'isoformat'):
                     t[d_key] = t[d_key].isoformat()
+            t['due_date_flagged'] = bool(t.get('due_date_flagged'))
             if t.get('estimated_hours') is not None:
                 t['estimated_hours'] = float(t['estimated_hours'])
             if t.get('actual_hours') is not None:
@@ -3959,6 +4052,117 @@ class DBStore:
         return records
 
     @staticmethod
+    def record_task_changes(
+        task_id: int,
+        project_id: Optional[int],
+        changes: List[Dict[str, Any]],
+        user_id: Optional[int] = None
+    ) -> int:
+        """Record one or more field changes for a task in task_change_histories."""
+        if not changes:
+            return 0
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            valid_user_id = user_id
+            if valid_user_id is not None:
+                cursor.execute("SELECT id FROM employees WHERE id = %s", (valid_user_id,))
+                if not cursor.fetchone():
+                    valid_user_id = None
+
+            inserted = 0
+            for ch in changes:
+                field_name = ch.get("field_name")
+                field_label = ch.get("field_label") or field_name
+                old_val = ch.get("old_value")
+                new_val = ch.get("new_value")
+                if not field_name:
+                    continue
+                old_str = None if old_val is None or str(old_val).strip() == "" else str(old_val)
+                new_str = None if new_val is None or str(new_val).strip() == "" else str(new_val)
+                if field_name != "created" and old_str == new_str:
+                    continue
+                cursor.execute(
+                    """INSERT INTO task_change_histories
+                       (task_id, project_id, field_name, field_label, old_value, new_value, user_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (task_id, project_id, field_name, field_label, old_str, new_str, valid_user_id)
+                )
+                inserted += 1
+            conn.commit()
+            return inserted
+        except Exception as e:
+            print("record_task_changes error:", e)
+            conn.rollback()
+            return 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_task_change_history(task_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT th.*, e.name as user_name
+                FROM task_change_histories th
+                LEFT JOIN employees e ON th.user_id = e.id
+                WHERE th.task_id = %s
+                ORDER BY th.created_at DESC, th.id DESC
+            """, (task_id,))
+            records = cursor.fetchall()
+
+            # Also include any legacy description_histories entries not already mirrored in task_change_histories
+            cursor.execute("""
+                SELECT dh.*, e.name as user_name
+                FROM description_histories dh
+                LEFT JOIN employees e ON dh.user_id = e.id
+                WHERE dh.entity_type = 'task' AND dh.entity_id = %s
+                ORDER BY dh.created_at DESC, dh.id DESC
+            """, (task_id,))
+            legacy_desc_rows = cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.close()
+
+        desc_fingerprints = set()
+        for r in records:
+            ts = r.get('created_at')
+            if r.get('field_name') == 'description' and ts is not None:
+                ts_sec = ts.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ts, 'strftime') else str(ts)[:19]
+                desc_fingerprints.add((ts_sec, (r.get('old_value') or '').strip(), (r.get('new_value') or '').strip()))
+
+        for dh in legacy_desc_rows:
+            ts = dh.get('created_at')
+            ts_sec = ts.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ts, 'strftime') else str(ts or '')[:19]
+            fp = (ts_sec, (dh.get('old_description') or '').strip(), (dh.get('new_description') or '').strip())
+            if fp not in desc_fingerprints:
+                records.append({
+                    "id": -int(dh["id"]),
+                    "task_id": task_id,
+                    "project_id": None,
+                    "field_name": "description",
+                    "field_label": "Description",
+                    "old_value": dh.get("old_description"),
+                    "new_value": dh.get("new_description"),
+                    "user_id": dh.get("user_id"),
+                    "user_name": dh.get("user_name"),
+                    "created_at": ts,
+                })
+
+        def _sort_key(item):
+            ts = item.get('created_at')
+            ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts or '')
+            return (ts_str, item.get('id') or 0)
+
+        records.sort(key=_sort_key, reverse=True)
+        for r in records:
+            if r.get('created_at') and hasattr(r['created_at'], 'isoformat'):
+                r['created_at'] = r['created_at'].isoformat()
+        return records
+
+    @staticmethod
     def get_notifications(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -4083,9 +4287,10 @@ class DBStore:
             # 3. Insert Tasks (as child tasks in dynamic_tasks pointing to phase task ID)
             for t in plan_json.get("tasks", []):
                 db_phase_id = phase_id_map.get(t["phaseId"])
+                finish_date_val = t.get("earliestFinishDate") or None
                 query_task = """
-                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, start_date, due_date, sort_order)
-                    VALUES (%s, %s, %s, %s, 'TODO', %s, %s, %s, %s)
+                    INSERT INTO dynamic_tasks (project_id, parent_id, title, description, status, priority, start_date, due_date, initial_due_date, initial_due_date_set_at, sort_order)
+                    VALUES (%s, %s, %s, %s, 'TODO', %s, %s, %s, %s, %s, %s)
                 """
                 cursor.execute(query_task, (
                     project_id,
@@ -4094,7 +4299,9 @@ class DBStore:
                     t.get("description") or "",
                     t.get("priority", "MEDIUM"),
                     t.get("earliestStartDate") or None,
-                    t.get("earliestFinishDate") or None,
+                    finish_date_val,
+                    finish_date_val,
+                    datetime.now().strftime('%Y-%m-%d') if finish_date_val else None,
                     current_sort_order
                 ))
                 current_sort_order += 1

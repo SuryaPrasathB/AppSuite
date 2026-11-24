@@ -8,7 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
 import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
 import { TaskCommentsModal } from './TaskCommentsModal';
-import { isTaskOverdue } from './taskUtils';
+import { isTaskOverdue, isDueDateModifiedPastInitial, getDueDateModifiedTooltip } from './taskUtils';
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
@@ -126,16 +126,17 @@ export const MyTasks: React.FC = () => {
       const q = searchQuery.toLowerCase().trim();
       const matchTitle = t.title?.toLowerCase().includes(q);
       const matchProject = t.project_name?.toLowerCase().includes(q);
+      const matchProjectCode = t.project_code?.toLowerCase().includes(q);
       const matchCustomer = (t.client_name || t.customer_name)?.toLowerCase().includes(q);
-      if (!matchTitle && !matchProject && !matchCustomer) return false;
+      if (!matchTitle && !matchProject && !matchProjectCode && !matchCustomer) return false;
     }
     return true;
   });
 
   const groupedTasks = filteredTasks.reduce((acc, task) => {
-    const projName = task.project_name || 'No Project';
-    if (!acc[projName]) acc[projName] = [];
-    acc[projName].push(task);
+    const groupKey = task.project_id ? String(task.project_id) : 'no-project';
+    if (!acc[groupKey]) acc[groupKey] = [];
+    acc[groupKey].push(task);
     return acc;
   }, {} as Record<string, any[]>);
 
@@ -169,7 +170,7 @@ export const MyTasks: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search task or customer..."
+              placeholder="Search task, project no. or customer..."
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all"
             />
           </div>
@@ -232,20 +233,30 @@ export const MyTasks: React.FC = () => {
               <div className="flex items-center justify-center h-full text-slate-500 dark:text-slate-400 p-8 bg-white dark:bg-slate-900">No tasks found.</div>
             ) : (
               <div className="p-6 space-y-6">
-                {Object.entries(groupedTasks).map(([project, projectTasks]: [string, any]) => {
-                  const isCollapsed = collapsedProjects[project];
+                {Object.entries(groupedTasks).map(([groupKey, projectTasks]: [string, any]) => {
+                  const isCollapsed = collapsedProjects[groupKey];
+                  const project = projectTasks[0]?.project_name || 'No Project';
+                  const projectCode = projectTasks[0]?.project_code;
                   const customerName = projectTasks[0]?.client_name || projectTasks[0]?.customer_name;
                   return (
-                    <div key={project} className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
+                    <div key={groupKey} className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
                       <div 
                         className="bg-white dark:bg-slate-900 px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors"
-                        onClick={() => toggleProjectCollapse(project)}
+                        onClick={() => toggleProjectCollapse(groupKey)}
                       >
                         <div className="flex items-center gap-3 flex-wrap">
                           <div className={`p-1.5 rounded-md ${project === 'No Project' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'}`}>
                             <Folder className="w-4 h-4" />
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
+                            {projectCode && (
+                              <span
+                                className="inline-flex items-center font-mono text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 px-2 py-0.5 rounded-md"
+                                title={`Project Number: ${projectCode}`}
+                              >
+                                {projectCode}
+                              </span>
+                            )}
                             <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm">{project}</h3>
                             {customerName && (
                               <span className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded-md" title={`${customerName}`}>
@@ -342,7 +353,12 @@ export const MyTasks: React.FC = () => {
                                       </span>
                                     </td>
                                     <td className={`px-5 py-3.5 whitespace-nowrap ${isLateOrOverdue ? 'text-red-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
-                                      {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '—'}
+                                      <span className="inline-flex items-center gap-0.5">
+                                        {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '—'}
+                                        {isDueDateModifiedPastInitial(task) && (
+                                          <span className="text-rose-500 font-bold cursor-help text-sm leading-none" title={getDueDateModifiedTooltip(task)}>*</span>
+                                        )}
+                                      </span>
                                     </td>
                                     <td className="px-5 py-3.5 whitespace-nowrap">
                                       {task.assignee_name ? (
@@ -490,6 +506,14 @@ export const MyTasks: React.FC = () => {
 
                             <h4 className="font-bold text-slate-800 text-sm mb-1.5 leading-snug">{task.title}</h4>
                             <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                              {task.project_code && (
+                                <span
+                                  className="inline-block font-mono bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider"
+                                  title={`Project Number: ${task.project_code}`}
+                                >
+                                  {task.project_code}
+                                </span>
+                              )}
                               {task.project_name ? (
                                 <span className="inline-block bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider line-clamp-1" title={`Project: ${task.project_name}`}>
                                   Project: {task.project_name}
@@ -508,7 +532,10 @@ export const MyTasks: React.FC = () => {
                             <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-[10px] text-slate-500">
                               <span className={`flex items-center gap-1 ${isLateOrOverdue ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
                                 <Calendar className={`h-3 w-3 ${isLateOrOverdue ? 'text-red-500' : 'text-slate-400'}`} />
-                                {task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}
+                                <span>{task.due_date ? new Date(task.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No date'}</span>
+                                {isDueDateModifiedPastInitial(task) && (
+                                  <span className="text-rose-500 font-bold cursor-help text-xs leading-none" title={getDueDateModifiedTooltip(task)}>*</span>
+                                )}
                               </span>
                               <div className="flex items-center gap-2">
                                 {task.assignee_name && (

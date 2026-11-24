@@ -1,4 +1,4 @@
-import { DescriptionHistorySection } from '../components/DescriptionHistorySection';
+import { TaskHistorySection } from '../components/TaskHistorySection';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
@@ -21,7 +21,7 @@ import {
 import { DateRangePicker } from './DateRangePicker';
 import { AssigneeWorkloadSelector } from './AssigneeWorkloadSelector';
 import { CustomDropdown } from '../../../components/CustomDropdown';
-import { isTaskOverdue } from '../taskUtils';
+import { isTaskOverdue, willDueDateChangeBeFlagged, formatTaskDate } from '../taskUtils';
 import { createDynamicTask, updateDynamicTask } from '../api';
 
 interface TaskFormModalProps {
@@ -628,7 +628,14 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               />
             </div>
 
-            {/* Task Description Section with History */}
+            {/* Unified Task Change History */}
+            <TaskHistorySection
+              projectId={projectId || taskForm?.project_id || editingTask?.project_id}
+              taskId={editingTask?.id}
+              onRestoreDescription={(desc) => setTaskForm((prev: any) => ({ ...prev, description: desc }))}
+            />
+
+            {/* Task Description Section */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -636,13 +643,6 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   <span>Task Description</span>
                 </label>
               </div>
-
-              <DescriptionHistorySection
-                entityType="task"
-                projectId={projectId || taskForm?.project_id || editingTask?.project_id}
-                entityId={editingTask?.id}
-                onRestore={(desc) => setTaskForm((prev: any) => ({ ...prev, description: desc }))}
-              />
 
               <div className="flex gap-2.5 items-start bg-slate-50/50 p-2.5 rounded-xl border border-slate-200/70 focus-within:border-indigo-400 focus-within:bg-white transition-all">
                 <textarea
@@ -732,7 +732,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 dueDate={taskForm.due_date}
                 isOverdue={isTaskOverdue(taskForm)}
                 onSave={(start, due) => {
-                  setTaskForm((prev: any) => ({ ...prev, start_date: start, due_date: due }));
+                  setTaskForm((prev: any) => ({ ...prev, start_date: start || '', due_date: due || '' }));
                 }}
                 triggerElement={
                   <div className="flex gap-2">
@@ -743,20 +743,33 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                       </label>
                     </div>
                     <div className="relative">
-                      <label
-                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm border ${
-                          isTaskOverdue(taskForm)
-                            ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
-                            : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <Calendar
-                          className={`h-3.5 w-3.5 ${
-                            isTaskOverdue(taskForm) ? 'text-rose-500' : 'text-slate-400'
-                          }`}
-                        />
-                        {taskForm.due_date ? `Due: ${taskForm.due_date}` : 'Due Date'}
-                      </label>
+                      {(() => {
+                        const isModifiedPastInitial = willDueDateChangeBeFlagged(editingTask, taskForm.due_date);
+                        const initialRaw = editingTask?.initial_due_date || editingTask?.due_date;
+                        const modifiedTooltip = isModifiedPastInitial && initialRaw
+                          ? `Date modified past initial due date (${formatTaskDate(`${String(initialRaw).split('T')[0]}T00:00:00`)})`
+                          : undefined;
+                        return (
+                          <label
+                            title={modifiedTooltip}
+                            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors shadow-sm border ${
+                              isTaskOverdue(taskForm)
+                                ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <Calendar
+                              className={`h-3.5 w-3.5 ${
+                                isTaskOverdue(taskForm) ? 'text-rose-500' : 'text-slate-400'
+                              }`}
+                            />
+                            <span>{taskForm.due_date ? `Due: ${taskForm.due_date}` : 'Due Date'}</span>
+                            {isModifiedPastInitial && (
+                              <span className="text-rose-500 font-bold text-sm leading-none" title={modifiedTooltip}>*</span>
+                            )}
+                          </label>
+                        );
+                      })()}
                     </div>
                     {taskForm.status === 'COMPLETED' && (
                       <div className="relative group/completed" onClick={(e) => e.stopPropagation()}>

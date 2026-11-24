@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Briefcase, AlertCircle, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { fetchStandupData } from './api';
 import { isToday, isThisWeek, isBefore, parseISO, startOfDay } from 'date-fns';
-import { isTaskOverdue } from './taskUtils';
+import { isTaskOverdue, isDueDateModifiedPastInitial, getDueDateModifiedTooltip } from './taskUtils';
 
 export const DailyStandup: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
@@ -206,7 +206,10 @@ export const DailyStandup: React.FC = () => {
                                     isLateOrOverdue ? 'text-red-600 font-bold' : 'text-slate-600'
                                   }`}>
                                     <Clock className={`h-3.5 w-3.5 ${isLateOrOverdue ? 'text-red-500' : 'text-slate-400'}`} />
-                                    {task.due_date.split('T')[0]}
+                                    <span>{task.due_date.split('T')[0]}</span>
+                                    {isDueDateModifiedPastInitial(task) && (
+                                      <span className="text-rose-500 font-bold cursor-help text-base leading-none" title={getDueDateModifiedTooltip(task)}>*</span>
+                                    )}
                                   </span>
                                   {isLateOrOverdue && (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded w-max border border-red-200">

@@ -1289,12 +1289,25 @@ def apply_schedule_cascade(project_id: int, updates: List[CascadeTaskUpdate], cu
     before_due_dates = [str(t.get("due_date"))[:10] for t in before_tasks if t.get("due_date")]
     old_project_finish = max(before_due_dates) if before_due_dates else None
 
+    before_tasks_by_id = {t["id"]: t for t in before_tasks}
     details = []
     for u in updates:
+        prev_t = before_tasks_by_id.get(u.id) or {}
         DBStore.update_dynamic_task(u.id, {
             "start_date": u.start_date,
             "due_date": u.due_date
         })
+        cascade_changes = []
+        old_s = str(prev_t.get("start_date") or "")[:10] or None
+        new_s = str(u.start_date or "")[:10] or None
+        old_f = str(prev_t.get("due_date") or "")[:10] or None
+        new_f = str(u.due_date or "")[:10] or None
+        if old_s != new_s:
+            cascade_changes.append({"field_name": "start_date", "field_label": "Start Date", "old_value": old_s, "new_value": new_s})
+        if old_f != new_f:
+            cascade_changes.append({"field_name": "due_date", "field_label": "Due Date", "old_value": old_f, "new_value": new_f})
+        if cascade_changes:
+            DBStore.record_task_changes(u.id, project_id, cascade_changes, current_user.get("id"))
         code_lbl = f"[{u.activity_code}] " if u.activity_code else ""
         title_lbl = u.title or f"Task #{u.id}"
         reason_lbl = f" ({u.reason})" if u.reason else ""
@@ -1429,12 +1442,16 @@ class TaskReorder(BaseModel):
 @router.put("/{project_id}/dynamic-tasks/reorder")
 def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_user: Dict[str, Any] = Depends(get_current_user)):
     from app.database import get_db_connection
+    before_tasks = DBStore.get_dynamic_tasks(project_id)
+    before_by_id = {t["id"]: t for t in before_tasks}
     conn = get_db_connection()
     cursor = conn.cursor()
+    pending_history = []
     try:
         for task in tasks:
             if task.parent_id == task.id:
                 continue
+            prev_t = before_by_id.get(task.id)
             if task.status:
                 if task.status == "COMPLETED":
                     cursor.execute(
@@ -1451,6 +1468,16 @@ def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_use
                     "UPDATE dynamic_tasks SET sort_order = %s, parent_id = %s WHERE id = %s AND project_id = %s",
                     (task.sort_order, task.parent_id, task.id, project_id)
                 )
+            if prev_t:
+                t_changes = []
+                if task.status and task.status != prev_t.get("status"):
+                    t_changes.append({"field_name": "status", "field_label": "Status", "old_value": prev_t.get("status"), "new_value": task.status})
+                if task.parent_id != prev_t.get("parent_id"):
+                    old_p = before_by_id.get(prev_t.get("parent_id"), {}).get("title") if prev_t.get("parent_id") else None
+                    new_p = before_by_id.get(task.parent_id, {}).get("title") if task.parent_id else None
+                    t_changes.append({"field_name": "parent_id", "field_label": "Parent Task", "old_value": old_p, "new_value": new_p})
+                if t_changes:
+                    pending_history.append((task.id, t_changes))
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -1458,6 +1485,8 @@ def reorder_dynamic_tasks(project_id: int, tasks: List[TaskReorder], current_use
     finally:
         cursor.close()
         conn.close()
+    for tid, t_changes in pending_history:
+        DBStore.record_task_changes(tid, project_id, t_changes, current_user["id"])
     project_event_manager.broadcast(project_id, "TASKS_REORDERED", {"user_id": current_user["id"]})
     return {"status": "success"}
 
@@ -1467,6 +1496,12 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     check_circular_dependencies(project_id, None, task.dependencies)
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
+    DBStore.record_task_changes(
+        new_task["id"],
+        project_id,
+        [{"field_name": "created", "field_label": "Task Created", "old_value": None, "new_value": task.title}],
+        current_user["id"]
+    )
     if task.description and task.description.strip():
         DBStore.record_description_change("task", new_task["id"], None, task.description.strip(), current_user["id"])
     
@@ -1509,6 +1544,114 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     project_event_manager.broadcast(project_id, "TASK_CREATED", {"task_id": new_task["id"], "title": task.title, "user_id": current_user["id"]})
     return new_task
 
+def _diff_task_changes(existing_task: Dict[str, Any], updated_task: Dict[str, Any], all_tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Compute a list of human-readable field changes between existing_task and updated_task."""
+    changes: List[Dict[str, Any]] = []
+    tasks_by_id = {t["id"]: t.get("title") or f"Task #{t['id']}" for t in all_tasks}
+
+    def _date_only(v):
+        if not v:
+            return None
+        s = str(v).strip()
+        return s[:10] if len(s) >= 10 else (s or None)
+
+    def _str_val(v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s != "" else None
+
+    def _hours_val(v):
+        if v is None:
+            return "0h"
+        try:
+            f = float(v)
+            return f"{f:g}h"
+        except Exception:
+            return str(v)
+
+    def _pct_val(v):
+        try:
+            return f"{int(v or 0)}%"
+        except Exception:
+            return "0%"
+
+    def _assignees_str(t):
+        assignees = t.get("assignees") or []
+        if assignees:
+            names = [a.get("name") for a in assignees if isinstance(a, dict) and a.get("name")]
+            if names:
+                return ", ".join(sorted(names))
+        if t.get("assignee_name"):
+            return str(t["assignee_name"])
+        return None
+
+    def _deps_str(raw):
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            if not isinstance(parsed, list) or len(parsed) == 0:
+                return None
+            labels = []
+            for d in parsed:
+                if isinstance(d, dict):
+                    did = int(d.get("id"))
+                    dtype = d.get("type") or "FS"
+                    lag = d.get("lag") or 0
+                    lag_str = f" +{lag}d" if lag and lag > 0 else (f" {lag}d" if lag and lag < 0 else "")
+                    labels.append(f"{tasks_by_id.get(did, f'Task #{did}')} ({dtype}{lag_str})")
+                else:
+                    did = int(d)
+                    labels.append(tasks_by_id.get(did, f"Task #{did}"))
+            return ", ".join(sorted(labels)) if labels else None
+        except Exception:
+            return _str_val(raw)
+
+    simple_fields = [
+        ("title", "Title", _str_val),
+        ("description", "Description", _str_val),
+        ("status", "Status", _str_val),
+        ("priority", "Priority", _str_val),
+        ("start_date", "Start Date", _date_only),
+        ("due_date", "Due Date", _date_only),
+        ("completed_at", "Completed Date", _date_only),
+        ("progress_pct", "Progress", _pct_val),
+        ("estimated_hours", "Planned Hours", _hours_val),
+        ("actual_hours", "Actual Hours", _hours_val),
+        ("activity_code", "Activity ID", _str_val),
+        ("task_type", "Activity Type", _str_val),
+        ("wbs_code", "WBS Phase", _str_val),
+    ]
+
+    for key, label, fmt in simple_fields:
+        old_v = fmt(existing_task.get(key))
+        new_v = fmt(updated_task.get(key))
+        if old_v != new_v:
+            changes.append({"field_name": key, "field_label": label, "old_value": old_v, "new_value": new_v})
+
+    old_assignees = _assignees_str(existing_task)
+    new_assignees = _assignees_str(updated_task)
+    if old_assignees != new_assignees:
+        changes.append({"field_name": "assignees", "field_label": "Assignees", "old_value": old_assignees, "new_value": new_assignees})
+
+    old_parent_id = existing_task.get("parent_id")
+    new_parent_id = updated_task.get("parent_id")
+    if old_parent_id != new_parent_id:
+        changes.append({
+            "field_name": "parent_id",
+            "field_label": "Parent Task",
+            "old_value": tasks_by_id.get(old_parent_id) if old_parent_id else None,
+            "new_value": tasks_by_id.get(new_parent_id) if new_parent_id else None,
+        })
+
+    old_deps = _deps_str(existing_task.get("dependencies"))
+    new_deps = _deps_str(updated_task.get("dependencies"))
+    if old_deps != new_deps:
+        changes.append({"field_name": "dependencies", "field_label": "Dependencies", "old_value": old_deps, "new_value": new_deps})
+
+    return changes
+
 @router.put("/{project_id}/dynamic-tasks/{task_id}")
 def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
     validate_task_dates(task.start_date, task.due_date)
@@ -1546,6 +1689,10 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     if not updated:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    field_changes = _diff_task_changes(existing_task, updated, all_tasks)
+    if field_changes:
+        DBStore.record_task_changes(task_id, project_id, field_changes, current_user["id"])
+
     if task.description is not None:
         old_desc = (existing_task.get("description") or "").strip()
         new_desc = (task.description or "").strip()
@@ -1562,12 +1709,12 @@ def update_dynamic_task(project_id: int, task_id: int, task: TaskUpdate, current
     date_changes = []
     old_s = str(existing_task.get("start_date") or "")[:10] or None
     old_f = str(existing_task.get("due_date") or "")[:10] or None
-    new_s = str(task.start_date)[:10] if task.start_date else old_s
-    new_f = str(task.due_date)[:10] if task.due_date else old_f
+    new_s = (str(task.start_date)[:10] if task.start_date else None) if "start_date" in task_dump else old_s
+    new_f = (str(task.due_date)[:10] if task.due_date else None) if "due_date" in task_dump else old_f
 
-    if task.start_date is not None and new_s != old_s:
+    if "start_date" in task_dump and new_s != old_s:
         date_changes.append(f"Start {old_s or 'None'} → {new_s or 'None'}")
-    if task.due_date is not None and new_f != old_f:
+    if "due_date" in task_dump and new_f != old_f:
         date_changes.append(f"Finish {old_f or 'None'} → {new_f or 'None'}")
     if date_changes:
         before_finishes = [str(t.get("due_date"))[:10] for t in all_tasks if t.get("due_date")]
@@ -1732,6 +1879,10 @@ def get_project_description_history(project_id: int):
 @router.get("/{project_id}/tasks/{task_id}/description-history")
 def get_task_description_history(project_id: int, task_id: int):
     return DBStore.get_description_history("task", task_id)
+
+@router.get("/{project_id}/tasks/{task_id}/history")
+def get_task_change_history(project_id: int, task_id: int):
+    return DBStore.get_task_change_history(task_id)
 
 
 class ProjectPlanRequest(BaseModel):

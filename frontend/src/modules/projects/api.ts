@@ -363,6 +363,12 @@ export async function fetchTaskDescriptionHistory(projectId: number, taskId: num
   return res.json();
 }
 
+export async function fetchTaskChangeHistory(projectId: number, taskId: number) {
+  const res = await fetch(`${API_BASE}/${projectId}/tasks/${taskId}/history`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error('Failed to fetch task change history');
+  return res.json();
+}
+
 export async function fetchProjectActivities(projectId: number) {
   const res = await fetch(`${API_BASE}/${projectId}/activities`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch activities');

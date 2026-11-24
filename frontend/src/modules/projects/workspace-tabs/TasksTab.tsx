@@ -6,7 +6,7 @@ import { DateRangePicker } from './DateRangePicker';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { AssigneeSelectPopover } from './AssigneeSelectPopover';
 import { createDynamicTask, deleteDynamicTask, fetchProjects } from '../api';
-import { isTaskOverdue } from '../taskUtils';
+import { isTaskOverdue, isDueDateModifiedPastInitial, getDueDateModifiedTooltip } from '../taskUtils';
 import { computeP6Schedule, P6EnrichedTask } from '../p6ScheduleEngine';
 
 interface TasksTabProps {
@@ -944,31 +944,30 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
           {visibleColumns.due_date && (
             <td className="py-1 px-2 relative group/date whitespace-nowrap text-center">
-              <div className="flex justify-center">
-              {task.due_date && (project?.date_of_delivery || project?.end_date) && (() => {
-                 const pDate = new Date(project.date_of_delivery || project.end_date).getTime();
-                 const tDate = new Date(task.due_date).getTime();
-                 if (tDate >= pDate - (2 * 24 * 60 * 60 * 1000)) {
-                   return (
-                     <span 
-                       className="text-rose-500 font-bold absolute -left-2 top-3 cursor-help text-lg leading-none" 
-                       title="Date modified past or near planned project due date"
-                     >
-                       *
-                     </span>
-                   );
-                 }
-                 return null;
-              })()}
+              <div className="inline-flex items-center justify-center gap-0.5">
               <DateRangePicker
                 startDate={task.start_date}
                 dueDate={task.due_date}
                 isOverdue={isTaskOverdue(task)}
                 onSave={async (start, due) => {
-                  await onUpdateTaskField?.(task.id, 'start_date', start);
-                  await onUpdateTaskField?.(task.id, 'due_date', due);
+                  const currentStart = task.start_date ? String(task.start_date).split('T')[0] : null;
+                  const currentDue = task.due_date ? String(task.due_date).split('T')[0] : null;
+                  if (start !== currentStart) {
+                    await onUpdateTaskField?.(task.id, 'start_date', start);
+                  }
+                  if (due !== currentDue) {
+                    await onUpdateTaskField?.(task.id, 'due_date', due);
+                  }
                 }}
               />
+              {isDueDateModifiedPastInitial(task) && (
+                <span
+                  className="text-rose-500 font-bold cursor-help text-base leading-none select-none"
+                  title={getDueDateModifiedTooltip(task)}
+                >
+                  *
+                </span>
+              )}
               </div>
             </td>
           )}

@@ -709,8 +709,8 @@ export const ProjectWorkspace: React.FC = () => {
         }
       }
 
-      await updateDynamicTask(project.id, taskId, { [field]: value, ...(extraUpdates.status ? { status: extraUpdates.status } : {}) });
-      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value, ...extraUpdates } : t));
+      const updatedTask = await updateDynamicTask(project.id, taskId, { [field]: value, ...(extraUpdates.status ? { status: extraUpdates.status } : {}) });
+      setDynamicTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: value, ...extraUpdates, ...(updatedTask || {}) } : t));
       await loadData(project.id, true);
       
       if (field !== 'assignee_id' && field !== 'assignee_ids') {
