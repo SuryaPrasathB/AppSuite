@@ -15,6 +15,9 @@ class RequestItemCreate(BaseModel):
 class PurchaseRequestCreate(BaseModel):
     requester: str
     remarks: Optional[str] = None
+    project_id: Optional[int] = None
+    project_name: Optional[str] = None
+    purpose: Optional[str] = None
     items: List[RequestItemCreate]
 
 class RequestItemUpdate(BaseModel):
@@ -83,8 +86,8 @@ def get_purchase_recommendations():
     return final_recs
 
 @router.get("/requests")
-def list_purchase_requests():
-    return DBStore.get_purchase_requests()
+def list_purchase_requests(project_id: Optional[int] = None):
+    return DBStore.get_purchase_requests(project_id=project_id)
 
 @router.post("/requests")
 def create_purchase_request(req: PurchaseRequestCreate):
@@ -106,6 +109,13 @@ def update_purchase_request(req_id: int, req: PurchaseRequestUpdate):
         return updated
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/requests/{req_id}")
+def delete_purchase_request(req_id: int):
+    try:
+        return DBStore.delete_purchase_request(req_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 class BOMItem(BaseModel):
     code: str

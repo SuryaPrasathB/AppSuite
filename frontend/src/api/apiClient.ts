@@ -126,9 +126,10 @@ export const apiClient = {
   },
   purchase: {
     recommendations: () => request<Record<string, any[]>>('/purchase/recommendations'),
-    requests: () => request<any[]>('/purchase/requests'),
+    requests: (projectId?: number) => request<any[]>(`/purchase/requests${projectId !== undefined ? `?project_id=${projectId}` : ''}`),
     createRequest: (body: any) => request<any>('/purchase/requests', { method: 'POST', body: JSON.stringify(body) }),
     updateRequest: (id: number | string, body: any) => request<any>(`/purchase/requests/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteRequest: (id: number | string) => request<any>(`/purchase/requests/${id}`, { method: 'DELETE' }),
     analyzeBOM: (items: any[]) => request<any>('/purchase/bom-analyze', { method: 'POST', body: JSON.stringify(items) }),
   },
   reports: {

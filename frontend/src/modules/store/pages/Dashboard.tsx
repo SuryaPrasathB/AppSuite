@@ -11,7 +11,8 @@ import {
   MapPin,
   Plus,
   Boxes,
-  Clock
+  Clock,
+  ClipboardList
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -83,6 +84,7 @@ export const Dashboard: React.FC = () => {
   const [productsList, setProductsList] = useState<ProductItem[]>([]);
   const [locationsList, setLocationsList] = useState<LocationItem[]>([]);
   const [draftsCount, setDraftsCount] = useState(0);
+  const [productRequests, setProductRequests] = useState<any[]>([]);
 
   useEffect(() => {
     fetchStats();
@@ -104,14 +106,16 @@ export const Dashboard: React.FC = () => {
 
   const fetchDataDropdowns = async () => {
     try {
-      const [prods, locs, drafts] = await Promise.all([
+      const [prods, locs, drafts, reqs] = await Promise.all([
         apiClient.products.list().catch(() => []),
         apiClient.reports.locations().catch(() => []),
-        apiClient.inventory.getDrafts().catch(() => [])
+        apiClient.inventory.getDrafts().catch(() => []),
+        apiClient.purchase.requests().catch(() => [])
       ]);
       setProductsList(prods);
       setLocationsList(locs);
       setDraftsCount(drafts?.length || 0);
+      setProductRequests(Array.isArray(reqs) ? reqs : []);
     } catch (err) {}
   };
 
@@ -353,7 +357,7 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 my-6">
             {/* Stock In */}
             <button
               onClick={() => navigate('/stock-in')}
@@ -400,6 +404,23 @@ export const Dashboard: React.FC = () => {
               </div>
               <span className="text-xs font-bold mt-3 text-slate-700">Add Item</span>
               <span className="text-[10px] text-slate-400 mt-1">Create new product</span>
+            </button>
+
+            {/* Product Requests */}
+            <button
+              onClick={() => navigate('/requests')}
+              className="relative flex flex-col items-center justify-center p-5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-850 transition-all hover:shadow-xs cursor-pointer group text-center"
+            >
+              {kpis.pending_purchase_items > 0 && (
+                <span className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold">
+                  {kpis.pending_purchase_items}
+                </span>
+              )}
+              <div className="bg-indigo-100 text-indigo-600 p-3.5 rounded-xl group-hover:scale-105 transition-transform">
+                <ClipboardList className="h-6 w-6" />
+              </div>
+              <span className="text-xs font-bold mt-3 text-slate-700">Requests</span>
+              <span className="text-[10px] text-slate-400 mt-1">Raise / review requests</span>
             </button>
           </div>
           <div className="h-2"></div>
@@ -564,6 +585,116 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Row 4: Recent Product Requests */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4.5 w-4.5 text-indigo-600" />
+            <h3 className="font-bold text-slate-850 text-sm">Product Requests</h3>
+            {kpis.pending_purchase_items > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                {kpis.pending_purchase_items} Pending
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => navigate('/requests')}
+            className="text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
+          >
+            View All Requests
+          </button>
+        </div>
+
+        {productRequests.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-2.5 pr-4">Request No.</th>
+                  <th className="py-2.5 pr-4">Project</th>
+                  <th className="py-2.5 pr-4">Purpose</th>
+                  <th className="py-2.5 pr-4">Requested By</th>
+                  <th className="py-2.5 pr-4">Items</th>
+                  <th className="py-2.5 pr-4">Date</th>
+                  <th className="py-2.5 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 text-xs">
+                {productRequests.slice(0, 6).map((req) => {
+                  const items = Array.isArray(req.items) ? req.items : [];
+                  const projName = req.project_name || 'N/A';
+                  const purpose = req.purpose || 'Material demand requirement';
+                  return (
+                    <tr
+                      key={req.id}
+                      onClick={() => navigate('/requests')}
+                      className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                    >
+                      <td className="py-3 pr-4 font-bold text-primary-700 whitespace-nowrap">
+                        REQ-2025-00{req.id}
+                      </td>
+                      <td className="py-3 pr-4 font-semibold text-slate-700">
+                        {req.project_id ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/projects/${req.project_id}`);
+                            }}
+                            className="text-left text-indigo-600 hover:underline font-semibold cursor-pointer"
+                          >
+                            {projName}
+                          </button>
+                        ) : (
+                          <span>{projName}</span>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4 text-slate-500 max-w-xs truncate" title={purpose}>
+                        {purpose}
+                      </td>
+                      <td className="py-3 pr-4 text-slate-600 font-medium whitespace-nowrap">
+                        {req.requester?.split('(')[0]?.trim() || req.requester}
+                      </td>
+                      <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">
+                        <span className="font-bold text-slate-700">{items.length}</span>{' '}
+                        {items.length === 1 ? 'item' : 'items'}
+                        {items[0]?.name ? (
+                          <span className="text-[10px] text-slate-400 ml-1.5">
+                            ({items[0].name}{items.length > 1 ? ` +${items.length - 1}` : ''})
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-3 pr-4 text-[11px] text-slate-400 whitespace-nowrap">
+                        {req.created_at
+                          ? new Date(req.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : '—'}
+                      </td>
+                      <td className="py-3 text-right whitespace-nowrap">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          req.status === 'PENDING' ? 'bg-amber-100 text-amber-800' :
+                          req.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                          req.status === 'DELIVERED' ? 'bg-purple-100 text-purple-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {req.status === 'PENDING' ? 'Pending' :
+                           req.status === 'APPROVED' ? 'Approved' :
+                           req.status === 'DELIVERED' ? 'Issued' :
+                           'Rejected'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-xs text-slate-400 font-medium">
+            No product requests raised yet.
+          </div>
+        )}
       </div>
     </div>
   );

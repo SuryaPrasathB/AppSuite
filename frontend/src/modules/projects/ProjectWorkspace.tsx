@@ -6,7 +6,7 @@ import {
   Clock, Package, FileText, StickyNote, Activity,
   Briefcase, Layers, CornerDownRight, Folder, BarChart2,
   TrendingUp, Plus, CheckCircle2, FolderPlus, ShieldAlert,
-  Calendar, Flag, Sparkles, Edit3, User, Building2, MapPin, Hash
+  Calendar, Flag, Sparkles, Edit3, User, Building2, MapPin, Hash, ClipboardList
 } from 'lucide-react';
 import { 
   fetchProjectDetails, fetchDynamicTasks, fetchEmployees, updateProject, createProject,
@@ -25,6 +25,8 @@ import { DocumentsTab } from './workspace-tabs/DocumentsTab';
 import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
 import { SubProjectsTab } from './workspace-tabs/SubProjectsTab';
+import { RequestsTab } from './workspace-tabs/RequestsTab';
+import { apiClient } from '../../api/apiClient';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
 import { FolderBrowserModal } from './FolderBrowserModal';
@@ -49,6 +51,7 @@ export const ProjectWorkspace: React.FC = () => {
   
   const [subProjects, setSubProjects] = useState<any[]>([]);
   const [baselines, setBaselines] = useState<any[]>([]);
+  const [projectRequestsCount, setProjectRequestsCount] = useState<number>(0);
   const [isExpectedEditorOpen, setIsExpectedEditorOpen] = useState(false);
   const [expectedDraftMode, setExpectedDraftMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [expectedDraftDate, setExpectedDraftDate] = useState('');
@@ -87,18 +90,20 @@ export const ProjectWorkspace: React.FC = () => {
   const loadData = async (projectId: number, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [projDetails, taskList, empList, allProjs, baselineList] = await Promise.all([
+      const [projDetails, taskList, empList, allProjs, baselineList, projReqs] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
         fetchEmployees(true).catch(() => []),
         fetchProjects(1, 1000).catch(() => ({ data: [] })),
-        fetchProjectBaselines(projectId).catch(() => [])
+        fetchProjectBaselines(projectId).catch(() => []),
+        apiClient.purchase.requests(projectId).catch(() => [])
       ]);
       setProject(projDetails.project);
       setStaticTasks(projDetails.tasks);
       setFiles(projDetails.files);
       setSubProjects(projDetails.sub_projects || []);
       setBaselines(Array.isArray(baselineList) ? baselineList : []);
+      setProjectRequestsCount(Array.isArray(projReqs) ? projReqs.length : 0);
       setDynamicTasks(taskList);
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
@@ -107,11 +112,11 @@ export const ProjectWorkspace: React.FC = () => {
 
       if (!silent) {
         if (projDetails.project?.is_parent) {
-          setActiveTab(prev => ['sub_projects', 'sub_analytics', 'overview', 'notes', 'activity'].includes(prev) ? prev : 'sub_projects');
+          setActiveTab(prev => ['sub_projects', 'sub_analytics', 'overview', 'notes', 'activity', 'requests'].includes(prev) ? prev : 'sub_projects');
         } else if (projDetails.project?.category === 'RND') {
-          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         } else {
-          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         }
       }
     } catch (error) {
@@ -329,6 +334,7 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'sub_projects', name: `Sub-Projects (${subProjects.length})`, icon: Layers },
     { id: 'sub_analytics', name: 'Analytics & Rollup', icon: BarChart2 },
     { id: 'overview', name: 'Major Project Details', icon: LayoutDashboard },
+    { id: 'requests', name: projectRequestsCount > 0 ? `Requests (${projectRequestsCount})` : 'Requests', icon: ClipboardList },
     { id: 'notes', name: 'Major Project Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity Log', icon: Activity },
   ] : [
@@ -337,6 +343,7 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
     ...(project?.category !== 'RND' ? [{ id: 'documents', name: 'Documents', icon: FileText }] : []),
+    { id: 'requests', name: projectRequestsCount > 0 ? `Requests (${projectRequestsCount})` : 'Requests', icon: ClipboardList },
     { id: 'notes', name: 'Notes', icon: StickyNote },
     { id: 'activity', name: 'Activity', icon: Activity },
     { id: 'overview', name: 'Overview', icon: LayoutDashboard },
@@ -1412,6 +1419,12 @@ export const ProjectWorkspace: React.FC = () => {
           />
         )}
         
+        {activeTab === 'requests' && (
+          <RequestsTab
+            project={project}
+            onRequestsCountChange={setProjectRequestsCount}
+          />
+        )}
         {activeTab === 'notes' && <NotesTab projectId={project.id} />}
         {activeTab === 'activity' && <ActivityTab projectId={project.id} refreshTrigger={syncVersion} />}
         {activeTab === 'service' && <ServiceTickets projectId={project.id} />}

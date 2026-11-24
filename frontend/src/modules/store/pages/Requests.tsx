@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../../api/apiClient';
 import { useAuth } from '../../../context/AuthContext';
+import { useDialog } from '../../../context/DialogContext';
 import { 
   ShoppingCart, 
   Plus, 
@@ -30,8 +30,8 @@ import {
 } from 'lucide-react';
 
 export const Requests: React.FC = () => {
-  const navigate = useNavigate();
   const { user, hasRole } = useAuth();
+  const { showConfirm, showAlert } = useDialog();
   
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,7 @@ export const Requests: React.FC = () => {
 
   // Form states
   const [reqProject, setReqProject] = useState('');
-  const [projectsList, setProjectsList] = useState<string[]>([]);
+  const [projectsList, setProjectsList] = useState<Array<{ id: number; label: string }>>([]);
   const [reqPurpose, setReqPurpose] = useState('');
   const [requestItems, setRequestItems] = useState<any[]>([
     { name: '', code: '', category: 'Electrical', unit: 'pcs', quantity: '10' }
@@ -84,18 +84,23 @@ export const Requests: React.FC = () => {
 
   useEffect(() => {
     fetchRequests();
-    
-    // Load projects from local storage
-    const savedProjects = localStorage.getItem('smart_store_projects_v2');
-    if (savedProjects) {
-      try {
-        const parsed = JSON.parse(savedProjects);
-        if (Array.isArray(parsed)) {
-          setProjectsList(parsed.map((p: any) => `${p.name} (${p.code})`));
-        }
-      } catch (_) {}
-    }
+    fetchProjects();
   }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const projs = await apiClient.projects.list();
+      const projsArray = Array.isArray(projs) ? projs : ((projs as any)?.data || []);
+      setProjectsList(
+        projsArray.map((p: any) => ({
+          id: p.id,
+          label: p.code ? `${p.name} (${p.code})` : p.name,
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to fetch projects:", err);
+    }
+  };
 
   const fetchRequests = async () => {
     try {
@@ -110,32 +115,26 @@ export const Requests: React.FC = () => {
     }
   };
 
-  // Helper to parse Project & Purpose from remarks or assign defaults
+  // Helper to parse Project & Purpose from stored columns or legacy remarks
   const parseRemarks = (req: any) => {
-    const remarks = req.remarks || '';
-    if (remarks.startsWith('[') && remarks.includes(']')) {
+    if (req.project_name || req.purpose) {
+      return {
+        project: req.project_name || 'N/A',
+        purpose: req.purpose || 'Material demand requirement',
+      };
+    }
+
+    const remarks = typeof req.remarks === 'string' ? req.remarks : '';
+    if (remarks.startsWith('[') && remarks.includes(']') && !remarks.startsWith('[{')) {
       const closingIndex = remarks.indexOf(']');
       const project = remarks.substring(1, closingIndex);
       const purpose = remarks.substring(closingIndex + 1).trim();
       return { project, purpose };
     }
-    
-    // Deterministic mock data assignment based on request ID
-    if (req.id === 1) {
-      return {
-        project: "Delhi Test House (DTH)",
-        purpose: "Control panel assembly and testing"
-      };
-    } else if (req.id === 2) {
-      return {
-        project: "Uma Polymers (UP)",
-        purpose: "Site installation"
-      };
-    }
 
     return {
-      project: "Delhi Test House (DTH)",
-      purpose: remarks || "Material demand requirement"
+      project: 'N/A',
+      purpose: (!remarks.startsWith('[{') && remarks) ? remarks : 'Material demand requirement'
     };
   };
 
@@ -191,12 +190,18 @@ export const Requests: React.FC = () => {
     }
 
     try {
-      // Encode Project and Purpose into Remarks
-      const formattedRemarks = `[${reqProject}] ${reqPurpose}`;
+      const selectedProj = reqProject === 'N/A'
+        ? null
+        : projectsList.find(p => String(p.id) === reqProject || p.label === reqProject);
+      const projectLabel = selectedProj ? selectedProj.label : (reqProject || 'N/A');
+      const formattedRemarks = `[${projectLabel}] ${reqPurpose}`;
       
       const payload = {
         requester: user ? `${user.username} (${user.role})` : 'Operator',
         remarks: formattedRemarks,
+        project_id: selectedProj ? selectedProj.id : null,
+        project_name: projectLabel,
+        purpose: reqPurpose,
         items: requestItems.map(item => ({
           ...item,
           quantity: parseFloat(item.quantity) || 0
@@ -210,6 +215,7 @@ export const Requests: React.FC = () => {
       setTimeout(() => {
         setFormSuccess(false);
         setCreateModalOpen(false);
+        setReqProject('');
         setReqPurpose('');
         setRequestItems([{ name: '', code: '', category: 'Electrical', unit: 'pcs', quantity: '10' }]);
       }, 1500);
@@ -313,6 +319,18 @@ export const Requests: React.FC = () => {
     setActiveRequest(req);
     setTimelineModalOpen(true);
     setOpenMenuId(null);
+  };
+
+  const handleDeleteRequest = async (req: any) => {
+    setOpenMenuId(null);
+    const confirmed = await showConfirm(`Are you sure you want to delete request REQ-2025-00${req.id}?`);
+    if (!confirmed) return;
+    try {
+      await apiClient.purchase.deleteRequest(req.id);
+      fetchRequests();
+    } catch (err: any) {
+      await showAlert(err.message || "Failed to delete product request.");
+    }
   };
 
   const parseHistoryLogs = (logsStr: string) => {
@@ -525,11 +543,10 @@ export const Requests: React.FC = () => {
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500 font-semibold text-slate-700"
               >
                 <option value="All Projects">All Projects</option>
-                <option value="Delhi Test House (DTH)">Delhi Test House (DTH)</option>
-                <option value="Uma Polymers (UP)">Uma Polymers (UP)</option>
-                <option value="EIC Project (EIC)">EIC Project (EIC)</option>
-                <option value="R&D Lab">R&D Lab</option>
-                <option value="Factory Automation (FA)">Factory Automation (FA)</option>
+                <option value="N/A">N/A</option>
+                {projectsList.map(proj => (
+                  <option key={proj.id} value={proj.label}>{proj.label}</option>
+                ))}
               </select>
             </div>
 
@@ -727,6 +744,14 @@ export const Requests: React.FC = () => {
                             >
                               <Eye className="h-4 w-4" />
                             </button>
+
+                            <button
+                              onClick={() => handleDeleteRequest(req)}
+                              title="Delete Request"
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                             
                             <div className="relative">
                               <button
@@ -760,6 +785,12 @@ export const Requests: React.FC = () => {
                                     className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-xs text-slate-650 transition-colors"
                                   >
                                     View Audit Log
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRequest(req)}
+                                    className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-xs font-bold text-red-600 transition-colors border-t border-slate-100"
+                                  >
+                                    Delete Request
                                   </button>
                                 </div>
                               )}
@@ -1056,20 +1087,15 @@ export const Requests: React.FC = () => {
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Project Associated *</label>
                       <select
+                        required
                         value={reqProject}
-                        onChange={(e) => {
-                          if (e.target.value === 'ADD_NEW') {
-                            navigate('/projects');
-                          } else {
-                            setReqProject(e.target.value);
-                          }
-                        }}
+                        onChange={(e) => setReqProject(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 font-semibold text-slate-700"
                       >
                         <option value="" disabled>Select Project</option>
-                        <option value="ADD_NEW" className="font-bold text-primary-600">+ Add New Project</option>
+                        <option value="N/A">N/A</option>
                         {projectsList.map(proj => (
-                          <option key={proj} value={proj}>{proj}</option>
+                          <option key={proj.id} value={String(proj.id)}>{proj.label}</option>
                         ))}
                       </select>
                     </div>

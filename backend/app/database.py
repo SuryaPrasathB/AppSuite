@@ -945,11 +945,52 @@ class DBStore:
         tx["created_at"] = datetime.now().isoformat()
         return tx
 
+    _purchase_requests_columns_checked = False
+
     @staticmethod
-    def get_purchase_requests() -> List[Dict[str, Any]]:
+    def _ensure_purchase_requests_columns():
+        if DBStore._purchase_requests_columns_checked:
+            return
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SHOW COLUMNS FROM purchase_requests LIKE 'project_id'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE purchase_requests ADD COLUMN project_id INT DEFAULT NULL")
+            cursor.execute("SHOW COLUMNS FROM purchase_requests LIKE 'project_name'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE purchase_requests ADD COLUMN project_name VARCHAR(255) DEFAULT NULL")
+            cursor.execute("SHOW COLUMNS FROM purchase_requests LIKE 'purpose'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE purchase_requests ADD COLUMN purpose TEXT DEFAULT NULL")
+            conn.commit()
+            DBStore._purchase_requests_columns_checked = True
+        except Exception as e:
+            print(f"Warning: Could not ensure purchase_requests columns: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_purchase_requests(project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        DBStore._ensure_purchase_requests_columns()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM purchase_requests ORDER BY created_at DESC")
+        if project_id is not None:
+            cursor.execute("""
+                SELECT pr.*, p.name AS linked_project_name, p.code AS linked_project_code
+                FROM purchase_requests pr
+                LEFT JOIN projects p ON pr.project_id = p.id
+                WHERE pr.project_id = %s
+                ORDER BY pr.created_at DESC
+            """, (project_id,))
+        else:
+            cursor.execute("""
+                SELECT pr.*, p.name AS linked_project_name, p.code AS linked_project_code
+                FROM purchase_requests pr
+                LEFT JOIN projects p ON pr.project_id = p.id
+                ORDER BY pr.created_at DESC
+            """)
         reqs = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -958,14 +999,20 @@ class DBStore:
             if r.get('approved_at'): r['approved_at'] = r['approved_at'].isoformat()
             if r.get('delivered_at'): r['delivered_at'] = r['delivered_at'].isoformat()
             r['quantity'] = float(r['quantity'])
-            
+
+            linked_name = r.pop('linked_project_name', None)
+            linked_code = r.pop('linked_project_code', None)
+            if linked_name and not r.get('project_name'):
+                r['project_name'] = f"{linked_name} ({linked_code})" if linked_code else linked_name
+            r['project_code'] = linked_code
+
             try:
                 r['items'] = json.loads(r.get("remarks") or "[]")
                 if not isinstance(r['items'], list):
                     r['items'] = []
             except:
                 r['items'] = []
-                
+
             try:
                 r['history_logs'] = json.loads(r.get("history_logs") or "[]")
             except:
@@ -974,18 +1021,49 @@ class DBStore:
 
     @staticmethod
     def add_purchase_request(req: Dict[str, Any]) -> Dict[str, Any]:
+        DBStore._ensure_purchase_requests_columns()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        
+
         items_json = json.dumps(req.get("items", []))
+        project_id = req.get("project_id")
+        project_name = req.get("project_name")
+        purpose = req.get("purpose")
+
+        # Fallback: parse legacy "[Project] Purpose" format from remarks if purpose/project_name not explicitly passed
+        raw_remarks = req.get("remarks")
+        if isinstance(raw_remarks, str) and raw_remarks.strip():
+            stripped = raw_remarks.strip()
+            if stripped.startswith("[") and "]" in stripped and not stripped.startswith("[{"):
+                closing_idx = stripped.index("]")
+                if not project_name:
+                    project_name = stripped[1:closing_idx].strip() or None
+                if not purpose:
+                    purpose = stripped[closing_idx + 1:].strip() or None
+            elif not purpose:
+                purpose = stripped
+
         history = [{"timestamp": datetime.now().isoformat(), "user": req.get("requester"), "action": "Raised request for new products"}]
-        
+
         query = """
-            INSERT INTO purchase_requests (requester, product_id, quantity, status, remarks, history_logs)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO purchase_requests (requester, product_id, quantity, status, remarks, history_logs, project_id, project_name, purpose)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        cursor.execute(query, (req.get("requester"), None, 0, "PENDING", items_json, json.dumps(history)))
+        cursor.execute(query, (
+            req.get("requester"),
+            None,
+            0,
+            "PENDING",
+            items_json,
+            json.dumps(history),
+            project_id,
+            project_name,
+            purpose
+        ))
         req["id"] = cursor.lastrowid
+        req["project_id"] = project_id
+        req["project_name"] = project_name
+        req["purpose"] = purpose
         conn.commit()
         cursor.close()
         conn.close()
@@ -1062,6 +1140,22 @@ class DBStore:
         cursor.close()
         conn.close()
         return updated_req
+
+    @staticmethod
+    def delete_purchase_request(req_id: int) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM purchase_requests WHERE id = %s", (req_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Request ID {req_id} not found.")
+        cursor.execute("DELETE FROM purchase_requests WHERE id = %s", (req_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"success": True, "id": req_id}
 
     @staticmethod
     def get_employees() -> List[Dict[str, Any]]:
@@ -1961,7 +2055,6 @@ class DBStore:
 
         completed_at = task.get("completed_at")
         if not completed_at and task.get("status") == "COMPLETED":
-            from datetime import datetime, date, timedelta
             completed_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
         progress_pct = task.get("progress_pct")
@@ -3512,6 +3605,9 @@ class DBStore:
         new_req = {
             "requester": user_name,
             "remarks": req_remarks,
+            "project_id": bom.get("project_id"),
+            "project_name": bom.get("project_name") or "N/A",
+            "purpose": req_remarks,
             "items": pr_items,
             "status": "PENDING"
         }
@@ -4880,6 +4976,13 @@ class AssetStore:
 
 
 class ProductCategoryStore:
+    _table_ready: bool = False
+
+    @staticmethod
+    def ensure_table():
+        if not ProductCategoryStore._table_ready:
+            ProductCategoryStore.init_table()
+
     @staticmethod
     def _parse_json(val: Any, fallback: Any):
         if val is None:
@@ -4964,53 +5067,65 @@ class ProductCategoryStore:
             conn.commit()
             cursor.close()
             conn.close()
+            ProductCategoryStore._table_ready = True
         except Exception as e:
             print("ProductCategoryStore.init_table error:", e)
 
     @staticmethod
+    def _count_products_by_category(cursor, categories: List[Dict[str, Any]]) -> None:
+        """Compute product_count in Python to avoid MySQL collation mismatch across tables."""
+        cursor.execute("SELECT category, description FROM products")
+        prods = cursor.fetchall()
+        for cat in categories:
+            label_l = (cat.get("label") or "").strip().lower()
+            code_l = (cat.get("code") or "").strip().lower()
+            code_marker = f'"categoryId":"{cat.get("code") or ""}"'
+            count = 0
+            for p in prods:
+                p_cat = (p.get("category") or "").strip().lower()
+                p_desc = p.get("description") or ""
+                if (
+                    (label_l and p_cat == label_l)
+                    or (code_l and p_cat == code_l)
+                    or (p_desc.startswith("{") and code_marker in p_desc)
+                ):
+                    count += 1
+            cat["product_count"] = count
+
+    @staticmethod
     def list_categories() -> List[Dict[str, Any]]:
+        ProductCategoryStore.ensure_table()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""
-            SELECT pc.*,
-                (
-                    SELECT COUNT(*)
-                    FROM products p
-                    WHERE LOWER(p.category) = LOWER(pc.label)
-                       OR LOWER(p.category) = LOWER(pc.code)
-                       OR (p.description LIKE '{%' AND p.description LIKE CONCAT('%"categoryId":"', pc.code, '"%'))
-                ) AS product_count
-            FROM product_categories pc
-            ORDER BY pc.is_system DESC, pc.label ASC
+            SELECT *
+            FROM product_categories
+            ORDER BY is_system DESC, label ASC
         """)
         rows = cursor.fetchall()
+        hydrated = [ProductCategoryStore._hydrate_row(r) for r in rows]
+        ProductCategoryStore._count_products_by_category(cursor, hydrated)
         cursor.close()
         conn.close()
-        return [ProductCategoryStore._hydrate_row(r) for r in rows]
+        return hydrated
 
     @staticmethod
     def get_by_id(category_id: int) -> Optional[Dict[str, Any]]:
+        ProductCategoryStore.ensure_table()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT pc.*,
-                (
-                    SELECT COUNT(*)
-                    FROM products p
-                    WHERE LOWER(p.category) = LOWER(pc.label)
-                       OR LOWER(p.category) = LOWER(pc.code)
-                       OR (p.description LIKE '{%' AND p.description LIKE CONCAT('%"categoryId":"', pc.code, '"%'))
-                ) AS product_count
-            FROM product_categories pc
-            WHERE pc.id = %s
-        """, (category_id,))
+        cursor.execute("SELECT * FROM product_categories WHERE id = %s", (category_id,))
         row = cursor.fetchone()
+        hydrated = ProductCategoryStore._hydrate_row(row)
+        if hydrated:
+            ProductCategoryStore._count_products_by_category(cursor, [hydrated])
         cursor.close()
         conn.close()
-        return ProductCategoryStore._hydrate_row(row)
+        return hydrated
 
     @staticmethod
     def get_by_code(code: str) -> Optional[Dict[str, Any]]:
+        ProductCategoryStore.ensure_table()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM product_categories WHERE UPPER(code) = UPPER(%s)", (code,))
@@ -5021,6 +5136,7 @@ class ProductCategoryStore:
 
     @staticmethod
     def create_category(data: Dict[str, Any]) -> Dict[str, Any]:
+        ProductCategoryStore.ensure_table()
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
