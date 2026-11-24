@@ -945,7 +945,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
           {visibleColumns.due_date && (
             <td className="py-1 px-2 relative group/date whitespace-nowrap text-center">
-              <div className="inline-flex items-center justify-center gap-0.5">
+              <div className="relative inline-flex items-center justify-center">
               <DateRangePicker
                 startDate={task.start_date}
                 dueDate={task.due_date}
@@ -963,7 +963,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               />
               {isDueDateModifiedPastInitial(task) && (
                 <span
-                  className="text-rose-500 font-bold cursor-help text-base leading-none select-none"
+                  className="absolute left-full ml-1 top-1/2 -translate-y-1/2 text-rose-500 font-bold cursor-help text-base leading-none select-none"
                   title={getDueDateModifiedTooltip(task)}
                 >
                   *
