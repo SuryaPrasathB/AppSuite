@@ -17,13 +17,17 @@ import {
   MoreVertical,
   Settings,
   Trash2,
-  Building2
+  Building2,
+  Layers
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exportToExcel } from '../../../utils/exportUtils';
 import { getProductManufacturer, getProductPartNumber } from '../../../utils/productUtils';
 import { ProductBuilderModal } from '../../../product-builder/ProductBuilderModal';
 import { ProductDetailsModal } from '../../../product-builder/ProductDetailsModal';
+import { ManageCategoriesModal } from '../../../product-builder/ManageCategoriesModal';
+import { hydrateCategorySchema, PRODUCT_CATEGORY_SCHEMAS } from '../../../product-builder/schemas';
+import type { ProductCategorySchema } from '../../../product-builder/types';
 
 export const Products: React.FC = () => {
   const { hasRole } = useAuth();
@@ -32,6 +36,8 @@ export const Products: React.FC = () => {
 
   const [products, setProducts] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
+  const [categorySchemas, setCategorySchemas] = useState<ProductCategorySchema[]>(PRODUCT_CATEGORY_SCHEMAS);
+  const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +76,17 @@ export const Products: React.FC = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<any | null>(null);
 
+  const fetchCategories = async () => {
+    try {
+      const catData = await apiClient.categories.list();
+      if (Array.isArray(catData) && catData.length > 0) {
+        setCategorySchemas(catData.map(hydrateCategorySchema));
+      }
+    } catch {
+      // Fall back to default schemas if backend endpoint unavailable
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -78,6 +95,8 @@ export const Products: React.FC = () => {
       
       const vendData = await apiClient.vendors.list();
       setVendors(vendData);
+
+      await fetchCategories();
       
       setError(null);
       
@@ -421,13 +440,22 @@ export const Products: React.FC = () => {
             Export
           </button>
           {hasRole(['Administrator']) && (
-            <button
-              onClick={() => setAddModalOpen(true)}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              Add Item
-            </button>
+            <>
+              <button
+                onClick={() => setManageCategoriesOpen(true)}
+                className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 bg-white rounded-lg text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Layers className="h-4 w-4 text-blue-600" />
+                Categories
+              </button>
+              <button
+                onClick={() => setAddModalOpen(true)}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                Add Item
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -629,11 +657,13 @@ export const Products: React.FC = () => {
         open={addModalOpen}
         vendors={vendors}
         products={products}
+        categories={categorySchemas}
         saving={saving}
         serverError={formError}
         success={formSuccess}
         onClose={() => setAddModalOpen(false)}
         onSave={handleProductBuilderSave}
+        onCategoriesUpdated={fetchCategories}
       />
 
       {/* Edit Product Modal (using Builder UI) */}
@@ -642,12 +672,14 @@ export const Products: React.FC = () => {
           open={editModalOpen}
           vendors={vendors}
           products={products}
+          categories={categorySchemas}
           initialProduct={editProduct}
           saving={saving}
           serverError={editError}
           success={editSuccess}
           onClose={() => setEditModalOpen(false)}
           onSave={handleEditProductBuilderSave}
+          onCategoriesUpdated={fetchCategories}
         />
       )}
 
@@ -739,6 +771,7 @@ export const Products: React.FC = () => {
         <ProductDetailsModal
           product={activeDetailsProduct}
           vendors={vendors}
+          categories={categorySchemas}
           onClose={() => {
             setDetailsModalOpen(false);
             setActiveDetailsProduct(null);
@@ -751,6 +784,14 @@ export const Products: React.FC = () => {
           }}
         />
       )}
+
+      {/* Manage Categories Modal (Admin) */}
+      <ManageCategoriesModal
+        open={manageCategoriesOpen}
+        categories={categorySchemas}
+        onClose={() => setManageCategoriesOpen(false)}
+        onRefresh={fetchData}
+      />
 
       {/* Delete Verification Modal */}
       {deleteModalOpen && productToDelete && (

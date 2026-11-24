@@ -1,1 +1,1 @@
-from . import auth, products, vendors, inventory, layout, purchase, reports, employees
+from . import auth, products, vendors, inventory, layout, purchase, reports, employees, categories

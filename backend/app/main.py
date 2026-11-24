@@ -3,8 +3,8 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.database import DBStore
-from app.modules.store.routers import auth, products, vendors, inventory, layout, purchase, reports, employees, assets
+from app.database import DBStore, ProductCategoryStore
+from app.modules.store.routers import auth, products, vendors, inventory, layout, purchase, reports, employees, assets, categories
 from app.modules.projects import router as projects
 from app.modules.bom import router as bom
 from app.modules.notifications import router as notifications
@@ -30,6 +30,7 @@ from app.modules.features_router import router as features_router
 # Register routers under /api
 app.include_router(auth.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
+app.include_router(categories.router, prefix="/api")
 app.include_router(vendors.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")
 app.include_router(layout.router, prefix="/api")
@@ -59,6 +60,7 @@ async def startup_event():
     DBStore.init_stock_drafts_table()
     DBStore.init_project_columns()
     DBStore.init_bom_procurement_columns()
+    ProductCategoryStore.init_table()
     asyncio.create_task(recycle_bin_cleanup_task())
 
 # Valuation unit prices for dashboard KPI calculation

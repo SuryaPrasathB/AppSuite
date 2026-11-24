@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
 import { Package, X, MapPin, Edit2, QrCode, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { PRODUCT_CATEGORY_SCHEMAS } from './schemas';
+import type { ProductCategorySchema } from './types';
 
 interface ProductDetailsModalProps {
   product: any;
   vendors: any[];
+  categories?: ProductCategorySchema[];
   onClose: () => void;
   onEdit: (product: any) => void;
   onLocate: (product: any) => void;
@@ -29,6 +31,7 @@ const Section: React.FC<{
 export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
   product,
   vendors,
+  categories = PRODUCT_CATEGORY_SCHEMAS,
   onClose,
   onEdit,
   onLocate,
@@ -43,10 +46,17 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
   }, [product.description]);
 
   const schema = parsedDesc?.categoryId
-    ? PRODUCT_CATEGORY_SCHEMAS.find((s) => s.id === parsedDesc.categoryId)
+    ? categories.find((s) => s.id === parsedDesc.categoryId) ||
+      PRODUCT_CATEGORY_SCHEMAS.find((s) => s.id === parsedDesc.categoryId)
     : null;
 
   const specs = parsedDesc?.specifications || {};
+  const extraSpecEntries = useMemo(() => {
+    const schemaKeys = new Set((schema?.fields || []).map((f) => f.key));
+    return Object.entries(specs).filter(
+      ([k, v]) => !schemaKeys.has(k) && v !== null && v !== undefined && String(v).trim() !== '',
+    );
+  }, [schema, specs]);
   const store = parsedDesc?.store || {};
   const addl = parsedDesc?.additional || {};
 
@@ -88,13 +98,23 @@ export const ProductDetailsModal: React.FC<ProductDetailsModalProps> = ({
           <div className="grid items-start gap-4 p-4 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:p-5">
             <div className="space-y-4">
               <Section number={1} title="Technical Specifications">
-                {schema && Object.keys(specs).length > 0 ? (
+                {(schema && Object.keys(specs).length > 0) || extraSpecEntries.length > 0 ? (
                   <div className="grid gap-4 md:grid-cols-3">
-                    {schema.fields.map((field) => (
+                    {schema?.fields.map((field) => (
                       <div key={field.key} className="flex flex-col gap-1">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{field.label}</span>
                         <span className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded px-3 py-2">
                           {specs[field.key] || '—'}
+                        </span>
+                      </div>
+                    ))}
+                    {extraSpecEntries.map(([key, val]) => (
+                      <div key={key} className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                          {String(val)}
                         </span>
                       </div>
                     ))}

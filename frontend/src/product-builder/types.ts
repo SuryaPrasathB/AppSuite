@@ -35,10 +35,13 @@ export interface ProductFieldSchema {
   width?: 'full' | 'half' | 'third';
   unitSuffix?: string;
   summary?: boolean;
+  includeInName?: boolean;
+  includeInCode?: boolean;
 }
 
 export interface ProductCategorySchema {
   id: string;
+  dbId?: number;
   label: string;
   description: string;
   icon?: string;
@@ -47,6 +50,10 @@ export interface ProductCategorySchema {
   codeTemplate: string;
   fields: ProductFieldSchema[];
   defaults?: Record<string, string>;
+  aliases?: string[];
+  keywords?: string[];
+  isSystem?: boolean;
+  productCount?: number;
 }
 
 export type ProductBuilderValues = Record<string, string>;

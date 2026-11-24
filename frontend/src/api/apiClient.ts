@@ -62,7 +62,36 @@ export const apiClient = {
     create: (body: any) => request<any>('/products', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number | string, body: any) => request<any>(`/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number | string) => request<any>(`/products/${id}`, { method: 'DELETE' }),
-    fetchMpnDetails: (mpn: string) => request<any>(`/products/fetch-mpn-details?mpn=${encodeURIComponent(mpn)}`),
+    fetchMpnDetails: (mpn: string, categoryCode?: string, useAi = false) => {
+      const params = new URLSearchParams({ mpn });
+      if (categoryCode) params.set('category_code', categoryCode);
+      if (useAi) params.set('use_ai', 'true');
+      return request<any>(`/products/fetch-mpn-details?${params.toString()}`);
+    },
+  },
+  categories: {
+    list: () => request<any[]>('/categories'),
+    checkSimilar: (body: {
+      label: string;
+      description?: string;
+      aliases?: string[];
+      field_labels?: string[];
+      exclude_id?: number;
+    }) => request<any>('/categories/check-similar', { method: 'POST', body: JSON.stringify(body) }),
+    create: (body: any) => request<any>('/categories', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number | string, body: any) =>
+      request<any>(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number | string) =>
+      request<any>(`/categories/${id}`, { method: 'DELETE' }),
+    merge: (
+      sourceId: number | string,
+      targetId: number | string,
+      body: { field_mapping?: Record<string, string>; add_unmapped_fields?: boolean; preserve_in_notes?: boolean } = {},
+    ) =>
+      request<any>(`/categories/${sourceId}/merge/${targetId}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   },
   vendors: {
     list: () => request<any[]>('/vendors'),

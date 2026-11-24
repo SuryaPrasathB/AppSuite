@@ -3,10 +3,12 @@ import {
   AlertCircle,
   Check,
   Clipboard,
+  Edit2,
   FileImage,
   Info,
   MapPin,
   Package,
+  Plus,
   QrCode,
   Sparkles,
   Upload,
@@ -14,11 +16,13 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { apiClient } from '../api/apiClient';
+import { AddCategoryModal } from './AddCategoryModal';
 import { DynamicField } from './DynamicField';
 import { LocationSelectorModal } from '../components/LocationSelectorModal';
 import {
   ADDITIONAL_FIELDS,
   getCategorySchema,
+  hydrateCategorySchema,
   PRODUCT_CATEGORY_SCHEMAS,
   getStoreFields,
   STORE_FIELDS,
@@ -38,6 +42,7 @@ import type {
   ProductBuilderErrors,
   ProductBuilderPayload,
   ProductBuilderValues,
+  ProductCategorySchema,
   ProductFieldSchema,
 } from './types';
 
@@ -97,16 +102,21 @@ interface ProductBuilderModalProps {
   open: boolean;
   vendors: Vendor[];
   products?: any[];
+  categories?: ProductCategorySchema[];
   initialProduct?: any;
   saving?: boolean;
   serverError?: string | null;
   success?: boolean;
   onClose: () => void;
   onSave: (payload: ProductBuilderPayload) => Promise<void> | void;
+  onCategoriesUpdated?: () => Promise<void> | void;
 }
 
-const defaultsFor = (categoryId: string): ProductBuilderValues => {
-  const schema = getCategorySchema(categoryId);
+const defaultsFor = (
+  categoryId: string,
+  categoryList: ProductCategorySchema[] = PRODUCT_CATEGORY_SCHEMAS,
+): ProductBuilderValues => {
+  const schema = getCategorySchema(categoryId, categoryList);
   const fields = [...schema.fields, ...STORE_FIELDS, ...ADDITIONAL_FIELDS];
   return fields.reduce<ProductBuilderValues>(
     (values, field) => {
@@ -143,15 +153,22 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
   open,
   vendors,
   products = [],
+  categories: externalCategories,
   initialProduct,
   saving = false,
   serverError,
   success = false,
   onClose,
   onSave,
+  onCategoriesUpdated,
 }) => {
+  const [categorySchemas, setCategorySchemas] = useState<ProductCategorySchema[]>(
+    () => (externalCategories && externalCategories.length > 0 ? externalCategories : PRODUCT_CATEGORY_SCHEMAS),
+  );
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [editingCategorySchema, setEditingCategorySchema] = useState<ProductCategorySchema | null>(null);
   const [categoryId, setCategoryId] = useState(PRODUCT_CATEGORY_SCHEMAS[0].id);
-  const [values, setValues] = useState<ProductBuilderValues>(() => defaultsFor(categoryId));
+  const [values, setValues] = useState<ProductBuilderValues>(() => defaultsFor(categoryId, categorySchemas));
   const [errors, setErrors] = useState<ProductBuilderErrors>({});
   const [manualCode, setManualCode] = useState('');
   const [codeOverridden, setCodeOverridden] = useState(false);
@@ -199,8 +216,20 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
       }
     }).catch(() => {});
 
+    apiClient.categories.list().then((cats) => {
+      if (mounted && Array.isArray(cats) && cats.length > 0) {
+        setCategorySchemas(cats.map(hydrateCategorySchema));
+      }
+    }).catch(() => {});
+
     return () => { mounted = false; };
   }, [open]);
+
+  useEffect(() => {
+    if (externalCategories && externalCategories.length > 0) {
+      setCategorySchemas(externalCategories);
+    }
+  }, [externalCategories]);
 
   const handleToggleStoreMandatory = async () => {
     const nextVal = !isStoreMandatory;
@@ -234,7 +263,7 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
     }
   };
 
-  const schema = useMemo(() => getCategorySchema(categoryId), [categoryId]);
+  const schema = useMemo(() => getCategorySchema(categoryId, categorySchemas), [categoryId, categorySchemas]);
   const supplierField = useMemo<ProductFieldSchema>(
     () => ({
       ...ADDITIONAL_FIELDS[0],
@@ -351,10 +380,10 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
           parsed = JSON.parse(initialProduct.description || '{}');
         } catch {}
         
-        const catId = parsed.categoryId || PRODUCT_CATEGORY_SCHEMAS[0].id;
+        const catId = parsed.categoryId || categorySchemas[0]?.id || PRODUCT_CATEGORY_SCHEMAS[0].id;
         setCategoryId(catId);
         
-        const defaults = defaultsFor(catId);
+        const defaults = defaultsFor(catId, categorySchemas);
         setValues({
           ...defaults,
           ...parsed.specifications,
@@ -377,8 +406,9 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
         setErrors({});
         setAutofilledFields(new Set());
       } else {
-        setCategoryId(PRODUCT_CATEGORY_SCHEMAS[0].id);
-        setValues(defaultsFor(PRODUCT_CATEGORY_SCHEMAS[0].id));
+        const firstCatId = categorySchemas[0]?.id || PRODUCT_CATEGORY_SCHEMAS[0].id;
+        setCategoryId(firstCatId);
+        setValues(defaultsFor(firstCatId, categorySchemas));
         setManualCode('');
         setCodeOverridden(false);
         setManualName('');
@@ -392,9 +422,9 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
 
   if (!open) return null;
 
-  const handleCategoryChange = (nextCategoryId: string) => {
+  const handleCategoryChange = (nextCategoryId: string, listOverride?: ProductCategorySchema[]) => {
     setCategoryId(nextCategoryId);
-    setValues(defaultsFor(nextCategoryId));
+    setValues(defaultsFor(nextCategoryId, listOverride || categorySchemas));
     setErrors({});
     setManualCode('');
     setCodeOverridden(false);
@@ -665,16 +695,45 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
               <Section number={1} title="Category">
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                   <div className="flex-1 w-full">
-                    <label htmlFor="product-category" className="mb-1.5 block text-xs font-semibold text-slate-600">
-                      Select Category <span className="text-red-500">*</span>
-                    </label>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <label htmlFor="product-category" className="block text-xs font-semibold text-slate-600">
+                        Select Category <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        {schema.dbId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCategorySchema(schema);
+                              setShowAddCategoryModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
+                            title={`Edit ${schema.label} specs & aliases`}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCategorySchema(null);
+                            setShowAddCategoryModal(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Add New Category
+                        </button>
+                      </div>
+                    </div>
                     <select
                       id="product-category"
                       value={categoryId}
                       onChange={(event) => handleCategoryChange(event.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     >
-                      {PRODUCT_CATEGORY_SCHEMAS.map((categorySchema) => (
+                      {categorySchemas.map((categorySchema) => (
                         <option key={categorySchema.id} value={categorySchema.id}>
                           {categorySchema.label} — {categorySchema.description}
                         </option>
@@ -722,17 +781,24 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                           }
 
                           try {
-                            const res = await apiClient.products.fetchMpnDetails(mpn);
+                            const res = await apiClient.products.fetchMpnDetails(mpn, categoryId);
                             if (res) {
                               // Auto populate schema category if found and mapped
                               let targetCategory = categoryId;
                               if (res.category) {
-                                const foundSchema = PRODUCT_CATEGORY_SCHEMAS.find(s => s.id.toLowerCase() === res.category.toLowerCase());
+                                const foundSchema = categorySchemas.find(
+                                  (s) =>
+                                    s.id.toLowerCase() === String(res.category).toLowerCase() ||
+                                    s.label.toLowerCase() === String(res.category).toLowerCase(),
+                                );
                                 if (foundSchema && foundSchema.id !== categoryId) {
                                   targetCategory = foundSchema.id;
                                   setCategoryId(foundSchema.id);
                                 }
                               }
+
+                              const targetSchema = getCategorySchema(targetCategory, categorySchemas);
+                              const validKeys = new Set(targetSchema.fields.map((f) => f.key));
 
                               // Auto populate fields
                               const filledKeys = new Set<string>();
@@ -740,14 +806,13 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                               filledKeys.add('catalogNumber');
                               filledKeys.add('partNumber');
 
-                              setValues(prev => {
-                                const next = defaultsFor(targetCategory);
-                                // General specs
+                              setValues(() => {
+                                const next = defaultsFor(targetCategory, categorySchemas);
                                 next.manufacturerPartNumber = mpn;
                                 next.catalogNumber = mpn;
                                 next.partNumber = mpn;
-                                
-                                if (res.brand) {
+
+                                if (res.brand && res.brand !== 'Unknown') {
                                   next.manufacturer = res.brand;
                                   filledKeys.add('manufacturer');
                                 }
@@ -760,37 +825,12 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                                   filledKeys.add('notes');
                                 }
 
-                                // Apply custom parsed specifications
-                                if (res.specifications) {
-                                  Object.entries(res.specifications).forEach(([k, v]) => {
-                                    if (k.toLowerCase().includes('current')) {
-                                      next.current = String(v);
-                                      filledKeys.add('current');
-                                    } else if (k.toLowerCase().includes('pole')) {
-                                      next.poles = String(v);
-                                      filledKeys.add('poles');
-                                    } else if (k.toLowerCase().includes('voltage') || k.toLowerCase().includes('coil')) {
-                                      if ('coilVoltage' in next) {
-                                        next.coilVoltage = String(v);
-                                        filledKeys.add('coilVoltage');
-                                      }
-                                      next.voltage = String(v);
-                                      filledKeys.add('voltage');
-                                    } else if (k.toLowerCase().includes('capacitance')) {
-                                      next.capacitance = String(v);
-                                      filledKeys.add('capacitance');
-                                    } else if (k.toLowerCase().includes('series')) {
-                                      next.series = String(v);
-                                      filledKeys.add('series');
-                                    } else if (k.toLowerCase().includes('model') || k.toLowerCase().includes('package') || k.toLowerCase().includes('size')) {
-                                      next.model = String(v);
-                                      filledKeys.add('model');
-                                    } else if (k.toLowerCase().includes('dielectric')) {
-                                      next.dielectric = String(v);
-                                      filledKeys.add('dielectric');
-                                    } else if (k.toLowerCase().includes('tolerance')) {
-                                      next.tolerance = String(v);
-                                      filledKeys.add('tolerance');
+                                // Schema-driven mapped specifications (works for built-in AND custom categories)
+                                if (res.mapped_specifications && typeof res.mapped_specifications === 'object') {
+                                  Object.entries(res.mapped_specifications).forEach(([k, v]) => {
+                                    if (v !== null && v !== undefined && String(v).trim() && validKeys.has(k)) {
+                                      next[k] = String(v).trim();
+                                      filledKeys.add(k);
                                     }
                                   });
                                 }
@@ -804,7 +844,11 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
                                 setImageUrl(res.image_url);
                               }
 
-                              setToast({ message: 'Product specifications auto-filled successfully! Please review the specifications.', type: 'success' });
+                              const mappedCount = Object.keys(res.mapped_specifications || {}).length;
+                              setToast({
+                                message: `Auto-filled ${mappedCount} spec(s) for ${targetSchema.label}. Please review before saving.`,
+                                type: 'success',
+                              });
                               setTimeout(() => setToast(null), 4000);
                             }
                           } catch (err: any) {
@@ -1053,6 +1097,42 @@ export const ProductBuilderModal: React.FC<ProductBuilderModalProps> = ({
           onClose={() => setShowMapPicker(false)}
         />
       )}
+      <AddCategoryModal
+        open={showAddCategoryModal}
+        existingCategories={categorySchemas}
+        initialCategory={editingCategorySchema}
+        onClose={() => {
+          setShowAddCategoryModal(false);
+          setEditingCategorySchema(null);
+        }}
+        onSaved={(savedCategory) => {
+          const isEditing = Boolean(editingCategorySchema);
+          const nextList = isEditing
+            ? categorySchemas.map((c) => (c.id === savedCategory.id || c.dbId === savedCategory.dbId ? savedCategory : c))
+            : [...categorySchemas, savedCategory];
+          setCategorySchemas(nextList);
+          if (!isEditing) {
+            handleCategoryChange(savedCategory.id, nextList);
+          }
+          setEditingCategorySchema(null);
+          onCategoriesUpdated?.();
+          setToast({
+            message: isEditing
+              ? `Category "${savedCategory.label}" updated!`
+              : `Category "${savedCategory.label}" created and selected!`,
+            type: 'success',
+          });
+          setTimeout(() => setToast(null), 3500);
+        }}
+        onUseExisting={(existingCode) => {
+          handleCategoryChange(existingCode);
+          setToast({
+            message: `Switched to existing category "${getCategorySchema(existingCode, categorySchemas).label}".`,
+            type: 'success',
+          });
+          setTimeout(() => setToast(null), 3000);
+        }}
+      />
     </div>
   );
 };

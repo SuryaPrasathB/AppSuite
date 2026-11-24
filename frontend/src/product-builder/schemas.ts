@@ -324,6 +324,48 @@ export const ADDITIONAL_FIELDS: ProductFieldSchema[] = [
   { key: 'notes', label: 'Notes', type: 'textarea', width: 'full', placeholder: 'Additional commercial or technical information…' },
 ];
 
-export const getCategorySchema = (id: string) =>
-  PRODUCT_CATEGORY_SCHEMAS.find((schema) => schema.id === id) || PRODUCT_CATEGORY_SCHEMAS[0];
+export const getCategorySchema = (id: string, list: ProductCategorySchema[] = PRODUCT_CATEGORY_SCHEMAS) =>
+  list.find((schema) => schema.id === id) ||
+  list.find((schema) => schema.label.toLowerCase() === id.toLowerCase()) ||
+  list[0] ||
+  PRODUCT_CATEGORY_SCHEMAS[0];
+
+export const hydrateCategorySchema = (raw: any): ProductCategorySchema => {
+  const rawFields: ProductFieldSchema[] = Array.isArray(raw.fields_schema)
+    ? raw.fields_schema
+    : Array.isArray(raw.fields)
+      ? raw.fields
+      : [];
+
+  const hydratedFields = rawFields.map((field) => {
+    if (field.key === 'manufacturer') {
+      return {
+        ...manufacturerField,
+        ...field,
+        options: manufacturers,
+      };
+    }
+    return field;
+  });
+
+  if (!hydratedFields.some((f) => f.key === 'manufacturer')) {
+    hydratedFields.unshift(manufacturerField);
+  }
+
+  return {
+    id: raw.code || raw.id,
+    dbId: raw.id && typeof raw.id === 'number' ? raw.id : raw.dbId,
+    label: raw.label,
+    description: raw.description || raw.label,
+    codePrefix: raw.code_prefix || raw.codePrefix || String(raw.code || raw.id || 'CAT').slice(0, 3).toUpperCase(),
+    nameTemplate: raw.name_template || raw.nameTemplate || '{category}, {series} {model}',
+    codeTemplate: raw.code_template || raw.codeTemplate || '{codePrefix}-{manufacturerShort}-{series}',
+    fields: hydratedFields,
+    defaults: raw.defaults || {},
+    aliases: Array.isArray(raw.aliases) ? raw.aliases : [],
+    keywords: Array.isArray(raw.keywords) ? raw.keywords : [],
+    isSystem: Boolean(raw.is_system ?? raw.isSystem),
+    productCount: Number(raw.product_count ?? raw.productCount ?? 0),
+  };
+};
 

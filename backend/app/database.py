@@ -4877,3 +4877,377 @@ class AssetStore:
         cursor.close()
         conn.close()
         return rows > 0
+
+
+class ProductCategoryStore:
+    @staticmethod
+    def _parse_json(val: Any, fallback: Any):
+        if val is None:
+            return fallback
+        if isinstance(val, (dict, list)):
+            return val
+        try:
+            return json.loads(val)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _hydrate_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not row:
+            return None
+        row["fields_schema"] = ProductCategoryStore._parse_json(row.get("fields_schema"), [])
+        row["defaults"] = ProductCategoryStore._parse_json(row.get("defaults"), {})
+        row["aliases"] = ProductCategoryStore._parse_json(row.get("aliases"), [])
+        row["keywords"] = ProductCategoryStore._parse_json(row.get("keywords"), [])
+        row["is_system"] = bool(row.get("is_system", False))
+        row["product_count"] = int(row.get("product_count") or 0)
+        if row.get("created_at") and hasattr(row["created_at"], "isoformat"):
+            row["created_at"] = row["created_at"].isoformat()
+        if row.get("updated_at") and hasattr(row["updated_at"], "isoformat"):
+            row["updated_at"] = row["updated_at"].isoformat()
+        return row
+
+    @staticmethod
+    def init_table():
+        try:
+            from app.modules.store.category_defaults import DEFAULT_CATEGORY_SCHEMAS
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS product_categories (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    code VARCHAR(64) NOT NULL UNIQUE,
+                    label VARCHAR(120) NOT NULL UNIQUE,
+                    description VARCHAR(255) DEFAULT '',
+                    code_prefix VARCHAR(16) NOT NULL,
+                    name_template VARCHAR(500) NOT NULL,
+                    code_template VARCHAR(500) NOT NULL,
+                    fields_schema JSON NOT NULL,
+                    defaults JSON NULL,
+                    aliases JSON NULL,
+                    keywords JSON NULL,
+                    is_system BOOLEAN DEFAULT FALSE,
+                    created_by VARCHAR(120) DEFAULT 'System',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_cat_code (code),
+                    INDEX idx_cat_label (label)
+                )
+            """)
+            conn.commit()
+
+            # Seed default system categories idempotently
+            for schema in DEFAULT_CATEGORY_SCHEMAS:
+                cursor.execute(
+                    """
+                    INSERT IGNORE INTO product_categories
+                    (code, label, description, code_prefix, name_template, code_template,
+                     fields_schema, defaults, aliases, keywords, is_system, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        schema["code"],
+                        schema["label"],
+                        schema["description"],
+                        schema["code_prefix"],
+                        schema["name_template"],
+                        schema["code_template"],
+                        json.dumps(schema["fields_schema"]),
+                        json.dumps(schema.get("defaults") or {}),
+                        json.dumps(schema.get("aliases") or []),
+                        json.dumps(schema.get("keywords") or []),
+                        True,
+                        "System",
+                    ),
+                )
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print("ProductCategoryStore.init_table error:", e)
+
+    @staticmethod
+    def list_categories() -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT pc.*,
+                (
+                    SELECT COUNT(*)
+                    FROM products p
+                    WHERE LOWER(p.category) = LOWER(pc.label)
+                       OR LOWER(p.category) = LOWER(pc.code)
+                       OR (p.description LIKE '{%' AND p.description LIKE CONCAT('%"categoryId":"', pc.code, '"%'))
+                ) AS product_count
+            FROM product_categories pc
+            ORDER BY pc.is_system DESC, pc.label ASC
+        """)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [ProductCategoryStore._hydrate_row(r) for r in rows]
+
+    @staticmethod
+    def get_by_id(category_id: int) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT pc.*,
+                (
+                    SELECT COUNT(*)
+                    FROM products p
+                    WHERE LOWER(p.category) = LOWER(pc.label)
+                       OR LOWER(p.category) = LOWER(pc.code)
+                       OR (p.description LIKE '{%' AND p.description LIKE CONCAT('%"categoryId":"', pc.code, '"%'))
+                ) AS product_count
+            FROM product_categories pc
+            WHERE pc.id = %s
+        """, (category_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return ProductCategoryStore._hydrate_row(row)
+
+    @staticmethod
+    def get_by_code(code: str) -> Optional[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM product_categories WHERE UPPER(code) = UPPER(%s)", (code,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return ProductCategoryStore._hydrate_row(row)
+
+    @staticmethod
+    def create_category(data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO product_categories
+            (code, label, description, code_prefix, name_template, code_template,
+             fields_schema, defaults, aliases, keywords, is_system, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                data["code"],
+                data["label"],
+                data.get("description", ""),
+                data["code_prefix"],
+                data["name_template"],
+                data["code_template"],
+                json.dumps(data.get("fields_schema") or []),
+                json.dumps(data.get("defaults") or {}),
+                json.dumps(data.get("aliases") or []),
+                json.dumps(data.get("keywords") or []),
+                bool(data.get("is_system", False)),
+                data.get("created_by", "Administrator"),
+            ),
+        )
+        conn.commit()
+        new_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return ProductCategoryStore.get_by_id(new_id)
+
+    @staticmethod
+    def update_category(category_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        existing = ProductCategoryStore.get_by_id(category_id)
+        if not existing:
+            return None
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        updates = []
+        values = []
+
+        scalar_fields = ["label", "description", "code_prefix", "name_template", "code_template"]
+        json_fields = ["fields_schema", "defaults", "aliases", "keywords"]
+
+        for key in scalar_fields:
+            if key in data and data[key] is not None:
+                updates.append(f"{key} = %s")
+                values.append(data[key])
+
+        for key in json_fields:
+            if key in data and data[key] is not None:
+                updates.append(f"{key} = %s")
+                values.append(json.dumps(data[key]))
+
+        if updates:
+            values.append(category_id)
+            cursor.execute(
+                f"UPDATE product_categories SET {', '.join(updates)} WHERE id = %s",
+                values,
+            )
+
+        # If the display label changed, keep existing products' category column synchronized
+        new_label = data.get("label")
+        if new_label and new_label != existing["label"]:
+            cursor.execute(
+                "UPDATE products SET category = %s WHERE LOWER(category) = LOWER(%s)",
+                (new_label, existing["label"]),
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return ProductCategoryStore.get_by_id(category_id)
+
+    @staticmethod
+    def delete_category(category_id: int) -> bool:
+        existing = ProductCategoryStore.get_by_id(category_id)
+        if not existing:
+            return False
+        if existing["is_system"]:
+            raise ValueError("System categories cannot be deleted.")
+        if existing["product_count"] > 0:
+            raise ValueError(
+                f"Category '{existing['label']}' still has {existing['product_count']} product(s). Merge it into another category instead."
+            )
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM product_categories WHERE id = %s", (category_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        cursor.close()
+        conn.close()
+        return deleted
+
+    @staticmethod
+    def merge_categories(
+        source_id: int,
+        target_id: int,
+        field_mapping: Optional[Dict[str, str]] = None,
+        add_unmapped_fields: bool = False,
+        preserve_in_notes: bool = True,
+    ) -> Dict[str, Any]:
+        if source_id == target_id:
+            raise ValueError("Source and target categories cannot be the same.")
+
+        source = ProductCategoryStore.get_by_id(source_id)
+        target = ProductCategoryStore.get_by_id(target_id)
+        if not source or not target:
+            raise ValueError("Source or target category not found.")
+        if source["is_system"]:
+            raise ValueError("Built-in system categories cannot be merged away; you can merge custom categories into a system category.")
+
+        mapping = field_mapping or {}
+        target_fields = list(target.get("fields_schema") or [])
+        target_field_keys = {f.get("key") for f in target_fields if isinstance(f, dict)}
+        source_fields = list(source.get("fields_schema") or [])
+        source_fields_by_key = {f.get("key"): f for f in source_fields if isinstance(f, dict) and f.get("key")}
+
+        # Optionally promote unmapped source fields to optional fields on target
+        added_fields: List[str] = []
+        if add_unmapped_fields:
+            for sf in source_fields:
+                sk = sf.get("key")
+                if not sk or sk in target_field_keys or mapping.get(sk):
+                    continue
+                new_field = dict(sf)
+                # Make promoted fields optional so existing target items remain valid
+                if isinstance(new_field.get("validation"), dict):
+                    new_field["validation"] = {k: v for k, v in new_field["validation"].items() if k != "required"}
+                target_fields.append(new_field)
+                target_field_keys.add(sk)
+                added_fields.append(sk)
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Find all products belonging to source
+        cursor.execute(
+            """
+            SELECT id, category, description
+            FROM products
+            WHERE LOWER(category) = LOWER(%s)
+               OR LOWER(category) = LOWER(%s)
+               OR (description LIKE '{%' AND description LIKE %s)
+            """,
+            (source["label"], source["code"], f'%"categoryId":"{source["code"]}"%'),
+        )
+        products_to_migrate = cursor.fetchall()
+        migrated_count = 0
+
+        for prod in products_to_migrate:
+            new_desc = prod.get("description") or ""
+            try:
+                parsed = json.loads(new_desc) if new_desc.strip().startswith("{") else None
+            except Exception:
+                parsed = None
+
+            if isinstance(parsed, dict):
+                parsed["categoryId"] = target["code"]
+                old_specs = parsed.get("specifications") or {}
+                new_specs: Dict[str, Any] = {}
+                unmapped_notes: List[str] = []
+
+                for sk, val in old_specs.items():
+                    if val is None or str(val).strip() == "":
+                        continue
+                    mapped_key = mapping.get(sk)
+                    if mapped_key and mapped_key in target_field_keys:
+                        new_specs[mapped_key] = val
+                    elif sk in target_field_keys:
+                        new_specs[sk] = val
+                    else:
+                        label = source_fields_by_key.get(sk, {}).get("label", sk)
+                        unmapped_notes.append(f"{label}: {val}")
+
+                parsed["specifications"] = new_specs
+                if preserve_in_notes and unmapped_notes:
+                    addl = parsed.get("additional") or {}
+                    existing_notes = (addl.get("notes") or "").strip()
+                    merged_note = f"[Merged from {source['label']}] " + "; ".join(unmapped_notes)
+                    addl["notes"] = f"{existing_notes}\n{merged_note}".strip() if existing_notes else merged_note
+                    parsed["additional"] = addl
+
+                new_desc = json.dumps(parsed)
+
+            cursor.execute(
+                "UPDATE products SET category = %s, description = %s WHERE id = %s",
+                (target["label"], new_desc, prod["id"]),
+            )
+            migrated_count += 1
+
+        # Merge aliases & keywords into target so the duplicate name is remembered
+        merged_aliases = list(dict.fromkeys([
+            *(target.get("aliases") or []),
+            source["label"],
+            *(source.get("aliases") or []),
+        ]))
+        merged_aliases = [a for a in merged_aliases if a and a.lower() != target["label"].lower()]
+
+        merged_keywords = list(dict.fromkeys([
+            *(target.get("keywords") or []),
+            source["label"].lower(),
+            *(source.get("keywords") or []),
+        ]))
+
+        cursor.execute(
+            """
+            UPDATE product_categories
+            SET fields_schema = %s, aliases = %s, keywords = %s
+            WHERE id = %s
+            """,
+            (
+                json.dumps(target_fields),
+                json.dumps(merged_aliases),
+                json.dumps(merged_keywords),
+                target_id,
+            ),
+        )
+
+        # Delete the merged source category
+        cursor.execute("DELETE FROM product_categories WHERE id = %s", (source_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "migrated_products_count": migrated_count,
+            "added_fields": added_fields,
+            "target_category": ProductCategoryStore.get_by_id(target_id),
+        }
