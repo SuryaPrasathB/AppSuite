@@ -50,6 +50,7 @@ import { BOMCloneModal } from './BOMCloneModal';
 import { BOMRevisionModal } from './BOMRevisionModal';
 import { BOMHeaderModal } from './BOMHeaderModal';
 import { BOMTemplateSelectModal } from './BOMTemplateSelectModal';
+import { BOMShadowFeedbackPanel } from './BOMShadowFeedbackPanel';
 import { extractSubAssemblies } from './subAssemblyUtils';
 
 type ProcurementStatus = 'YET_TO_ORDER' | 'ORDERED' | 'DELIVERED';
@@ -103,6 +104,13 @@ interface BOMData {
   parent_bom_id?: number | null;
   eco_id?: number | null;
   is_reserved?: boolean;
+  is_locked?: boolean;
+  bom_kind?: string;
+  source_bom_id?: number | null;
+  pinned_revision?: string | null;
+  pending_feedback_count?: number;
+  shadow_count?: number;
+  linked_projects?: any[];
   items: BOMItem[];
 }
 
@@ -296,9 +304,11 @@ export const BOM: React.FC = () => {
       setProducts(prData);
       setLocations(lData);
 
-      const targetId = selectBomId || (new URLSearchParams(window.location.search).get('id') ? Number(new URLSearchParams(window.location.search).get('id')) : undefined);
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlBomId = urlParams.get('bomId') || urlParams.get('id');
+      const targetId = selectBomId || (urlBomId ? Number(urlBomId) : undefined);
 
-      if (targetId && bData.some(b => b.id === targetId)) {
+      if (targetId) {
         await handleViewDetails(targetId);
       } else if (detailBom && bData.some(b => b.id === detailBom.id)) {
         await handleViewDetails(detailBom.id);
@@ -316,7 +326,7 @@ export const BOM: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const idParam = params.get('id');
+    const idParam = params.get('bomId') || params.get('id');
     fetchData(idParam ? Number(idParam) : undefined);
   }, []);
 
@@ -1533,6 +1543,14 @@ export const BOM: React.FC = () => {
                           <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
                             Rev {b.revision || 'A'}
                           </span>
+                          {(b.pending_feedback_count || 0) > 0 && (
+                            <span
+                              className="text-[8px] font-extrabold px-1.5 py-0.2 rounded bg-amber-400 text-slate-900 whitespace-nowrap"
+                              title={`${b.pending_feedback_count} project field addition(s) awaiting review`}
+                            >
+                              +{b.pending_feedback_count} Field
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1879,6 +1897,22 @@ export const BOM: React.FC = () => {
 
               {activeView === 'items' ? (
                 <>
+                  {/* Shadow Copies, Linked Projects & Field Additions Review Panel */}
+                  <BOMShadowFeedbackPanel
+                    masterBom={detailBom}
+                    projects={projects}
+                    userName={user?.name || 'Administrator'}
+                    onPromoted={async (newMasterId) => {
+                      await fetchData(newMasterId);
+                    }}
+                    onChanged={async () => {
+                      await fetchData(detailBom.id);
+                    }}
+                    onCompareShadow={(_masterId, shadowId) => {
+                      setDiffCompareTargetId(shadowId);
+                    }}
+                  />
+
                   {/* Main BOM Timeline & Status Strip (Clean 3-Card Layout) */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Card 1: BOM Issue & Expected Completion */}

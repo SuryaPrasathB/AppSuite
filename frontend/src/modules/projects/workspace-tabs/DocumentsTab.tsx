@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, AlertTriangle, File, Lock, RefreshCw, UploadCloud, Download, Trash2, Eye, X, FolderOpen } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { FileText, CheckCircle, AlertTriangle, File, Lock, RefreshCw, UploadCloud, Download, Trash2, Eye, X, FolderOpen, Package, ExternalLink, Sparkles } from 'lucide-react';
 import { downloadTaskFile, deleteTaskFile, viewTaskFile, openFileLocation } from '../api';
 import { useDialog } from '../../../context/DialogContext';
 
@@ -7,15 +8,18 @@ interface DocumentsTabProps {
   project: any;
   staticTasks: any[];
   files: any[];
+  projectBoms?: any[];
   uploadingTask: string | null;
   setPreviewFile: (fileInfo: { taskName: string, file: globalThis.File[], objectUrl: string }) => void;
   handleFileUpload: (taskName: string, file: globalThis.File[]) => void;
   onFilesChanged?: () => Promise<void> | void;
+  onOpenProjectBom?: (bomId: number) => void;
 }
 
 export const DocumentsTab: React.FC<DocumentsTabProps> = ({
-  project, staticTasks, files, uploadingTask, setPreviewFile, handleFileUpload, onFilesChanged
+  project, staticTasks, files, projectBoms = [], uploadingTask, setPreviewFile, handleFileUpload, onFilesChanged, onOpenProjectBom
 }) => {
+  const navigate = useNavigate();
   const { showAlert } = useDialog();
   const [fileToDelete, setFileToDelete] = useState<number | null>(null);
   const [viewAllModalTask, setViewAllModalTask] = useState<string | null>(null);
@@ -66,6 +70,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
   };
 
   const isStaticTaskCompleted = (taskName: string) => {
+    if (taskName === 'BOM' && projectBoms.length > 0) return true;
     return files.some(f => f.task_name === taskName);
   };
 
@@ -156,6 +161,75 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({
               
               {/* File List (Limited to 3) */}
               <div className="flex-1">
+                {task.task_name === 'BOM' && projectBoms.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600 flex items-center gap-1">
+                      <Package className="h-3 w-3" />
+                      Live Linked BOMs ({projectBoms.length})
+                    </div>
+                    {projectBoms.map((b: any) => {
+                      const pendingChanges = (b.pending_additions_count || 0) + (b.pending_modifications_count || 0);
+                      return (
+                        <div
+                          key={b.id}
+                          className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200/80 flex flex-col gap-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Package className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                              <span className="text-xs font-bold text-slate-800 truncate">{b.name}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[10px] font-extrabold shrink-0">
+                                Rev {b.pinned_revision || b.revision || 'A'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-purple-200 text-purple-700 shrink-0">
+                              {b.status}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span>{b.total_items || 0} items</span>
+                              {pendingChanges > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">
+                                  <Sparkles className="h-2.5 w-2.5" />+{pendingChanges} field change{pendingChanges > 1 ? 's' : ''}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-600 font-semibold">In sync with Rev {b.pinned_revision || 'A'}</span>
+                              )}
+                              {b.is_outdated && (
+                                <span className="text-amber-600 font-bold text-[10px]">
+                                  (Rev {b.latest_master_revision} available)
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {onOpenProjectBom && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenProjectBom(b.id)}
+                                  className="px-2 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold cursor-pointer"
+                                >
+                                  Open BOM Tab
+                                </button>
+                              )}
+                              {b.source_bom_id && (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/bom?bomId=${b.source_bom_id}`)}
+                                  className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                  title={`Open immutable Master Rev ${b.pinned_revision || 'A'} in BOM Module`}
+                                >
+                                  <ExternalLink className="h-2.5 w-2.5" />
+                                  Master Rev {b.pinned_revision || 'A'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {taskFiles.length > 0 && (
                   <div className="mb-3">
                     {renderFileList(taskFiles, 3)}

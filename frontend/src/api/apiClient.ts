@@ -165,13 +165,30 @@ export const apiClient = {
     },
   },
   boms: {
-    list: (projectId?: number, isTemplate?: boolean) => {
+    list: (projectId?: number, isTemplate?: boolean, bomKind?: string, includeShadows?: boolean) => {
       const params = new URLSearchParams();
       if (projectId !== undefined) params.append('project_id', String(projectId));
       if (isTemplate !== undefined) params.append('is_template', String(isTemplate));
+      if (bomKind) params.append('bom_kind', bomKind);
+      if (includeShadows) params.append('include_shadows', 'true');
       const q = params.toString();
       return request<any[]>(`/boms${q ? `?${q}` : ''}`);
     },
+    listProjectBoms: (projectId: number | string) => request<any[]>(`/boms/project/${projectId}`),
+    linkToProject: (masterBomId: number | string, body: { project_id: number; task_id?: number | null; bom_category?: string | null; user_name?: string }) =>
+      request<any>(`/boms/${masterBomId}/link-project`, { method: 'POST', body: JSON.stringify(body) }),
+    getShadowFeedback: (masterBomId: number | string) => request<any>(`/boms/${masterBomId}/shadow-feedback`),
+    promoteShadowChanges: (masterBomId: number | string, body: {
+      item_ids: number[];
+      eco_number: string;
+      title: string;
+      reason: string;
+      user_name: string;
+      new_revision?: string;
+      repin_shadow_bom_ids?: number[];
+    }) => request<any>(`/boms/${masterBomId}/promote-shadow-changes`, { method: 'POST', body: JSON.stringify(body) }),
+    dismissShadowItems: (itemIds: number[]) =>
+      request<any>('/boms/shadow-items/dismiss', { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }),
     get: (id: number | string) => request<any>(`/boms/${id}`),
     create: (body: any) => request<any>('/boms', { method: 'POST', body: JSON.stringify(body) }),
     updateHeader: (id: number | string, body: any) => request<any>(`/boms/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

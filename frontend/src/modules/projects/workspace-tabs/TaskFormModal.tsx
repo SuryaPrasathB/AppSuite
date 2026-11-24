@@ -17,12 +17,14 @@ import {
   Sparkles,
   Trash2,
   Loader2,
+  Package,
 } from 'lucide-react';
 import { DateRangePicker } from './DateRangePicker';
 import { AssigneeWorkloadSelector } from './AssigneeWorkloadSelector';
 import { CustomDropdown } from '../../../components/CustomDropdown';
 import { isTaskOverdue, willDueDateChangeBeFlagged, formatTaskDate } from '../taskUtils';
 import { createDynamicTask, updateDynamicTask } from '../api';
+import { apiClient } from '../../../api/apiClient';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -104,10 +106,24 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   const [bulkRows, setBulkRows] = useState<BulkP6Row[]>([]);
   const [bulkCreating, setBulkCreating] = useState(false);
 
+  // BOM linkage picker state
+  const [masterBoms, setMasterBoms] = useState<any[]>([]);
+  const [showBomPicker, setShowBomPicker] = useState(false);
+  const titleMentionsBom = /\bbom\b/i.test(taskForm?.title || '');
+
+  useEffect(() => {
+    if (isOpen && !editingTask && (titleMentionsBom || showBomPicker) && masterBoms.length === 0) {
+      apiClient.boms.list(undefined, undefined, 'MASTER')
+        .then((list) => setMasterBoms(Array.isArray(list) ? list : []))
+        .catch(() => setMasterBoms([]));
+    }
+  }, [isOpen, editingTask, titleMentionsBom, showBomPicker, masterBoms.length]);
+
   useEffect(() => {
     if (!isOpen) {
       setBulkRows([]);
       setEntryMode('single');
+      setShowBomPicker(false);
     } else if (editingTask) {
       setEntryMode('single');
     }
@@ -1291,6 +1307,99 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* BOM Linkage Picker (User picks: Don't Link / Link Existing Master / Create New Draft) */}
+              {!editingTask && (
+                <div className="pt-2 border-t border-slate-100">
+                  {!(titleMentionsBom || showBomPicker) ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowBomPicker(true)}
+                      className="text-xs font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Package className="h-3.5 w-3.5" />
+                      + Link a BOM to this task (optional)
+                    </button>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-purple-50/60 border border-purple-200/80 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-purple-800 flex items-center gap-1.5">
+                          <Package className="h-3.5 w-3.5" />
+                          BOM Module Linkage {titleMentionsBom ? '(BOM Task Detected)' : ''}
+                        </span>
+                        {!titleMentionsBom && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowBomPicker(false);
+                              setTaskForm((prev: any) => ({ ...prev, bom_link_mode: 'NONE', source_master_bom_id: '', new_bom_name: '' }));
+                            }}
+                            className="text-[11px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            Hide
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 bg-white p-1 rounded-lg border border-purple-100">
+                        {[
+                          { key: 'NONE', label: "Don't Link Yet" },
+                          { key: 'EXISTING_MASTER', label: 'Existing Master BOM' },
+                          { key: 'CREATE_NEW', label: 'Create New Draft' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setTaskForm((prev: any) => ({ ...prev, bom_link_mode: opt.key }))}
+                            className={`py-1.5 px-2 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                              (taskForm.bom_link_mode || 'NONE') === opt.key
+                                ? 'bg-purple-600 text-white shadow-2xs'
+                                : 'text-slate-600 hover:bg-purple-50'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {taskForm.bom_link_mode === 'EXISTING_MASTER' && (
+                        <div className="space-y-1">
+                          <select
+                            value={taskForm.source_master_bom_id || ''}
+                            onChange={(e) => setTaskForm((prev: any) => ({ ...prev, source_master_bom_id: e.target.value ? Number(e.target.value) : '' }))}
+                            className="w-full px-3 py-2 text-xs bg-white border border-purple-200 rounded-lg font-medium"
+                          >
+                            <option value="">-- Select Master BOM & Version --</option>
+                            {masterBoms.map((mb) => (
+                              <option key={mb.id} value={mb.id}>
+                                {mb.name} — Rev {mb.revision || 'A'} ({mb.status}, {mb.total_items || 0} items)
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] text-purple-700/80">
+                            Creates a pinned Project Shadow Copy & displays it in the Project BOM and Documents tabs.
+                          </p>
+                        </div>
+                      )}
+
+                      {taskForm.bom_link_mode === 'CREATE_NEW' && (
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={taskForm.new_bom_name || ''}
+                            onChange={(e) => setTaskForm((prev: any) => ({ ...prev, new_bom_name: e.target.value }))}
+                            placeholder={`BOM Name (default: ${taskForm.title || 'Project BOM'})`}
+                            className="w-full px-3 py-2 text-xs bg-white border border-purple-200 rounded-lg font-medium"
+                          />
+                          <p className="text-[11px] text-purple-700/80">
+                            Creates a Draft Master BOM (Rev A) in the BOM Module & links a Project Shadow Copy to this task.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

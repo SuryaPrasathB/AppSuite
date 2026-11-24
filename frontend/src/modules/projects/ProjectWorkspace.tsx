@@ -26,6 +26,7 @@ import { NotesTab } from './workspace-tabs/NotesTab';
 import { ActivityTab } from './workspace-tabs/ActivityTab';
 import { SubProjectsTab } from './workspace-tabs/SubProjectsTab';
 import { RequestsTab } from './workspace-tabs/RequestsTab';
+import { ProjectBOMTab } from './workspace-tabs/ProjectBOMTab';
 import { apiClient } from '../../api/apiClient';
 import { TaskFormModal } from './workspace-tabs/TaskFormModal';
 import { TaskCommentsModal } from './TaskCommentsModal';
@@ -52,6 +53,8 @@ export const ProjectWorkspace: React.FC = () => {
   const [subProjects, setSubProjects] = useState<any[]>([]);
   const [baselines, setBaselines] = useState<any[]>([]);
   const [projectRequestsCount, setProjectRequestsCount] = useState<number>(0);
+  const [projectBoms, setProjectBoms] = useState<any[]>([]);
+  const [selectedBomTabId, setSelectedBomTabId] = useState<number | null>(null);
   const [isExpectedEditorOpen, setIsExpectedEditorOpen] = useState(false);
   const [expectedDraftMode, setExpectedDraftMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [expectedDraftDate, setExpectedDraftDate] = useState('');
@@ -79,6 +82,10 @@ export const ProjectWorkspace: React.FC = () => {
     activity_code: '', task_type: 'TASK', duration_type: 'FIXED_DURATION_UNITS',
     pct_complete_type: 'DURATION', progress_pct: 0, steps_json: '' as string | null,
     calendar_type: '5_DAY', wbs_code: '', constraint_type: '', constraint_date: '',
+    bom_link_mode: 'NONE' as 'NONE' | 'EXISTING_MASTER' | 'CREATE_NEW',
+    source_master_bom_id: '' as number | '',
+    new_bom_name: '',
+    linked_bom_id: null as number | null,
   });
 
   const [isSubProjectModalOpen, setIsSubProjectModalOpen] = useState(false);
@@ -90,13 +97,14 @@ export const ProjectWorkspace: React.FC = () => {
   const loadData = async (projectId: number, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [projDetails, taskList, empList, allProjs, baselineList, projReqs] = await Promise.all([
+      const [projDetails, taskList, empList, allProjs, baselineList, projReqs, projBoms] = await Promise.all([
         fetchProjectDetails(projectId),
         fetchDynamicTasks(projectId),
         fetchEmployees(true).catch(() => []),
         fetchProjects(1, 1000).catch(() => ({ data: [] })),
         fetchProjectBaselines(projectId).catch(() => []),
-        apiClient.purchase.requests(projectId).catch(() => [])
+        apiClient.purchase.requests(projectId).catch(() => []),
+        apiClient.boms.listProjectBoms(projectId).catch(() => [])
       ]);
       setProject(projDetails.project);
       setStaticTasks(projDetails.tasks);
@@ -104,6 +112,7 @@ export const ProjectWorkspace: React.FC = () => {
       setSubProjects(projDetails.sub_projects || []);
       setBaselines(Array.isArray(baselineList) ? baselineList : []);
       setProjectRequestsCount(Array.isArray(projReqs) ? projReqs.length : 0);
+      setProjectBoms(Array.isArray(projBoms) ? projBoms : []);
       setDynamicTasks(taskList);
       const sortedEmps = Array.isArray(empList) ? [...empList].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) : empList;
       setEmployees(sortedEmps);
@@ -114,9 +123,9 @@ export const ProjectWorkspace: React.FC = () => {
         if (projDetails.project?.is_parent) {
           setActiveTab(prev => ['sub_projects', 'sub_analytics', 'overview', 'notes', 'activity', 'requests'].includes(prev) ? prev : 'sub_projects');
         } else if (projDetails.project?.category === 'RND') {
-          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'bom', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         } else {
-          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'documents', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
+          setActiveTab(prev => ['tasks', 'kanban', 'timeline', 'bom', 'documents', 'notes', 'activity', 'overview', 'requests', 'service', 'analytics'].includes(prev) ? prev : 'tasks');
         }
       }
     } catch (error) {
@@ -342,6 +351,7 @@ export const ProjectWorkspace: React.FC = () => {
     { id: 'tasks', name: 'Tasks List', icon: CheckCircle2 },
     { id: 'kanban', name: 'Kanban', icon: LayoutGrid },
     { id: 'timeline', name: 'Timeline', icon: Clock },
+    { id: 'bom', name: projectBoms.length > 0 ? `BOM (${projectBoms.length})` : 'BOM', icon: Package },
     ...(project?.category !== 'RND' ? [{ id: 'documents', name: 'Documents', icon: FileText }] : []),
     { id: 'requests', name: projectRequestsCount > 0 ? `Requests (${projectRequestsCount})` : 'Requests', icon: ClipboardList },
     { id: 'notes', name: 'Notes', icon: StickyNote },
@@ -522,6 +532,10 @@ export const ProjectWorkspace: React.FC = () => {
         wbs_code: task.wbs_code || '',
         constraint_type: task.constraint_type || '',
         constraint_date: task.constraint_date || '',
+        bom_link_mode: 'NONE',
+        source_master_bom_id: '',
+        new_bom_name: '',
+        linked_bom_id: task.linked_bom_id || null,
       });
     } else {
       setEditingTask(null);
@@ -551,6 +565,10 @@ export const ProjectWorkspace: React.FC = () => {
         wbs_code: parentTask?.wbs_code || '',
         constraint_type: '',
         constraint_date: '',
+        bom_link_mode: 'NONE',
+        source_master_bom_id: '',
+        new_bom_name: '',
+        linked_bom_id: null,
       });
     }
     setIsTaskFormOpen(true);
@@ -570,7 +588,10 @@ export const ProjectWorkspace: React.FC = () => {
       assignee_ids: taskForm.assignee_ids || [],
       completed_at: taskForm.completed_at || null,
       dependencies: taskForm.dependencies.length > 0 ? JSON.stringify(taskForm.dependencies) : null,
-      blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null
+      blocking: taskForm.blocking.length > 0 ? JSON.stringify(taskForm.blocking) : null,
+      bom_link_mode: !editingTask ? taskForm.bom_link_mode : undefined,
+      source_master_bom_id: !editingTask && taskForm.bom_link_mode === 'EXISTING_MASTER' && taskForm.source_master_bom_id ? Number(taskForm.source_master_bom_id) : undefined,
+      new_bom_name: !editingTask && taskForm.bom_link_mode === 'CREATE_NEW' ? taskForm.new_bom_name : undefined,
     };
     try {
       if (editingTask) {
@@ -1376,6 +1397,10 @@ export const ProjectWorkspace: React.FC = () => {
             onUpdateTaskField={handleUpdateTaskField}
             onReorderTasks={handleReorderTasks}
             onOpenComments={(task) => setActiveCommentTask(task)}
+            onOpenProjectBom={(bomId) => {
+              setSelectedBomTabId(bomId);
+              setActiveTab('bom');
+            }}
           />
         )}
 
@@ -1407,15 +1432,29 @@ export const ProjectWorkspace: React.FC = () => {
           </div>
         )}
 
+        {activeTab === 'bom' && (
+          <ProjectBOMTab
+            project={project}
+            projectBoms={projectBoms}
+            initialSelectedBomId={selectedBomTabId}
+            onBomsChanged={() => loadData(project.id, true)}
+          />
+        )}
+
         {activeTab === 'documents' && (
           <DocumentsTab 
             project={project}
             staticTasks={staticTasks}
             files={files}
+            projectBoms={projectBoms}
             uploadingTask={uploadingTask}
             setPreviewFile={setPreviewFile as any}
             handleFileUpload={handleFileUpload as any}
             onFilesChanged={() => loadData(project.id, true)}
+            onOpenProjectBom={(bomId) => {
+              setSelectedBomTabId(bomId);
+              setActiveTab('bom');
+            }}
           />
         )}
         

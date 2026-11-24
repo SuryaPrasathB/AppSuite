@@ -2,8 +2,45 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from app.database import DBStore
+from app.modules.projects.events import project_event_manager
 
 router = APIRouter(prefix="/boms", tags=["BOM"])
+
+
+def _notify_project_bom_update(bom_id: int, event_type: str = "BOM_UPDATED", extra: Optional[Dict[str, Any]] = None):
+    try:
+        bom = DBStore.get_bom_details(bom_id)
+        if not bom:
+            return
+        payload = {"bom_id": bom_id, **(extra or {})}
+        if bom.get("project_id"):
+            project_event_manager.broadcast(int(bom["project_id"]), event_type, payload)
+        for lp in bom.get("linked_projects") or []:
+            if lp.get("project_id"):
+                project_event_manager.broadcast(int(lp["project_id"]), event_type, payload)
+    except Exception:
+        pass
+
+
+class BOMLinkProjectRequest(BaseModel):
+    project_id: int
+    task_id: Optional[int] = None
+    bom_category: Optional[str] = None
+    user_name: Optional[str] = None
+
+
+class BOMPromoteShadowRequest(BaseModel):
+    item_ids: List[int]
+    eco_number: str
+    title: str
+    reason: str
+    user_name: str
+    new_revision: Optional[str] = None
+    repin_shadow_bom_ids: Optional[List[int]] = None
+
+
+class BOMDismissShadowRequest(BaseModel):
+    item_ids: List[int]
 
 class BOMItemCreate(BaseModel):
     product_id: Optional[int] = None
@@ -24,6 +61,8 @@ class BOMItemCreate(BaseModel):
     level: Optional[int] = 1
     temp_id: Optional[str] = None
     parent_temp_id: Optional[str] = None
+    change_reason: Optional[str] = None
+    added_by: Optional[str] = None
 
 class BOMItemUpdate(BaseModel):
     product_id: Optional[int] = None
@@ -43,6 +82,8 @@ class BOMItemUpdate(BaseModel):
     is_assembly: Optional[bool] = None
     level: Optional[int] = None
     scale_children: Optional[bool] = True
+    change_reason: Optional[str] = None
+    added_by: Optional[str] = None
 
 class BOMCreate(BaseModel):
     project_id: Optional[int] = None
@@ -174,13 +215,35 @@ def delete_sub_assembly(sa_id: int):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# 3. List BOMs (with optional template filter)
+# 2c. Project Shadow BOMs & Dismiss Shadow Items (Must be defined before /{bom_id})
+@router.get("/project/{project_id}")
+def list_project_boms(project_id: int):
+    return DBStore.get_project_boms(project_id)
+
+@router.post("/shadow-items/dismiss")
+def dismiss_shadow_items(payload: BOMDismissShadowRequest):
+    try:
+        res = DBStore.dismiss_shadow_items(payload.item_ids)
+        for pid in res.get("affected_project_ids") or []:
+            project_event_manager.broadcast(int(pid), "BOM_UPDATED", {"action": "shadow_dismissed"})
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 3. List BOMs (with optional template / kind filter)
 @router.get("")
 def list_boms(
     project_id: Optional[int] = None,
-    is_template: Optional[bool] = None
+    is_template: Optional[bool] = None,
+    bom_kind: Optional[str] = None,
+    include_shadows: bool = False
 ):
-    return DBStore.get_boms(project_id=project_id, is_template=is_template)
+    return DBStore.get_boms(
+        project_id=project_id,
+        is_template=is_template,
+        bom_kind=bom_kind,
+        include_shadows=include_shadows
+    )
 
 # 4. Get detailed BOM
 @router.get("/{bom_id}")
@@ -229,18 +292,86 @@ def update_bom_header(bom_id: int, payload: BOMHeaderUpdate):
         success = DBStore.update_bom_header(bom_id, payload.model_dump(exclude_unset=True))
         if not success:
             raise HTTPException(status_code=404, detail="BOM not found")
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "header_updated"})
         return DBStore.get_bom_details(bom_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# 6b. Link Master BOM to Project (Creates Project Shadow Copy)
+@router.post("/{bom_id}/link-project")
+def link_bom_to_project(bom_id: int, payload: BOMLinkProjectRequest):
+    try:
+        shadow = DBStore.link_bom_to_project(
+            master_bom_id=bom_id,
+            project_id=payload.project_id,
+            task_id=payload.task_id,
+            bom_category=payload.bom_category,
+            user_name=payload.user_name
+        )
+        DBStore.add_project_activity(
+            payload.project_id,
+            "BOM_LINKED",
+            f"Linked BOM '{shadow.get('source_bom_name') or shadow.get('name')}' (Rev {shadow.get('pinned_revision') or 'A'}) as project shadow copy",
+            None
+        )
+        project_event_manager.broadcast(payload.project_id, "BOM_UPDATED", {"bom_id": shadow["id"], "action": "linked"})
+        return shadow
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 6c. Get Pending Shadow Additions / Modifications for a Master BOM
+@router.get("/{bom_id}/shadow-feedback")
+def get_master_shadow_feedback(bom_id: int):
+    try:
+        return DBStore.get_master_shadow_feedback(bom_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 6d. Promote Selected Shadow Changes into a New Master BOM Revision
+@router.post("/{bom_id}/promote-shadow-changes")
+def promote_shadow_changes(bom_id: int, payload: BOMPromoteShadowRequest):
+    try:
+        new_master = DBStore.promote_shadow_changes(
+            master_bom_id=bom_id,
+            item_ids=payload.item_ids,
+            eco_number=payload.eco_number,
+            title=payload.title,
+            reason=payload.reason,
+            user_name=payload.user_name,
+            new_revision=payload.new_revision,
+            repin_shadow_bom_ids=payload.repin_shadow_bom_ids
+        )
+        for pid in new_master.get("affected_project_ids") or []:
+            project_event_manager.broadcast(int(pid), "BOM_UPDATED", {"bom_id": new_master["id"], "action": "promoted"})
+        return new_master
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 7. In-Place: Add Single Item to BOM
 @router.post("/{bom_id}/items")
 def add_bom_item(bom_id: int, item: BOMItemCreate):
     try:
         updated_bom = DBStore.add_bom_item(bom_id, item.model_dump())
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "item_added"})
+        if updated_bom.get("bom_kind") == "PROJECT_SHADOW":
+            employees = DBStore.get_employees()
+            for emp in employees:
+                if emp.get("role") in ["Administrator", "Store Manager"]:
+                    DBStore.add_notification(
+                        user_id=emp["id"],
+                        title="Project BOM Missing Item Added",
+                        message=f"A missing item was added to shadow BOM '{updated_bom.get('name')}' (Rev {updated_bom.get('pinned_revision') or 'A'}). Review in BOM Module.",
+                        link=f"/bom?bomId={updated_bom.get('source_bom_id') or bom_id}"
+                    )
         return updated_bom
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -251,7 +382,10 @@ def update_bom_item(bom_id: int, item_id: int, payload: BOMItemUpdate):
         updated_bom = DBStore.update_bom_item(bom_id, item_id, payload.model_dump(exclude_unset=True))
         if not updated_bom:
             raise HTTPException(status_code=404, detail="BOM item not found")
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "item_updated"})
         return updated_bom
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -260,7 +394,10 @@ def update_bom_item(bom_id: int, item_id: int, payload: BOMItemUpdate):
 def delete_bom_item(bom_id: int, item_id: int):
     try:
         DBStore.delete_bom_item(bom_id, item_id)
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "item_deleted"})
         return DBStore.get_bom_details(bom_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -275,6 +412,7 @@ def update_bom_status(bom_id: int, status_update: BOMStatusUpdate):
     )
     if not success:
         raise HTTPException(status_code=404, detail="BOM not found")
+    _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "status_updated", "status": status_update.status})
     return {"message": "Status updated successfully"}
 
 # 11. Bulk Update Procurement
@@ -288,6 +426,7 @@ def bulk_update_bom_procurement(bom_id: int, payload: BOMBulkProcurementUpdate):
         )
         if not updated_bom:
             raise HTTPException(status_code=404, detail="BOM not found")
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "procurement_updated"})
         return updated_bom
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -303,6 +442,7 @@ def update_bom_item_procurement(bom_id: int, item_id: int, payload: BOMItemProcu
         )
         if not updated_bom:
             raise HTTPException(status_code=404, detail="BOM item not found")
+        _notify_project_bom_update(bom_id, "BOM_UPDATED", {"action": "procurement_updated"})
         return updated_bom
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -406,8 +546,17 @@ def compare_boms(bom_id: int, compare_bom_id: int):
 # 21. Delete BOM
 @router.delete("/{bom_id}")
 def delete_bom(bom_id: int):
-    DBStore.delete_bom(bom_id)
-    return {"message": "BOM deleted successfully"}
+    try:
+        bom = DBStore.get_bom_details(bom_id)
+        project_id = bom.get("project_id") if bom else None
+        DBStore.delete_bom(bom_id)
+        if project_id:
+            project_event_manager.broadcast(int(project_id), "BOM_UPDATED", {"bom_id": bom_id, "action": "deleted"})
+        return {"message": "BOM deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 22. Issue Stock
 @router.post("/{bom_id}/issue")

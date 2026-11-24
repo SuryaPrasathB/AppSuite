@@ -1204,6 +1204,10 @@ class TaskCreate(BaseModel):
     constraint_date: Optional[str] = None
     baseline_start_date: Optional[str] = None
     baseline_due_date: Optional[str] = None
+    linked_bom_id: Optional[int] = None
+    bom_link_mode: Optional[str] = None  # 'EXISTING_MASTER' | 'CREATE_NEW' | 'NONE'
+    source_master_bom_id: Optional[int] = None
+    new_bom_name: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
@@ -1233,6 +1237,7 @@ class TaskUpdate(BaseModel):
     constraint_date: Optional[str] = None
     baseline_start_date: Optional[str] = None
     baseline_due_date: Optional[str] = None
+    linked_bom_id: Optional[int] = None
 
 class BaselineCreateRequest(BaseModel):
     name: str
@@ -1495,6 +1500,55 @@ def create_dynamic_task(project_id: int, task: TaskCreate, current_user: Dict[st
     validate_task_dates(task.start_date, task.due_date)
     check_circular_dependencies(project_id, None, task.dependencies)
     new_task = DBStore.add_dynamic_task(project_id, task.model_dump())
+
+    # Optional BOM linking when creating a task (e.g., BOM Preparation / Mechanical BOM)
+    if task.bom_link_mode == "EXISTING_MASTER" and task.source_master_bom_id:
+        try:
+            shadow = DBStore.link_bom_to_project(
+                master_bom_id=task.source_master_bom_id,
+                project_id=project_id,
+                task_id=new_task["id"],
+                user_name=current_user.get("name")
+            )
+            new_task["linked_bom_id"] = shadow["id"]
+            DBStore.add_project_activity(
+                project_id,
+                "BOM_LINKED",
+                f"Linked BOM '{shadow.get('source_bom_name') or shadow.get('name')}' (Rev {shadow.get('pinned_revision') or 'A'}) via task '{task.title}'",
+                current_user["id"]
+            )
+            project_event_manager.broadcast(project_id, "BOM_UPDATED", {"bom_id": shadow["id"], "action": "linked_from_task"})
+        except Exception as e:
+            print("Error linking existing master BOM from task:", e)
+    elif task.bom_link_mode == "CREATE_NEW":
+        try:
+            proj_info = next((p for p in DBStore.get_all_projects_unpaginated(current_user=current_user) if p["id"] == project_id), None)
+            default_name = (task.new_bom_name or "").strip() or (f"{proj_info['code']} - {task.title}" if proj_info and proj_info.get("code") else f"{task.title} BOM")
+            master_bom = DBStore.create_bom(
+                project_id=None,
+                name=default_name,
+                items=[],
+                status="DRAFT",
+                customer_name=proj_info.get("client_name") if proj_info else None,
+                revision="A"
+            )
+            shadow = DBStore.link_bom_to_project(
+                master_bom_id=master_bom["id"],
+                project_id=project_id,
+                task_id=new_task["id"],
+                user_name=current_user.get("name")
+            )
+            new_task["linked_bom_id"] = shadow["id"]
+            DBStore.add_project_activity(
+                project_id,
+                "BOM_LINKED",
+                f"Created & linked draft BOM '{default_name}' (Rev A) via task '{task.title}'",
+                current_user["id"]
+            )
+            project_event_manager.broadcast(project_id, "BOM_UPDATED", {"bom_id": shadow["id"], "action": "created_from_task"})
+        except Exception as e:
+            print("Error creating new draft BOM from task:", e)
+
     DBStore.add_project_activity(project_id, "TASK_CREATED", f"Created task: {task.title}", current_user["id"])
     DBStore.record_task_changes(
         new_task["id"],

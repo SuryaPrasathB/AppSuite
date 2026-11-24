@@ -163,6 +163,11 @@ class DBStore:
                 ("parent_bom_id", "INT NULL DEFAULT NULL"),
                 ("eco_id", "INT NULL DEFAULT NULL"),
                 ("is_reserved", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("bom_kind", "VARCHAR(20) NOT NULL DEFAULT 'MASTER'"),
+                ("source_bom_id", "INT NULL DEFAULT NULL"),
+                ("pinned_revision", "VARCHAR(20) NULL DEFAULT NULL"),
+                ("is_locked", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("bom_category", "VARCHAR(50) NULL DEFAULT NULL"),
             ]
             for col_name, col_def in bom_cols:
                 cursor.execute(f"SHOW COLUMNS FROM boms LIKE '{col_name}'")
@@ -183,11 +188,23 @@ class DBStore:
                 ("parent_item_id", "INT NULL DEFAULT NULL"),
                 ("is_assembly", "BOOLEAN NOT NULL DEFAULT FALSE"),
                 ("level", "INT NOT NULL DEFAULT 1"),
+                ("source_bom_item_id", "INT NULL DEFAULT NULL"),
+                ("item_origin", "VARCHAR(20) NOT NULL DEFAULT 'MASTER'"),
+                ("original_quantity", "DECIMAL(10, 2) NULL DEFAULT NULL"),
+                ("change_reason", "TEXT NULL"),
+                ("added_by", "VARCHAR(255) NULL DEFAULT NULL"),
+                ("added_at", "TIMESTAMP NULL DEFAULT NULL"),
+                ("promotion_status", "VARCHAR(20) NULL DEFAULT NULL"),
+                ("promoted_to_bom_id", "INT NULL DEFAULT NULL"),
             ]
             for col_name, col_def in item_cols:
                 cursor.execute(f"SHOW COLUMNS FROM bom_items LIKE '{col_name}'")
                 if not cursor.fetchone():
                     cursor.execute(f"ALTER TABLE bom_items ADD COLUMN {col_name} {col_def}")
+
+            cursor.execute("SHOW COLUMNS FROM dynamic_tasks LIKE 'linked_bom_id'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE dynamic_tasks ADD COLUMN linked_bom_id INT NULL DEFAULT NULL")
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS engineering_change_orders (
@@ -1920,11 +1937,18 @@ class DBStore:
             SELECT t.*, e.name as assignee_name, e.role as assignee_role, p.name as project_name,
                    COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as client_name,
                    COALESCE(NULLIF(p.client_name, ''), parent_p.client_name) as customer_name,
-                   (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) as comment_count
+                   (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) as comment_count,
+                   lb.name as linked_bom_name,
+                   COALESCE(lb.pinned_revision, lb.revision) as linked_bom_revision,
+                   lb.status as linked_bom_status,
+                   lb.source_bom_id as linked_bom_source_id,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = lb.id) as linked_bom_items_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = lb.id AND bi.promotion_status = 'PENDING') as linked_bom_pending_count
             FROM dynamic_tasks t
             LEFT JOIN employees e ON t.assignee_id = e.id
             LEFT JOIN projects p ON t.project_id = p.id
             LEFT JOIN projects parent_p ON p.parent_id = parent_p.id
+            LEFT JOIN boms lb ON t.linked_bom_id = lb.id
             WHERE t.project_id = %s
             ORDER BY t.sort_order ASC, t.id ASC
         """, (project_id,))
@@ -2067,9 +2091,9 @@ class DBStore:
                 start_date, due_date, initial_due_date, initial_due_date_set_at, due_date_flagged, completed_at, dependencies, sort_order,
                 activity_code, task_type, duration_type, pct_complete_type, progress_pct,
                 steps_json, calendar_type, wbs_code, constraint_type, constraint_date,
-                estimated_hours, actual_hours, baseline_start_date, baseline_due_date
+                estimated_hours, actual_hours, baseline_start_date, baseline_due_date, linked_bom_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         due_date_val = task.get("due_date") or None
         initial_due_date_val = task.get("initial_due_date") or due_date_val
@@ -2103,7 +2127,8 @@ class DBStore:
             float(task.get("estimated_hours") or 0.0),
             float(task.get("actual_hours") or 0.0),
             task.get("baseline_start_date") or None,
-            task.get("baseline_due_date") or None
+            task.get("baseline_due_date") or None,
+            task.get("linked_bom_id") or None
         )
         cursor.execute(query, values)
         task_id = cursor.lastrowid
@@ -2161,12 +2186,12 @@ class DBStore:
             "start_date", "due_date", "dependencies", "sort_order",
             "activity_code", "task_type", "duration_type", "pct_complete_type", "progress_pct",
             "steps_json", "calendar_type", "wbs_code", "constraint_type", "constraint_date",
-            "estimated_hours", "actual_hours", "baseline_start_date", "baseline_due_date"
+            "estimated_hours", "actual_hours", "baseline_start_date", "baseline_due_date", "linked_bom_id"
         ]
         nullable_fields = {
             "parent_id", "assignee_id", "start_date", "due_date", "dependencies",
             "activity_code", "steps_json", "wbs_code", "constraint_type", "constraint_date",
-            "baseline_start_date", "baseline_due_date"
+            "baseline_start_date", "baseline_due_date", "linked_bom_id"
         }
         for key in fields:
             if key in data:
@@ -2384,17 +2409,33 @@ class DBStore:
 
     # BOM METHODS
     @staticmethod
-    def get_boms(project_id: Optional[int] = None, is_template: Optional[bool] = None) -> List[Dict[str, Any]]:
+    def get_boms(
+        project_id: Optional[int] = None,
+        is_template: Optional[bool] = None,
+        bom_kind: Optional[str] = None,
+        include_shadows: bool = False
+    ) -> List[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         base_query = """
             SELECT b.*, p.name as project_name, p.code as project_code,
+                   sb.name as source_bom_name, sb.revision as source_bom_revision,
                    (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id) as total_items,
                    (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'ORDERED') as ordered_count,
                    (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'DELIVERED') as delivered_count,
-                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND COALESCE(bi.procurement_status, 'YET_TO_ORDER') = 'YET_TO_ORDER') as yet_to_order_count
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND COALESCE(bi.procurement_status, 'YET_TO_ORDER') = 'YET_TO_ORDER') as yet_to_order_count,
+                   (SELECT COUNT(*) FROM boms sh WHERE sh.bom_kind = 'PROJECT_SHADOW' AND (sh.source_bom_id = b.id OR sh.root_bom_id = COALESCE(b.root_bom_id, b.id))) as shadow_count,
+                   (
+                       SELECT COUNT(*)
+                       FROM bom_items sbi
+                       JOIN boms sh ON sbi.bom_id = sh.id
+                       WHERE sh.bom_kind = 'PROJECT_SHADOW'
+                         AND (sh.source_bom_id = b.id OR sh.root_bom_id = COALESCE(b.root_bom_id, b.id))
+                         AND sbi.promotion_status = 'PENDING'
+                   ) as pending_feedback_count
             FROM boms b
             LEFT JOIN projects p ON b.project_id = p.id
+            LEFT JOIN boms sb ON b.source_bom_id = sb.id
             WHERE 1=1
         """
         params = []
@@ -2404,6 +2445,11 @@ class DBStore:
         if is_template is not None:
             base_query += " AND b.is_template = %s"
             params.append(is_template)
+        if bom_kind:
+            base_query += " AND COALESCE(b.bom_kind, 'MASTER') = %s"
+            params.append(bom_kind)
+        elif not project_id and not include_shadows:
+            base_query += " AND COALESCE(b.bom_kind, 'MASTER') = 'MASTER'"
 
         cursor.execute(base_query + " ORDER BY b.id DESC", tuple(params))
         boms = cursor.fetchall()
@@ -2418,6 +2464,8 @@ class DBStore:
                        bi.manual_product_name, bi.part_number, bi.manufacturer, bi.link, bi.custom_fields,
                        bi.unit_price, bi.procurement_status, bi.ordered_date, bi.expected_delivery_date, bi.delivered_date,
                        bi.parent_item_id, bi.is_assembly, bi.level,
+                       bi.source_bom_item_id, bi.item_origin, bi.original_quantity, bi.change_reason,
+                       bi.added_by, bi.added_at, bi.promotion_status, bi.promoted_to_bom_id,
                        p.name as product_name, p.code as product_code, p.unit as product_unit,
                        COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock
                 FROM bom_items bi
@@ -2431,8 +2479,11 @@ class DBStore:
                 item["quantity_issued"] = float(item["quantity_issued"] or 0)
                 item["current_stock"] = float(item["current_stock"] or 0)
                 item["unit_price"] = float(item.get("unit_price") or 0)
+                if item.get("original_quantity") is not None:
+                    item["original_quantity"] = float(item["original_quantity"])
                 item["procurement_status"] = item.get("procurement_status") or "YET_TO_ORDER"
-                for d_col in ("ordered_date", "expected_delivery_date", "delivered_date"):
+                item["item_origin"] = item.get("item_origin") or "MASTER"
+                for d_col in ("ordered_date", "expected_delivery_date", "delivered_date", "added_at"):
                     if item.get(d_col) and hasattr(item[d_col], 'isoformat'):
                         item[d_col] = item[d_col].isoformat()
                 if not item.get("product_id"):
@@ -2453,8 +2504,12 @@ class DBStore:
         for b in boms:
             b['is_template'] = bool(b.get('is_template'))
             b['is_reserved'] = bool(b.get('is_reserved'))
+            b['is_locked'] = bool(b.get('is_locked'))
+            b['bom_kind'] = b.get('bom_kind') or 'MASTER'
             b['revision'] = b.get('revision') or 'A'
             b['root_bom_id'] = b.get('root_bom_id') or b['id']
+            b['shadow_count'] = int(b.get('shadow_count') or 0)
+            b['pending_feedback_count'] = int(b.get('pending_feedback_count') or 0)
             b_items = items_by_bom.get(b['id'], [])
             b['items'] = b_items
             # Compute total cost avoiding double counting assembly headers that have child items
@@ -2574,9 +2629,11 @@ class DBStore:
         cursor = conn.cursor(dictionary=True)
         
         cursor.execute("""
-            SELECT b.*, p.name as project_name, p.code as project_code 
+            SELECT b.*, p.name as project_name, p.code as project_code,
+                   sb.name as source_bom_name, sb.revision as source_bom_revision, sb.status as source_bom_status
             FROM boms b
             LEFT JOIN projects p ON b.project_id = p.id
+            LEFT JOIN boms sb ON b.source_bom_id = sb.id
             WHERE b.id = %s
         """, (bom_id,))
         bom = cursor.fetchone()
@@ -2587,6 +2644,8 @@ class DBStore:
             
         bom['is_template'] = bool(bom.get('is_template'))
         bom['is_reserved'] = bool(bom.get('is_reserved'))
+        bom['is_locked'] = bool(bom.get('is_locked'))
+        bom['bom_kind'] = bom.get('bom_kind') or 'MASTER'
         bom['revision'] = bom.get('revision') or 'A'
         bom['root_bom_id'] = bom.get('root_bom_id') or bom['id']
 
@@ -2598,19 +2657,60 @@ class DBStore:
             bom['issued_at'] = bom['issued_at'].isoformat()
         if bom.get('target_delivery_date') and hasattr(bom['target_delivery_date'], 'isoformat'):
             bom['target_delivery_date'] = bom['target_delivery_date'].isoformat()
+
+        # Latest Master revision in this BOM's family
+        root_id = bom['root_bom_id']
+        cursor.execute("""
+            SELECT id, revision, name, status
+            FROM boms
+            WHERE COALESCE(bom_kind, 'MASTER') = 'MASTER'
+              AND (root_bom_id = %s OR id = %s)
+            ORDER BY id DESC
+            LIMIT 1
+        """, (root_id, root_id))
+        latest_master = cursor.fetchone()
+        bom['latest_master_bom_id'] = latest_master['id'] if latest_master else bom['id']
+        bom['latest_master_revision'] = latest_master['revision'] if latest_master else bom['revision']
+
+        # Linked shadow projects (for MASTER BOMs)
+        if bom['bom_kind'] == 'MASTER':
+            cursor.execute("""
+                SELECT sh.id as shadow_bom_id, sh.project_id, sh.name as shadow_bom_name,
+                       sh.status as shadow_status, sh.pinned_revision, sh.source_bom_id,
+                       p.code as project_code, p.name as project_name,
+                       (SELECT COUNT(*) FROM bom_items sbi WHERE sbi.bom_id = sh.id AND sbi.promotion_status = 'PENDING') as pending_changes_count
+                FROM boms sh
+                LEFT JOIN projects p ON sh.project_id = p.id
+                WHERE sh.bom_kind = 'PROJECT_SHADOW'
+                  AND (sh.source_bom_id = %s OR sh.root_bom_id = %s)
+                ORDER BY sh.id DESC
+            """, (bom['id'], root_id))
+            linked_shadows = cursor.fetchall()
+            bom['linked_projects'] = linked_shadows
+            bom['pending_feedback_count'] = sum(int(s.get('pending_changes_count') or 0) for s in linked_shadows)
+        else:
+            bom['linked_projects'] = []
+            bom['pending_feedback_count'] = 0
             
         cursor.execute("""
             SELECT bi.id, bi.bom_id, bi.product_id, bi.quantity_required, bi.quantity_issued, bi.remarks,
                    bi.manual_product_name, bi.part_number, bi.manufacturer, bi.link, bi.custom_fields,
                    bi.unit_price, bi.procurement_status, bi.ordered_date, bi.expected_delivery_date, bi.delivered_date,
                    bi.parent_item_id, bi.is_assembly, bi.level,
+                   bi.source_bom_item_id, bi.item_origin, bi.original_quantity, bi.change_reason,
+                   bi.added_by, bi.added_at, bi.promotion_status, bi.promoted_to_bom_id,
                    p.name as product_name, p.code as product_code, p.unit as product_unit,
                    COALESCE((SELECT SUM(quantity) FROM product_locations WHERE product_id = bi.product_id), 0.00) as current_stock,
                    (
                        SELECT COALESCE(SUM(GREATEST(0, other_bi.quantity_required - other_bi.quantity_issued)), 0)
                        FROM bom_items other_bi
                        JOIN boms other_b ON other_bi.bom_id = other_b.id
-                       WHERE other_bi.product_id = bi.product_id AND (other_b.status = 'APPROVED' OR other_b.is_reserved = TRUE)
+                       WHERE other_bi.product_id = bi.product_id
+                         AND (other_b.status = 'APPROVED' OR other_b.is_reserved = TRUE)
+                         AND (
+                             COALESCE(other_b.bom_kind, 'MASTER') = 'PROJECT_SHADOW'
+                             OR NOT EXISTS (SELECT 1 FROM boms sh WHERE sh.source_bom_id = other_b.id)
+                         )
                    ) as total_reserved_stock
             FROM bom_items bi
             LEFT JOIN products p ON bi.product_id = p.id
@@ -2623,9 +2723,12 @@ class DBStore:
             item["quantity_issued"] = float(item["quantity_issued"] or 0)
             item["current_stock"] = float(item["current_stock"] or 0)
             item["unit_price"] = float(item.get("unit_price") or 0)
+            if item.get("original_quantity") is not None:
+                item["original_quantity"] = float(item["original_quantity"])
             item["procurement_status"] = item.get("procurement_status") or "YET_TO_ORDER"
+            item["item_origin"] = item.get("item_origin") or "MASTER"
 
-            for d_col in ("ordered_date", "expected_delivery_date", "delivered_date"):
+            for d_col in ("ordered_date", "expected_delivery_date", "delivered_date", "added_at"):
                 if item.get(d_col) and hasattr(item[d_col], 'isoformat'):
                     item[d_col] = item[d_col].isoformat()
             
@@ -2658,6 +2761,13 @@ class DBStore:
     ) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT bom_kind FROM boms WHERE id = %s", (bom_id,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            conn.close()
+            return False
+
         updates = ["status = %s"]
         params: List[Any] = [status]
 
@@ -2666,6 +2776,10 @@ class DBStore:
             params.append(issued_at)
         elif status in ('APPROVED', 'ISSUED', 'COMPLETED'):
             updates.append("issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP)")
+
+        # Lock Master BOM revision once Approved / Issued / Completed
+        if (row.get("bom_kind") or "MASTER") == "MASTER" and status in ('APPROVED', 'ISSUED', 'COMPLETED'):
+            updates.append("is_locked = TRUE")
 
         if target_delivery_date != "__UNSET__":
             updates.append("target_delivery_date = %s")
@@ -2820,6 +2934,24 @@ class DBStore:
     def delete_bom(bom_id: int) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT sh.id, p.code as project_code, p.name as project_name
+            FROM boms sh
+            LEFT JOIN projects p ON sh.project_id = p.id
+            WHERE sh.source_bom_id = %s
+        """, (bom_id,))
+        linked_shadows = cursor.fetchall()
+        if linked_shadows:
+            proj_labels = ", ".join(
+                f"{s.get('project_code') or s.get('project_name') or 'Project'}" for s in linked_shadows[:5]
+            )
+            cursor.close()
+            conn.close()
+            raise ValueError(
+                f"Cannot delete this BOM version because it is referenced by active project shadow(s): {proj_labels}. "
+                "Keep it for version history & retrievability."
+            )
+        cursor.execute("UPDATE dynamic_tasks SET linked_bom_id = NULL WHERE linked_bom_id = %s", (bom_id,))
         cursor.execute("DELETE FROM bom_items WHERE bom_id = %s", (bom_id,))
         cursor.execute("DELETE FROM boms WHERE id = %s", (bom_id,))
         conn.commit()
@@ -2892,11 +3024,18 @@ class DBStore:
     def add_bom_item(bom_id: int, item: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id FROM boms WHERE id = %s", (bom_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, bom_kind, is_locked, status, revision FROM boms WHERE id = %s", (bom_id,))
+        bom_row = cursor.fetchone()
+        if not bom_row:
             cursor.close()
             conn.close()
             raise ValueError(f"BOM {bom_id} not found")
+
+        bom_kind = bom_row.get("bom_kind") or "MASTER"
+        if bom_kind == "MASTER" and (bom_row.get("is_locked") or bom_row.get("status") in ("APPROVED", "ISSUED", "COMPLETED")):
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Master BOM Rev {bom_row.get('revision') or 'A'} is approved and locked. Create a new revision via ECO to add items.")
 
         product_id = item.get("product_id")
         proc_status = item.get("procurement_status") or "YET_TO_ORDER"
@@ -2904,14 +3043,22 @@ class DBStore:
         is_assembly = bool(item.get("is_assembly", False))
         level = int(item.get("level", 1))
 
+        is_shadow = bom_kind == "PROJECT_SHADOW"
+        item_origin = item.get("item_origin") or ("SHADOW_ADDED" if is_shadow else "MASTER")
+        promotion_status = "PENDING" if is_shadow and item_origin == "SHADOW_ADDED" else None
+        change_reason = item.get("change_reason") or None
+        added_by = item.get("added_by") or None
+        added_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S') if is_shadow else None
+
         cursor.execute("""
             INSERT INTO bom_items (
                 bom_id, product_id, manual_product_name, part_number, manufacturer,
                 link, quantity_required, quantity_issued, unit_price, remarks,
                 custom_fields, procurement_status, ordered_date, expected_delivery_date, delivered_date,
-                parent_item_id, is_assembly, level
+                parent_item_id, is_assembly, level,
+                item_origin, change_reason, added_by, added_at, promotion_status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             bom_id,
             product_id if product_id else None,
@@ -2930,7 +3077,12 @@ class DBStore:
             item.get("delivered_date") or None,
             parent_item_id if parent_item_id else None,
             is_assembly,
-            level
+            level,
+            item_origin,
+            change_reason,
+            added_by,
+            added_at,
+            promotion_status
         ))
         DBStore._sync_bom_completion_status(cursor, bom_id)
         conn.commit()
@@ -2942,6 +3094,21 @@ class DBStore:
     def update_bom_item(bom_id: int, item_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, bom_kind, is_locked, status, revision FROM boms WHERE id = %s", (bom_id,))
+        bom_row = cursor.fetchone()
+        if not bom_row:
+            cursor.close()
+            conn.close()
+            return None
+
+        bom_kind = bom_row.get("bom_kind") or "MASTER"
+        procurement_only_fields = {'procurement_status', 'ordered_date', 'expected_delivery_date', 'delivered_date', 'remarks', 'quantity_issued'}
+        is_structural_edit = any(k not in procurement_only_fields and k != 'scale_children' for k in data.keys())
+        if bom_kind == "MASTER" and is_structural_edit and (bom_row.get("is_locked") or bom_row.get("status") in ("APPROVED", "ISSUED", "COMPLETED")):
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Master BOM Rev {bom_row.get('revision') or 'A'} is approved and locked. Create a new revision via ECO to modify items.")
+
         cursor.execute("SELECT * FROM bom_items WHERE id = %s AND bom_id = %s", (item_id, bom_id))
         existing = cursor.fetchone()
         if not existing:
@@ -2953,7 +3120,7 @@ class DBStore:
             'product_id', 'manual_product_name', 'part_number', 'manufacturer',
             'link', 'quantity_required', 'quantity_issued', 'unit_price', 'remarks',
             'procurement_status', 'ordered_date', 'expected_delivery_date', 'delivered_date',
-            'parent_item_id', 'is_assembly', 'level'
+            'parent_item_id', 'is_assembly', 'level', 'change_reason'
         ]
         updates = []
         params = []
@@ -2974,6 +3141,29 @@ class DBStore:
         if 'custom_fields' in data:
             updates.append("custom_fields = %s")
             params.append(json.dumps(data['custom_fields']))
+
+        # Track shadow modifications on inherited MASTER items
+        if bom_kind == "PROJECT_SHADOW":
+            old_qty = float(existing.get("quantity_required") or 0)
+            qty_changed = "quantity_required" in data and abs(float(data["quantity_required"] or 0) - old_qty) > 1e-6
+            part_changed = ("part_number" in data and (data.get("part_number") or "") != (existing.get("part_number") or ""))
+            name_changed = ("manual_product_name" in data and (data.get("manual_product_name") or "") != (existing.get("manual_product_name") or ""))
+            if (qty_changed or part_changed or name_changed) and (existing.get("item_origin") or "MASTER") == "MASTER":
+                updates.append("item_origin = %s")
+                params.append("SHADOW_MODIFIED")
+                if existing.get("original_quantity") is None:
+                    updates.append("original_quantity = %s")
+                    params.append(old_qty)
+                updates.append("promotion_status = %s")
+                params.append("PENDING")
+                if data.get("added_by"):
+                    updates.append("added_by = %s")
+                    params.append(data["added_by"])
+                updates.append("added_at = %s")
+                params.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            elif (qty_changed or part_changed or name_changed) and existing.get("item_origin") == "SHADOW_MODIFIED" and existing.get("promotion_status") != "PENDING":
+                updates.append("promotion_status = %s")
+                params.append("PENDING")
 
         if updates:
             params.extend([item_id, bom_id])
@@ -3353,6 +3543,12 @@ class DBStore:
     def delete_bom_item(bom_id: int, item_id: int) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT bom_kind, is_locked, status, revision FROM boms WHERE id = %s", (bom_id,))
+        bom_row = cursor.fetchone()
+        if bom_row and (bom_row.get("bom_kind") or "MASTER") == "MASTER" and (bom_row.get("is_locked") or bom_row.get("status") in ("APPROVED", "ISSUED", "COMPLETED")):
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Master BOM Rev {bom_row.get('revision') or 'A'} is approved and locked. Create a new revision via ECO to remove items.")
         cursor.execute("DELETE FROM bom_items WHERE parent_item_id = %s AND bom_id = %s", (item_id, bom_id))
         cursor.execute("DELETE FROM bom_items WHERE id = %s AND bom_id = %s", (item_id, bom_id))
         DBStore._sync_bom_completion_status(cursor, bom_id)
@@ -3842,23 +4038,399 @@ class DBStore:
 
         root_id = row.get("root_bom_id") or row["id"]
         cursor.execute("""
-            SELECT b.*, eco.eco_number, eco.title as eco_title, eco.reason as eco_reason
+            SELECT b.*, eco.eco_number, eco.title as eco_title, eco.reason as eco_reason,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id) as total_items
             FROM boms b
             LEFT JOIN engineering_change_orders eco ON b.eco_id = eco.id
-            WHERE b.root_bom_id = %s OR b.id = %s
+            WHERE COALESCE(b.bom_kind, 'MASTER') = 'MASTER'
+              AND (b.root_bom_id = %s OR b.id = %s)
             ORDER BY b.id ASC
         """, (root_id, root_id))
         revisions = cursor.fetchall()
+
+        rev_ids = [r["id"] for r in revisions]
+        shadows_by_source: Dict[int, List[Dict[str, Any]]] = {}
+        if rev_ids:
+            placeholders = ", ".join(["%s"] * len(rev_ids))
+            cursor.execute(f"""
+                SELECT sh.id as shadow_bom_id, sh.source_bom_id, sh.project_id, sh.name as shadow_bom_name,
+                       sh.status as shadow_status, sh.pinned_revision,
+                       p.code as project_code, p.name as project_name,
+                       (SELECT COUNT(*) FROM bom_items sbi WHERE sbi.bom_id = sh.id AND sbi.promotion_status = 'PENDING') as pending_changes_count
+                FROM boms sh
+                LEFT JOIN projects p ON sh.project_id = p.id
+                WHERE sh.bom_kind = 'PROJECT_SHADOW' AND sh.source_bom_id IN ({placeholders})
+                ORDER BY sh.id DESC
+            """, tuple(rev_ids))
+            for sh in cursor.fetchall():
+                shadows_by_source.setdefault(sh["source_bom_id"], []).append(sh)
+
         cursor.close()
         conn.close()
         for r in revisions:
             r["is_template"] = bool(r.get("is_template"))
             r["is_reserved"] = bool(r.get("is_reserved"))
+            r["is_locked"] = bool(r.get("is_locked"))
+            r["linked_projects"] = shadows_by_source.get(r["id"], [])
+            r["pending_feedback_count"] = sum(int(s.get("pending_changes_count") or 0) for s in r["linked_projects"])
             if r.get("created_at") and hasattr(r["created_at"], 'isoformat'):
                 r["created_at"] = r["created_at"].isoformat()
             if r.get("updated_at") and hasattr(r["updated_at"], 'isoformat'):
                 r["updated_at"] = r["updated_at"].isoformat()
         return revisions
+
+    @staticmethod
+    def link_bom_to_project(
+        master_bom_id: int,
+        project_id: int,
+        task_id: Optional[int] = None,
+        bom_category: Optional[str] = None,
+        user_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        master = DBStore.get_bom_details(master_bom_id)
+        if not master:
+            raise ValueError(f"Master BOM {master_bom_id} not found")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("SELECT id, code, name, client_name, date_of_delivery FROM projects WHERE id = %s", (project_id,))
+        project = cursor.fetchone()
+        if not project:
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Project {project_id} not found")
+
+        root_id = master.get("root_bom_id") or master["id"]
+        pinned_rev = master.get("revision") or "A"
+        shadow_name = f"{project['code']} — {master['name']}" if project.get("code") else master["name"]
+        shadow_status = "APPROVED" if master.get("status") in ("APPROVED", "ISSUED", "COMPLETED") else (master.get("status") or "DRAFT")
+        issued_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S') if shadow_status in ("APPROVED", "ISSUED", "COMPLETED") else None
+
+        cursor.execute("""
+            INSERT INTO boms (
+                project_id, name, status, customer_name, issued_at, target_delivery_date,
+                is_template, template_category, revision, root_bom_id, parent_bom_id,
+                bom_kind, source_bom_id, pinned_revision, is_locked, bom_category
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, FALSE, NULL, %s, %s, %s, 'PROJECT_SHADOW', %s, %s, FALSE, %s)
+        """, (
+            project_id,
+            shadow_name,
+            shadow_status,
+            project.get("client_name") or master.get("customer_name"),
+            issued_at,
+            project.get("date_of_delivery") or master.get("target_delivery_date"),
+            pinned_rev,
+            root_id,
+            master_bom_id,
+            master_bom_id,
+            pinned_rev,
+            bom_category or master.get("bom_category")
+        ))
+        shadow_bom_id = cursor.lastrowid
+
+        old_to_new_ids: Dict[int, int] = {}
+        items = master.get("items", [])
+        items_sorted = sorted(items, key=lambda x: (1 if x.get("parent_item_id") else 0, x.get("id")))
+
+        for item in items_sorted:
+            mapped_parent_id = old_to_new_ids.get(item.get("parent_item_id"))
+            cursor.execute("""
+                INSERT INTO bom_items (
+                    bom_id, product_id, manual_product_name, part_number, manufacturer,
+                    link, quantity_required, quantity_issued, unit_price, remarks,
+                    custom_fields, procurement_status, ordered_date, expected_delivery_date, delivered_date,
+                    parent_item_id, is_assembly, level,
+                    source_bom_item_id, item_origin, original_quantity, promotion_status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 0.00, %s, %s, %s, 'YET_TO_ORDER', NULL, NULL, NULL, %s, %s, %s, %s, 'MASTER', %s, NULL)
+            """, (
+                shadow_bom_id,
+                item.get("product_id"),
+                item.get("manual_product_name"),
+                item.get("part_number"),
+                item.get("manufacturer"),
+                item.get("link"),
+                item.get("quantity_required", 1),
+                item.get("unit_price", 0.0) or 0.0,
+                item.get("remarks", ""),
+                json.dumps(item.get("custom_fields", {})),
+                mapped_parent_id,
+                bool(item.get("is_assembly", False)),
+                item.get("level", 1),
+                item["id"],
+                item.get("quantity_required", 1)
+            ))
+            old_to_new_ids[item["id"]] = cursor.lastrowid
+
+        # Link to explicit task or auto-link to an unlinked "BOM Preparation" task if present
+        linked_task_id = task_id
+        if not linked_task_id:
+            cursor.execute("""
+                SELECT id FROM dynamic_tasks
+                WHERE project_id = %s AND linked_bom_id IS NULL
+                  AND (LOWER(title) LIKE '%bom preparation%' OR LOWER(title) = 'bom')
+                ORDER BY id ASC LIMIT 1
+            """, (project_id,))
+            auto_task = cursor.fetchone()
+            if auto_task:
+                linked_task_id = auto_task["id"]
+
+        if linked_task_id:
+            cursor.execute("UPDATE dynamic_tasks SET linked_bom_id = %s WHERE id = %s AND project_id = %s", (shadow_bom_id, linked_task_id, project_id))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return DBStore.get_bom_details(shadow_bom_id)
+
+    @staticmethod
+    def get_project_boms(project_id: int) -> List[Dict[str, Any]]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT b.*, p.name as project_name, p.code as project_code,
+                   sb.name as source_bom_name, sb.revision as source_bom_revision, sb.status as source_bom_status,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id) as total_items,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'ORDERED') as ordered_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.procurement_status = 'DELIVERED') as delivered_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND COALESCE(bi.procurement_status, 'YET_TO_ORDER') = 'YET_TO_ORDER') as yet_to_order_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.item_origin = 'SHADOW_ADDED' AND bi.promotion_status = 'PENDING') as pending_additions_count,
+                   (SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id = b.id AND bi.item_origin = 'SHADOW_MODIFIED' AND bi.promotion_status = 'PENDING') as pending_modifications_count,
+                   (SELECT dt.id FROM dynamic_tasks dt WHERE dt.linked_bom_id = b.id LIMIT 1) as linked_task_id,
+                   (SELECT dt.title FROM dynamic_tasks dt WHERE dt.linked_bom_id = b.id LIMIT 1) as linked_task_title
+            FROM boms b
+            LEFT JOIN projects p ON b.project_id = p.id
+            LEFT JOIN boms sb ON b.source_bom_id = sb.id
+            WHERE b.project_id = %s
+            ORDER BY CASE WHEN COALESCE(b.bom_kind, 'MASTER') = 'PROJECT_SHADOW' THEN 0 ELSE 1 END, b.id DESC
+        """, (project_id,))
+        boms = cursor.fetchall()
+
+        for b in boms:
+            b['is_template'] = bool(b.get('is_template'))
+            b['is_reserved'] = bool(b.get('is_reserved'))
+            b['is_locked'] = bool(b.get('is_locked'))
+            b['bom_kind'] = b.get('bom_kind') or 'MASTER'
+            b['revision'] = b.get('revision') or 'A'
+            b['pinned_revision'] = b.get('pinned_revision') or b['revision']
+            b['root_bom_id'] = b.get('root_bom_id') or b['id']
+            b['pending_additions_count'] = int(b.get('pending_additions_count') or 0)
+            b['pending_modifications_count'] = int(b.get('pending_modifications_count') or 0)
+
+            cursor.execute("""
+                SELECT id, revision, name, status
+                FROM boms
+                WHERE COALESCE(bom_kind, 'MASTER') = 'MASTER'
+                  AND (root_bom_id = %s OR id = %s)
+                ORDER BY id DESC LIMIT 1
+            """, (b['root_bom_id'], b['root_bom_id']))
+            latest = cursor.fetchone()
+            b['latest_master_bom_id'] = latest['id'] if latest else (b.get('source_bom_id') or b['id'])
+            b['latest_master_revision'] = latest['revision'] if latest else b['pinned_revision']
+            b['is_outdated'] = bool(b.get('source_bom_id') and latest and latest['id'] != b['source_bom_id'])
+
+            for d_col in ('created_at', 'updated_at', 'issued_at', 'target_delivery_date'):
+                if b.get(d_col) and hasattr(b[d_col], 'isoformat'):
+                    b[d_col] = b[d_col].isoformat()
+
+        cursor.close()
+        conn.close()
+        return boms
+
+    @staticmethod
+    def get_master_shadow_feedback(master_bom_id: int) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, name, revision, root_bom_id FROM boms WHERE id = %s", (master_bom_id,))
+        master = cursor.fetchone()
+        if not master:
+            cursor.close()
+            conn.close()
+            raise ValueError(f"Master BOM {master_bom_id} not found")
+
+        root_id = master.get("root_bom_id") or master["id"]
+        cursor.execute("""
+            SELECT bi.*,
+                   p.name as catalog_product_name, p.code as catalog_product_code, p.unit as catalog_product_unit,
+                   sh.id as shadow_bom_id, sh.name as shadow_bom_name, sh.pinned_revision, sh.source_bom_id,
+                   pr.id as project_id, pr.code as project_code, pr.name as project_name
+            FROM bom_items bi
+            JOIN boms sh ON bi.bom_id = sh.id
+            LEFT JOIN projects pr ON sh.project_id = pr.id
+            LEFT JOIN products p ON bi.product_id = p.id
+            WHERE sh.bom_kind = 'PROJECT_SHADOW'
+              AND (sh.source_bom_id = %s OR sh.root_bom_id = %s)
+              AND bi.item_origin IN ('SHADOW_ADDED', 'SHADOW_MODIFIED')
+              AND bi.promotion_status = 'PENDING'
+            ORDER BY bi.added_at DESC, bi.id DESC
+        """, (master_bom_id, root_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        items = []
+        for r in rows:
+            r["quantity_required"] = float(r.get("quantity_required") or 0)
+            r["unit_price"] = float(r.get("unit_price") or 0)
+            if r.get("original_quantity") is not None:
+                r["original_quantity"] = float(r["original_quantity"])
+            r["product_name"] = r.get("catalog_product_name") or r.get("manual_product_name") or "Manual Item"
+            r["product_code"] = r.get("catalog_product_code") or "MANUAL"
+            r["product_unit"] = r.get("catalog_product_unit") or "pcs"
+            for d_col in ("added_at", "ordered_date", "expected_delivery_date", "delivered_date"):
+                if r.get(d_col) and hasattr(r[d_col], 'isoformat'):
+                    r[d_col] = r[d_col].isoformat()
+            items.append(r)
+
+        return {
+            "master_bom_id": master["id"],
+            "master_bom_name": master["name"],
+            "master_revision": master.get("revision") or "A",
+            "pending_count": len(items),
+            "items": items
+        }
+
+    @staticmethod
+    def promote_shadow_changes(
+        master_bom_id: int,
+        item_ids: List[int],
+        eco_number: str,
+        title: str,
+        reason: str,
+        user_name: str,
+        new_revision: Optional[str] = None,
+        repin_shadow_bom_ids: Optional[List[int]] = None
+    ) -> Dict[str, Any]:
+        if not item_ids:
+            raise ValueError("Please select at least one shadow item to promote.")
+
+        # 1. Create the new Master revision via existing ECO workflow
+        new_master = DBStore.create_bom_revision(
+            bom_id=master_bom_id,
+            eco_number=eco_number,
+            title=title,
+            reason=reason,
+            user_name=user_name,
+            new_revision=new_revision
+        )
+        new_master_id = new_master["id"]
+        new_rev_label = new_master.get("revision") or "B"
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Fetch the selected shadow items
+        placeholders = ", ".join(["%s"] * len(item_ids))
+        cursor.execute(f"""
+            SELECT bi.*, sh.project_id
+            FROM bom_items bi
+            JOIN boms sh ON bi.bom_id = sh.id
+            WHERE bi.id IN ({placeholders})
+        """, tuple(item_ids))
+        shadow_items = cursor.fetchall()
+
+        # Fetch new master's existing items to match modifications
+        cursor.execute("SELECT * FROM bom_items WHERE bom_id = %s", (new_master_id,))
+        master_items = cursor.fetchall()
+        affected_project_ids = set()
+
+        for s_item in shadow_items:
+            if s_item.get("project_id"):
+                affected_project_ids.add(s_item["project_id"])
+            origin = s_item.get("item_origin") or "SHADOW_ADDED"
+
+            matched_master = None
+            if origin == "SHADOW_MODIFIED":
+                for m_item in master_items:
+                    if s_item.get("product_id") and m_item.get("product_id") == s_item.get("product_id"):
+                        matched_master = m_item
+                        break
+                    if not s_item.get("product_id") and (m_item.get("part_number") or "").strip().lower() == (s_item.get("part_number") or "").strip().lower() and (m_item.get("manual_product_name") or "").strip().lower() == (s_item.get("manual_product_name") or "").strip().lower():
+                        matched_master = m_item
+                        break
+
+            if matched_master:
+                cursor.execute("""
+                    UPDATE bom_items
+                    SET quantity_required = %s, part_number = %s, manual_product_name = %s,
+                        manufacturer = %s, unit_price = %s, remarks = %s
+                    WHERE id = %s
+                """, (
+                    s_item.get("quantity_required", 1),
+                    s_item.get("part_number"),
+                    s_item.get("manual_product_name"),
+                    s_item.get("manufacturer"),
+                    s_item.get("unit_price", 0.0) or 0.0,
+                    s_item.get("remarks") or matched_master.get("remarks") or "",
+                    matched_master["id"]
+                ))
+            else:
+                cursor.execute("""
+                    INSERT INTO bom_items (
+                        bom_id, product_id, manual_product_name, part_number, manufacturer,
+                        link, quantity_required, quantity_issued, unit_price, remarks,
+                        custom_fields, procurement_status, is_assembly, level, item_origin
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 0.00, %s, %s, %s, 'YET_TO_ORDER', %s, 1, 'MASTER')
+                """, (
+                    new_master_id,
+                    s_item.get("product_id"),
+                    s_item.get("manual_product_name"),
+                    s_item.get("part_number"),
+                    s_item.get("manufacturer"),
+                    s_item.get("link"),
+                    s_item.get("quantity_required", 1),
+                    s_item.get("unit_price", 0.0) or 0.0,
+                    s_item.get("remarks") or s_item.get("change_reason") or "",
+                    s_item.get("custom_fields") or "{}",
+                    bool(s_item.get("is_assembly", False))
+                ))
+
+            cursor.execute("""
+                UPDATE bom_items
+                SET promotion_status = 'PROMOTED', promoted_to_bom_id = %s
+                WHERE id = %s
+            """, (new_master_id, s_item["id"]))
+
+        # Optional: re-pin selected shadow BOMs to the new Master revision
+        if repin_shadow_bom_ids:
+            repin_placeholders = ", ".join(["%s"] * len(repin_shadow_bom_ids))
+            cursor.execute(f"""
+                UPDATE boms
+                SET source_bom_id = %s, pinned_revision = %s, revision = %s
+                WHERE id IN ({repin_placeholders}) AND bom_kind = 'PROJECT_SHADOW'
+            """, [new_master_id, new_rev_label, new_rev_label, *repin_shadow_bom_ids])
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        result = DBStore.get_bom_details(new_master_id)
+        result["affected_project_ids"] = list(affected_project_ids)
+        return result
+
+    @staticmethod
+    def dismiss_shadow_items(item_ids: List[int]) -> Dict[str, Any]:
+        if not item_ids:
+            return {"dismissed": 0, "affected_project_ids": []}
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        placeholders = ", ".join(["%s"] * len(item_ids))
+        cursor.execute(f"""
+            SELECT DISTINCT sh.project_id
+            FROM bom_items bi
+            JOIN boms sh ON bi.bom_id = sh.id
+            WHERE bi.id IN ({placeholders}) AND sh.project_id IS NOT NULL
+        """, tuple(item_ids))
+        proj_ids = [r["project_id"] for r in cursor.fetchall()]
+        cursor.execute(f"UPDATE bom_items SET promotion_status = 'DISMISSED' WHERE id IN ({placeholders})", tuple(item_ids))
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"dismissed": affected, "affected_project_ids": proj_ids}
 
     @staticmethod
     def compare_boms(source_bom_id: int, target_bom_id: int) -> Dict[str, Any]:

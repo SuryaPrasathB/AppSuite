@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2, Diamond, SlidersHorizontal } from 'lucide-react';
+import { User, Edit2, Trash2, Plus, Send, ChevronDown, ChevronRight, Flag, MessageSquare, Circle, ListPlus, GripVertical, Search, AlertTriangle, MinusCircle, X, Layers, Filter, Check, Copy, Folder, CornerUpLeft, CheckCircle2, Diamond, SlidersHorizontal, Package } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { useDialog } from '../../../context/DialogContext';
 import { DateRangePicker } from './DateRangePicker';
@@ -20,6 +20,7 @@ interface TasksTabProps {
   onUpdateTaskField?: (taskId: number, field: string, value: any) => Promise<void>;
   onReorderTasks?: (newTasks: any[]) => void;
   onOpenComments?: (task: any) => void;
+  onOpenProjectBom?: (bomId: number) => void;
 }
 
 const DuplicateTaskModal: React.FC<{
@@ -193,7 +194,7 @@ const DuplicateTaskModal: React.FC<{
 };
 
 export const TasksTab: React.FC<TasksTabProps> = ({ 
-  dynamicTasks, handleOpenEditTask, handleDeleteTask, handleBulkDeleteTasks, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks, onOpenComments 
+  dynamicTasks, handleOpenEditTask, handleDeleteTask, handleBulkDeleteTasks, project, employees = [], onCreateQuickTask, onUpdateTaskField, onReorderTasks, onOpenComments, onOpenProjectBom 
 }) => {
   const { user } = useAuth();
   const { showConfirm } = useDialog();
@@ -1098,6 +1099,22 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                     {task.comment_count || 0}
                   </span>
                 </button>
+                {task.linked_bom_id && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenProjectBom?.(task.linked_bom_id);
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-[9px] font-extrabold shrink-0 cursor-pointer transition-colors"
+                    title={`Open Linked BOM: ${task.linked_bom_name || 'Project BOM'} (Rev ${task.linked_bom_revision || 'A'})`}
+                  >
+                    <Package className="h-2.5 w-2.5" />
+                    Rev {task.linked_bom_revision || 'A'}
+                    {(task.linked_bom_pending_count || 0) > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    )}
+                  </button>
+                )}
                 <div className="flex items-center gap-0.5 shrink-0">
                   {isSubtask && canEditAny && (
                     <button 
